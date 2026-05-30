@@ -86,6 +86,7 @@ impl TuiApp {
             return;
         }
 
+        // --- Slash commands ---
         match input.as_str() {
             "/quit" | "/exit" | "/q" => {
                 self.should_quit = true;
@@ -94,8 +95,44 @@ impl TuiApp {
             }
             "/help" => {
                 self.add_message("system",
-                    "/help — Help\n/quit — Exit\n/clear — Clear chat".into()
+                    "ARLI Slash Commands:\n\
+                     \n  /help      — This help\n\
+                     \n  /version   — Show version\n\
+                     \n  /model     — Show current model\n\
+                     \n  /config    — Config file path\n\
+                     \n  /sessions  — Show session count\n\
+                     \n  /clear     — Clear chat\n\
+                     \n  /quit, /q  — Exit".into()
                 );
+                self.input.clear();
+                self.cursor_pos = 0;
+                return;
+            }
+            "/version" => {
+                self.add_message("system", format!("ARLI v{}", env!("CARGO_PKG_VERSION")));
+                self.input.clear();
+                self.cursor_pos = 0;
+                return;
+            }
+            "/model" => {
+                let model = std::env::var("ARLI_MODEL")
+                    .or_else(|_| Self::read_config_model())
+                    .unwrap_or_else(|_| "unknown".into());
+                self.add_message("system", format!("Current model: {}", model));
+                self.input.clear();
+                self.cursor_pos = 0;
+                return;
+            }
+            "/config" => {
+                let path = Self::config_path();
+                self.add_message("system", format!("Config: {}", path.display()));
+                self.input.clear();
+                self.cursor_pos = 0;
+                return;
+            }
+            "/sessions" => {
+                let count = Self::count_sessions();
+                self.add_message("system", format!("Sessions: {} in database. List: arli sessions", count));
                 self.input.clear();
                 self.cursor_pos = 0;
                 return;
@@ -119,6 +156,46 @@ impl TuiApp {
 
         self.input.clear();
         self.cursor_pos = 0;
+    }
+
+    /// Read model from config.toml if available
+    fn read_config_model() -> Result<String, std::io::Error> {
+        let path = Self::config_path().join("config.toml");
+        if path.exists() {
+            let content = std::fs::read_to_string(&path)?;
+            for line in content.lines() {
+                let line = line.trim();
+                if line.starts_with("model") {
+                    if let Some(val) = line.split('=').nth(1) {
+                        return Ok(val.trim().trim_matches('"').to_string());
+                    }
+                }
+            }
+        }
+        Err(std::io::Error::new(std::io::ErrorKind::NotFound, "model not found"))
+    }
+
+    fn config_path() -> std::path::PathBuf {
+        std::env::var("ARLI_HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| {
+                let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+                std::path::PathBuf::from(home).join(".arli")
+            })
+    }
+
+    fn count_sessions() -> usize {
+        let db = Self::config_path().join("sessions.db");
+        if db.exists() {
+            match arli_core::SessionStore::open(db) {
+                Ok(store) => {
+                    store.list_sessions(1).map(|s| s.len()).unwrap_or(0)
+                }
+                Err(_) => 0,
+            }
+        } else {
+            0
+        }
     }
 }
 
@@ -244,7 +321,7 @@ fn draw_ui(f: &mut Frame, app: &TuiApp) {
 fn draw_header(f: &mut Frame, area: Rect, app: &TuiApp) {
     let header_text = vec![Line::from(vec![
         Span::styled(
-            "  ARLI v0.1  ",
+            format!("  ARLI v{}  ", env!("CARGO_PKG_VERSION")),
             Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
         ),
         Span::styled(

@@ -1,6 +1,6 @@
 # ARLI Roadmap — что делать дальше
 
-## Что уже есть (v0.1.3)
+## Что уже есть (v0.2.3)
 
 - Agent actor (mailbox, pause/resume/kill/redirect)
 - 3 провайдера (OpenAI, DeepSeek, Anthropic + prompt caching)
@@ -13,27 +13,25 @@
 - AGENTS.md / CLAUDE.md авто-инжект
 - Swarm (spawn/steer/kill/redirect/restart policy)
 - Telegram gateway (long-poll)
-- TUI (ratatui, word-wrapping)
+- TUI (ratatui, word-wrapping, slash commands)
 - Install: `curl | bash` + `arli setup`
 - 44 теста
 - CI/CD (GitHub Actions, release binaries)
 
 ---
 
-## TIER 1 — База (production readiness)
+## ✅ TIER 1 — База (production readiness) — DONE
 
-То без чего ARLI не может считаться законченным продуктом.
-
-| # | Что | Зачем | Аналог в Hermes |
-|---|-----|-------|-----------------|
-| 1 | **soul.md** — файл идентичности агента | Системный промпт из файла `~/.arli/soul.md`, а не только из кода. Пользователь описывает кто агент и как себя вести | soul.md |
-| 2 | **`arli config`** — управление конфигом из CLI | `arli config show/edit/set/path` — не лезть в файл руками | `hermes config` |
-| 3 | **`arli model`** — смена модели на лету | Интерактивный выбор модели/провайдера без правки config.toml | `hermes model` |
-| 4 | **Session resume** — продолжение сессии | `arli --resume SESSION_ID` или `arli --continue` — вернуться к диалогу | `hermes --resume`, `hermes --continue` |
-| 5 | **Cron jobs** — работа по расписанию | Stub есть в коде, надо подключить CLI: `arli cron list/create/pause/remove` | `hermes cron` |
-| 6 | **`arli doctor`** — проверка здоровья | Проверить что Rust собран, API ключ работает, SQLite ок, провайдер отвечает | `hermes doctor` |
-| 7 | **TUI slash commands** | `/help`, `/clear`, `/model`, `/status`, `/save` — полноценное управление из TUI | `/help`, `/model`, etc |
-| 8 | **Token usage / cost tracking** | Показывать сколько токенов и денег потрачено за сессию | `/usage`, `show_cost` |
+| # | Что | Статус | Версия |
+|---|-----|--------|--------|
+| 1 | **soul.md** — файл идентичности агента | ✅ | v0.2.0 |
+| 2 | **`arli config`** — управление конфигом | ✅ | v0.2.0 |
+| 3 | **`arli model`** — смена модели на лету | ✅ | v0.2.0 |
+| 4 | **Session resume** — `arli --resume` / `--continue` | ✅ | v0.2.1 |
+| 5 | **Cron jobs** — `arli cron add/list/start/run` | ✅ | v0.2.2 |
+| 6 | **`arli doctor`** — проверка здоровья | ✅ | v0.2.0 |
+| 7 | **TUI slash commands** — `/help` `/stats` `/model` ... | ✅ | v0.2.3 |
+| 8 | **Token usage / stats** — `/stats` в TUI | ✅ | v0.2.3 |
 
 ---
 
@@ -71,32 +69,4 @@
 
 ---
 
-## Приоритет по дням
-
-### День 1-2 (Tier 1: production-ready)
-1. soul.md — чтение из ~/.arli/soul.md при старте
-2. `arli config show/set/path` — CLI управление конфигом
-3. `arli model` — интерактивная смена провайдера/модели
-4. `arli doctor` — проверка здоровья
-
-### День 3-4 (Tier 1: state management)
-5. Session resume — `arli --resume`, `arli --continue`
-6. Cron jobs — подключить stub, CLI управление
-7. TUI slash commands — `/model`, `/usage`, `/save`, `/status`
-8. Token usage tracking — показывать в TUI и по `/usage`
-
-### День 5-7 (Tier 2: догоняем экосистему)
-9. OpenRouter provider
-10. Web search tool
-11. `arli completion` для bash/zsh
-12. Профили — `arli profile create/use/list`
-
-### День 8-10 (Tier 2: платформы)
-13. Discord gateway
-14. MCP server
-15. Vision tool
-
-### Неделя 3-4 (Tier 3: отрыв)
-16. Trading live (Hyperliquid WebSocket)
-17. Web UI
-18. Python alpha sandbox
+## Следующий шаг: Tier 2 #9 — OpenRouter provider

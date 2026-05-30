@@ -97,6 +97,7 @@ impl TuiApp {
                 self.add_message("system",
                     "ARLI Slash Commands:\n\
                      \n  /help      — This help\n\
+                     \n  /stats     — Chat & system stats\n\
                      \n  /version   — Show version\n\
                      \n  /model     — Show current model\n\
                      \n  /config    — Config file path\n\
@@ -133,6 +134,20 @@ impl TuiApp {
             "/sessions" => {
                 let count = Self::count_sessions();
                 self.add_message("system", format!("Sessions: {} in database. List: arli sessions", count));
+                self.input.clear();
+                self.cursor_pos = 0;
+                return;
+            }
+            "/stats" => {
+                let model = std::env::var("ARLI_MODEL")
+                    .or_else(|_| Self::read_config_model())
+                    .unwrap_or_else(|_| "unknown".into());
+                let sessions = Self::count_sessions();
+                let msg_count = self.messages.len();
+                self.add_message("system", format!(
+                    "ARLI Stats:\n  Model: {}\n  Messages in chat: {}\n  Sessions in DB: {}\n  Config: {}",
+                    model, msg_count, sessions, Self::config_path().display()
+                ));
                 self.input.clear();
                 self.cursor_pos = 0;
                 return;

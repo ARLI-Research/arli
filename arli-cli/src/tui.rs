@@ -1,15 +1,15 @@
 //! Terminal UI for ARLI — ratatui-based interactive chat.
 //!
 //! Layout:
-//! ┌─────────────────────────────────┐
-//! │  ARLI v0.1  │ session:id  │  ← header
-//! ├─────────────────────────────────┤
-//! │                                 │
-//! │  Message history (scrollable)   │  ← body
-//! │                                 │
-//! ├─────────────────────────────────┤
-//! │ > user input here...            │  ← input
-//! └─────────────────────────────────┘
+//! +---------------------------------+
+//! |  ARLI v0.1  | session:id  |  <- header
+//! +---------------------------------+
+//! |                                 |
+//! |  Message history (scrollable)   |  <- body
+//! |                                 |
+//! +---------------------------------+
+//! | > user input here...            |  <- input
+//! +---------------------------------+
 
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
@@ -22,7 +22,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{Block, Borders, Paragraph, Wrap},
     Frame, Terminal,
 };
 use std::io;
@@ -61,7 +61,7 @@ impl TuiApp {
             agent_tx,
             messages: vec![ChatMessage {
                 role: "system".into(),
-                content: "🔥 ARLI Agent — type your message or /help".into(),
+                content: "ARLI Agent — type your message or /help".into(),
             }],
             input: String::new(),
             cursor_pos: 0,
@@ -77,7 +77,6 @@ impl TuiApp {
             role: role.to_string(),
             content,
         });
-        // Auto-scroll to bottom
         self.scroll = self.messages.len().saturating_sub(1);
     }
 
@@ -94,8 +93,8 @@ impl TuiApp {
                 return;
             }
             "/help" => {
-                self.add_message("system", 
-                    "Commands:\n  /help — This help\n  /quit — Exit\n  /clear — Clear chat\n  /status — Agent status".into()
+                self.add_message("system",
+                    "/help — Help\n/quit — Exit\n/clear — Clear chat".into()
                 );
                 self.input.clear();
                 self.cursor_pos = 0;
@@ -128,7 +127,6 @@ pub async fn run_tui(
     agent_tx: mpsc::Sender<AgentMessage>,
     mut agent_rx: mpsc::Receiver<String>,
 ) -> anyhow::Result<()> {
-    // Terminal setup
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
@@ -139,7 +137,6 @@ pub async fn run_tui(
 
     let result = run_app(&mut terminal, &mut app, &mut agent_rx).await;
 
-    // Restore terminal
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
@@ -163,9 +160,7 @@ async fn run_app<B: Backend>(
             return Ok(());
         }
 
-        // Wait for either: keyboard event or agent response
         tokio::select! {
-            // Agent response
             msg = agent_rx.recv() => {
                 match msg {
                     Some(response) => {
@@ -179,7 +174,6 @@ async fn run_app<B: Backend>(
                 }
             }
 
-            // Keyboard input (non-blocking poll in event loop)
             _ = tokio::time::sleep(tokio::time::Duration::from_millis(50)) => {
                 if event::poll(std::time::Duration::from_millis(0))? {
                     if let Event::Key(key) = event::read()? {
@@ -236,9 +230,9 @@ fn draw_ui(f: &mut Frame, app: &TuiApp) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // header
-            Constraint::Min(0),     // body
-            Constraint::Length(3),  // input
+            Constraint::Length(3),
+            Constraint::Min(0),
+            Constraint::Length(3),
         ])
         .split(f.area());
 
@@ -250,11 +244,11 @@ fn draw_ui(f: &mut Frame, app: &TuiApp) {
 fn draw_header(f: &mut Frame, area: Rect, app: &TuiApp) {
     let header_text = vec![Line::from(vec![
         Span::styled(
-            "  🔥 ARLI v0.1  ",
+            "  ARLI v0.1  ",
             Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            format!("│ {} │ {}", app.status, if app.running { "⚡" } else { "⏸" }),
+            format!("| {} | {}", app.status, if app.running { "*" } else { "-" }),
             Style::default().fg(Color::Gray),
         ),
     ])];
@@ -266,31 +260,55 @@ fn draw_header(f: &mut Frame, area: Rect, app: &TuiApp) {
 }
 
 fn draw_body(f: &mut Frame, area: Rect, app: &TuiApp) {
-    let visible_msgs = app.messages.iter()
-        .skip(app.scroll.saturating_sub(area.height as usize / 2))
-        .take(area.height as usize);
+    let mut lines: Vec<Line> = Vec::new();
 
-    let items: Vec<ListItem> = visible_msgs
-        .map(|msg| {
-            let (role_color, prefix) = match msg.role.as_str() {
-                "user" => (Color::Cyan, "▶"),
-                "assistant" => (Color::Green, "◀"),
-                "system" => (Color::Yellow, "●"),
-                _ => (Color::Gray, "·"),
-            };
+    // Build wrapped text from all messages
+    for msg in &app.messages {
+        let role_color = match msg.role.as_str() {
+            "user" => Color::Cyan,
+            "assistant" => Color::Green,
+            "system" => Color::Yellow,
+            _ => Color::Gray,
+        };
 
-            let content = format!("{} {}", prefix, msg.content);
-            ListItem::new(Text::from(Span::styled(
-                content,
-                Style::default().fg(role_color),
-            )))
-        })
-        .collect();
+        let prefix = match msg.role.as_str() {
+            "user" => "> ",
+            "assistant" => "",
+            _ => "",
+        };
 
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).style(Style::default()));
+        // Split content by newlines, then wrap each line
+        for line in msg.content.lines() {
+            let full_line = format!("{}{}", prefix, line);
+            // Word-wrap for the body area width
+            let max_width = area.width.saturating_sub(4) as usize;
+            if full_line.len() > max_width && max_width > 20 {
+                for chunk in full_line.as_bytes().chunks(max_width) {
+                    let s = String::from_utf8_lossy(chunk);
+                    lines.push(Line::from(Span::styled(
+                        s.to_string(),
+                        Style::default().fg(role_color),
+                    )));
+                }
+            } else {
+                lines.push(Line::from(Span::styled(
+                    full_line,
+                    Style::default().fg(role_color),
+                )));
+            }
+        }
+    }
 
-    f.render_widget(list, area);
+    // Scroll: show last N lines that fit
+    let visible_lines = area.height.saturating_sub(2) as usize;
+    let start = lines.len().saturating_sub(visible_lines + app.scroll);
+    let shown: Vec<Line> = lines.into_iter().skip(start).take(visible_lines).collect();
+
+    let paragraph = Paragraph::new(shown)
+        .block(Block::default().borders(Borders::ALL).style(Style::default()))
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(paragraph, area);
 }
 
 fn draw_input(f: &mut Frame, area: Rect, app: &TuiApp) {
@@ -308,7 +326,6 @@ fn draw_input(f: &mut Frame, area: Rect, app: &TuiApp) {
 
     f.render_widget(input, area);
 
-    // Show cursor
     if !app.running {
         f.set_cursor_position(ratatui::layout::Position::new(
             area.x + 2 + app.cursor_pos as u16,

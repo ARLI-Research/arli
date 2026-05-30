@@ -300,8 +300,29 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    let token = std::env::var("TELEGRAM_BOT_TOKEN")
-        .map_err(|_| anyhow::anyhow!("TELEGRAM_BOT_TOKEN env var not set"))?;
+    // Read token: env var first, then config.toml
+    let token = std::env::var("TELEGRAM_BOT_TOKEN").ok().or_else(|| {
+        let config_path = std::env::var("ARLI_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                std::env::var("HOME")
+                    .map(|h| PathBuf::from(h).join(".arli"))
+                    .unwrap_or_else(|_| PathBuf::from(".arli"))
+            })
+            .join("config.toml");
+        if config_path.exists() {
+            std::fs::read_to_string(&config_path).ok().and_then(|s| {
+                toml::from_str::<toml::Value>(&s).ok().and_then(|v| {
+                    v.get("gateway")?.get("bot_token")?.as_str().map(String::from)
+                })
+            })
+        } else {
+            None
+        }
+    })
+    .ok_or_else(|| anyhow::anyhow!(
+        "TELEGRAM_BOT_TOKEN not set. Run 'arli setup' or set TELEGRAM_BOT_TOKEN env var"
+    ))?;
 
     let data_dir = std::env::var("ARLI_HOME")
         .map(PathBuf::from)

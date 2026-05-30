@@ -122,12 +122,33 @@ fn run_setup() -> anyhow::Result<()> {
 
     std::fs::write(&config_path, config_content)?;
 
+    // Telegram config
+    println!();
+    let mut telegram_token = String::new();
+    print!("Telegram bot token (optional, Enter to skip): ");
+    io::stdout().flush()?;
+    io::stdin().read_line(&mut telegram_token)?;
+    let telegram_token = telegram_token.trim().to_string();
+
+    if !telegram_token.is_empty() {
+        let gateway_config = format!(
+            "\n[gateway]\nbot_token = \"{}\"\n",
+            telegram_token
+        );
+        std::fs::write(&config_path, 
+            std::fs::read_to_string(&config_path)? + &gateway_config
+        )?;
+    }
+
     // Also set env var hint
     println!("\nConfiguration saved to {}", config_path.display());
     println!(
         "Or set environment variable: export {}=\"...\"",
         api_key_env
     );
+    if !telegram_token.is_empty() {
+        println!("\nTo start Telegram bot: arli-gateway");
+    }
     println!("\nYou're ready. Run: arli chat");
 
     Ok(())

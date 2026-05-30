@@ -28,7 +28,7 @@ arli-gateway                # Telegram bot
 
 ```bash
 # Clone and build
-git clone https://github.com/arliwork/arli
+git clone https://github.com/ARLI-Research/arli
 cd arli
 cargo build --release
 

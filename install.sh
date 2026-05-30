@@ -20,7 +20,7 @@ ARCH=$(uname -m)
 
 case "$OS" in
     Linux)  PLATFORM="linux" ;;
-    Darwin) PLATFORM="linux" ;;  # macOS cannot run Linux binary, must build from source
+    Darwin) PLATFORM="linux" ;;
     *)      echo "Unsupported OS: $OS"; exit 1 ;;
 esac
 
@@ -42,8 +42,8 @@ if [ "$OS" = "Linux" ]; then
     if curl -fsSL --progress-bar "$URL" -o /tmp/arli.tar.gz 2>/dev/null; then
         tar xzf /tmp/arli.tar.gz -C "$INSTALL_DIR"
         rm /tmp/arli.tar.gz
-        chmod +x "$INSTALL_DIR/arli" 2>/dev/null || true
-        echo -e "${GREEN}Installed ARLI to $INSTALL_DIR/arli${NC}"
+        chmod +x "$INSTALL_DIR/arli" "$INSTALL_DIR/arli-gateway" 2>/dev/null || true
+        echo -e "${GREEN}Installed to $INSTALL_DIR/arli${NC}"
         DOWNLOADED=true
     fi
 fi
@@ -65,6 +65,7 @@ if [ "$DOWNLOADED" = false ]; then
     echo "Compiling (this may take a few minutes)..."
     cargo build --release
     cp target/release/arli "$INSTALL_DIR/"
+    cp target/release/arli-gateway "$INSTALL_DIR/"
     rm -rf "$TMPDIR"
     echo -e "${GREEN}Built and installed to $INSTALL_DIR/arli${NC}"
 fi
@@ -78,7 +79,8 @@ if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
 fi
 
 echo ""
-echo -e "${BOLD}Next:  ${CYAN}arli setup${NC}     — configure API keys"
+echo -e "${BOLD}Next:  ${CYAN}arli setup${NC}     — configure API keys + Telegram"
 echo -e "${BOLD}Then:  ${CYAN}arli chat${NC}      — start chatting"
+echo -e "${BOLD}Or:    ${CYAN}arli-gateway${NC}  — Telegram bot"
 echo ""
 echo -e "${GREEN}Done.${NC}"

@@ -226,7 +226,7 @@ async fn run_job_loop(
 }
 
 /// Execute a single job (placeholder — real impl spawns an agent).
-async fn execute_job(job_id: &str, prompt: &str) -> Result<String> {
+pub async fn execute_job(job_id: &str, prompt: &str) -> Result<String> {
     // In the real implementation, this would spawn a child Agent with the prompt.
     // For now, return a placeholder.
     tracing::info!("Cron job '{}' executing: {}", job_id, prompt);

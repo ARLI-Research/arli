@@ -26,4 +26,5 @@ pub use providers::{
     OpenAIProvider, Provider, Role, ToolCall, ToolResult, ToolSchema, Usage,
 };
 pub use session::SessionStore;
+pub use cron::{CronScheduler, CronJob, CronEvent};
 pub use tools::{Tool, ToolOutput, ToolRegistry};

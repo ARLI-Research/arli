@@ -2,8 +2,8 @@ mod tui;
 
 use clap::{Parser, Subcommand};
 use arli_core::{
-    Agent, AgentConfig, ChatMessage, Config, SessionStore, ToolRegistry,
-    OpenAIProvider, PolicyEngine,
+    Agent, AgentConfig, ChatMessage, Config, CronEvent, CronJob, CronScheduler,
+    SessionStore, ToolRegistry, OpenAIProvider, PolicyEngine,
 };
 use arli_core::tools::builtin::register_builtin_tools;
 use std::path::PathBuf;
@@ -66,6 +66,10 @@ enum Commands {
         #[arg(short, long, default_value = "3001")]
         port: u16,
     },
+
+    /// Manage cron jobs
+    #[command(subcommand)]
+    Cron(CronCmd),
 }
 
 #[derive(Subcommand)]
@@ -78,6 +82,43 @@ enum ConfigCmd {
     Set {
         key: String,
         value: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum CronCmd {
+    /// Add a new cron job
+    Add {
+        /// Human-readable name
+        #[arg(short, long)]
+        name: String,
+        /// Cron expression or interval: "5m", "1h", "0 9 * * *"
+        #[arg(short, long)]
+        schedule: String,
+        /// Prompt for the agent to run
+        #[arg(short, long)]
+        prompt: String,
+    },
+    /// List all cron jobs
+    List,
+    /// Remove a cron job by ID
+    Remove {
+        /// Job ID
+        id: String,
+    },
+    /// Pause a cron job
+    Pause {
+        id: String,
+    },
+    /// Resume a paused cron job
+    Resume {
+        id: String,
+    },
+    /// Start the cron scheduler daemon
+    Start,
+    /// Run a job immediately (for testing)
+    Run {
+        id: String,
     },
 }
 
@@ -336,6 +377,184 @@ fn run_doctor() -> anyhow::Result<()> {
     Ok(())
 }
 
+// --- Cron job management ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CronJobFile {
+    id: String,
+    name: String,
+    schedule: String,
+    prompt: String,
+    enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CronFile {
+    jobs: Vec<CronJobFile>,
+}
+
+use serde::{Deserialize, Serialize};
+
+fn cron_path() -> PathBuf {
+    get_data_dir().join("cron.toml")
+}
+
+fn load_cron() -> anyhow::Result<CronFile> {
+    let path = cron_path();
+    if path.exists() {
+        let content = std::fs::read_to_string(&path)?;
+        Ok(toml::from_str(&content)?)
+    } else {
+        Ok(CronFile { jobs: vec![] })
+    }
+}
+
+fn save_cron(cf: &CronFile) -> anyhow::Result<()> {
+    let path = cron_path();
+    std::fs::write(&path, toml::to_string_pretty(cf)?)?;
+    Ok(())
+}
+
+async fn run_cron(cmd: CronCmd) -> anyhow::Result<()> {
+    match cmd {
+        CronCmd::Add { name, schedule, prompt } => {
+            let mut cf = load_cron()?;
+            let id = ulid::Ulid::new().to_string();
+            let id_trunc = &id[..8];
+            cf.jobs.push(CronJobFile {
+                id: id.clone(),
+                name: name.clone(),
+                schedule: schedule.clone(),
+                prompt: prompt.clone(),
+                enabled: true,
+            });
+            save_cron(&cf)?;
+            println!("Cron job added: {} ({})", id_trunc, name);
+            println!("  Schedule: {}", schedule);
+            println!("  Start scheduler: arli cron start");
+        }
+        CronCmd::List => {
+            let cf = load_cron()?;
+            if cf.jobs.is_empty() {
+                println!("No cron jobs.\nAdd one: arli cron add -n 'my job' -s 5m -p 'hello'");
+            } else {
+                println!("Cron jobs:\n");
+                for j in &cf.jobs {
+                    let status = if j.enabled { "▶" } else { "⏸" };
+                    println!(
+                        "  {} {:.8}  {}  {}  {}",
+                        status,
+                        j.id,
+                        j.schedule,
+                        j.name,
+                        j.prompt,
+                    );
+                }
+                println!("\nStart: arli cron start");
+            }
+        }
+        CronCmd::Remove { id } => {
+            let mut cf = load_cron()?;
+            let len_before = cf.jobs.len();
+            cf.jobs.retain(|j| !j.id.starts_with(&id));
+            if cf.jobs.len() == len_before {
+                anyhow::bail!("Job not found: {}", id);
+            }
+            save_cron(&cf)?;
+            println!("Job removed: {}", id);
+        }
+        CronCmd::Pause { id } => {
+            let mut cf = load_cron()?;
+            let found = cf.jobs.iter_mut().find(|j| j.id.starts_with(&id));
+            match found {
+                Some(j) => {
+                    j.enabled = false;
+                    save_cron(&cf)?;
+                    println!("Job paused: {}", id);
+                }
+                None => anyhow::bail!("Job not found: {}", id),
+            }
+        }
+        CronCmd::Resume { id } => {
+            let mut cf = load_cron()?;
+            let found = cf.jobs.iter_mut().find(|j| j.id.starts_with(&id));
+            match found {
+                Some(j) => {
+                    j.enabled = true;
+                    save_cron(&cf)?;
+                    println!("Job resumed: {}", id);
+                }
+                None => anyhow::bail!("Job not found: {}", id),
+            }
+        }
+        CronCmd::Start => {
+            let cf = load_cron()?;
+            if cf.jobs.is_empty() {
+                anyhow::bail!("No cron jobs. Add one first: arli cron add -n 'job' -s 5m -p 'prompt'");
+            }
+            println!("Starting cron scheduler with {} jobs…", cf.jobs.len());
+            let scheduler = CronScheduler::new();
+
+            for j in &cf.jobs {
+                if !j.enabled {
+                    continue;
+                }
+                let job = CronJob {
+                    id: j.id.clone(),
+                    name: j.name.clone(),
+                    schedule_str: j.schedule.clone(),
+                    prompt: j.prompt.clone(),
+                    deliver: None,
+                    skills: vec![],
+                    enabled: j.enabled,
+                    created_at: chrono::Utc::now(),
+                    last_run_at: None,
+                    next_run_at: None,
+                    run_count: 0,
+                    error_count: 0,
+                };
+                scheduler.add_job(job).await?;
+            }
+
+            // Subscribe to events and print them
+            let mut rx = scheduler.subscribe();
+            tokio::spawn(async move {
+                while let Ok(event) = rx.recv().await {
+                    match event {
+                        CronEvent::JobRunning { job_id } => {
+                            println!("[{}] Running job {}", chrono::Utc::now().format("%H:%M:%S"), &job_id[..8]);
+                        }
+                        CronEvent::JobCompleted { job_id, output } => {
+                            println!("[{}] Job {} done: {}", chrono::Utc::now().format("%H:%M:%S"), &job_id[..8], output);
+                        }
+                        CronEvent::JobFailed { job_id, error } => {
+                            eprintln!("[{}] Job {} FAILED: {}", chrono::Utc::now().format("%H:%M:%S"), &job_id[..8], error);
+                        }
+                        _ => {}
+                    }
+                }
+            });
+
+            println!("Scheduler running. Press Ctrl+C to stop.");
+            // Wait forever (scheduler runs in background tasks)
+            tokio::signal::ctrl_c().await?;
+            println!("\nScheduler stopped.");
+        }
+        CronCmd::Run { id } => {
+            let cf = load_cron()?;
+            let job = cf.jobs.iter().find(|j| j.id.starts_with(&id))
+                .ok_or_else(|| anyhow::anyhow!("Job not found: {}", id))?;
+            println!("Running job: {} ({})", &job.id[..8], job.name);
+            // Use the cron module's execution (currently a placeholder)
+            match arli_core::cron::execute_job(&job.id, &job.prompt).await {
+                Ok(output) => println!("Output: {}", output),
+                Err(e) => eprintln!("Error: {}", e),
+            }
+        }
+    }
+    Ok(())
+}
+
 async fn run_chat(
     model_override: &Option<String>,
     iterations: usize,
@@ -557,6 +776,10 @@ async fn main() -> anyhow::Result<()> {
             };
 
             run_chat(&model_override, iterations, query, resume_id).await?;
+        }
+
+        Commands::Cron(cmd) => {
+            run_cron(cmd).await?;
         }
     }
 

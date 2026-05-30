@@ -100,14 +100,17 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "arli-core",
+ "chrono",
  "clap",
  "crossterm",
  "ratatui",
  "rpassword",
+ "serde",
  "tokio",
  "toml",
  "tracing",
  "tracing-subscriber",
+ "ulid",
 ]
 
 [[package]]

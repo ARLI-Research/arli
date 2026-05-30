@@ -113,6 +113,26 @@ impl SessionStore {
         Ok(())
     }
 
+    /// Create a new session as a child of a parent — used by `arli --resume`.
+    ///
+    /// This preserves session lineage while starting a fresh conversation fork.
+    pub fn resume_session(&self, parent_id: &str, name: Option<&str>) -> Result<String> {
+        let id = ulid::Ulid::new().to_string();
+        let name = name.unwrap_or("resumed");
+
+        self.conn.execute(
+            "INSERT INTO sessions (id, name, parent_session_id) VALUES (?1, ?2, ?3)",
+            params![id, name, parent_id],
+        )?;
+
+        tracing::info!(
+            "Resumed session: {} (parent: {})",
+            id,
+            parent_id
+        );
+        Ok(id)
+    }
+
     /// Create a new session, returning its ID
     pub fn create_session(&self, name: Option<&str>) -> Result<String> {
         let id = ulid::Ulid::new().to_string();

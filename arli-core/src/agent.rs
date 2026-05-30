@@ -6,7 +6,7 @@ use crate::context::PressureLevel;
 use crate::error::{Error, Result};
 use crate::policy::{Decision, PolicyEngine};
 use crate::providers::{
-    ChatMessage, LlmResponseContent, Provider, ToolResult,
+    ChatMessage, LlmResponseContent, Provider, Role, ToolResult,
 };
 use crate::session::SessionStore;
 use crate::tools::ToolRegistry;
@@ -281,10 +281,14 @@ If you don't need a tool to answer, respond directly without calling tools."#,
     pub async fn run(&mut self, initial_message: Option<String>) -> Result<String> {
         info!("Agent '{}' starting", self.config.name);
 
-        if let Some(ref session) = self.session {
-            let sid = session.create_session(Some(&self.config.name))?;
-            self.session_id = Some(sid.clone());
-            info!("Session created: {}", sid);
+        // If no session_id yet (fresh start), create a new session.
+        // If load_history() was called, the session_id is already set.
+        if self.session_id.is_none() {
+            if let Some(ref session) = self.session {
+                let sid = session.create_session(Some(&self.config.name))?;
+                self.session_id = Some(sid.clone());
+                info!("Session created: {}", sid);
+            }
         }
 
         // Assemble and inject system prompt
@@ -616,6 +620,24 @@ Try again in {} seconds.",
 
     pub fn session_id(&self) -> Option<&str> {
         self.session_id.as_deref()
+    }
+
+    /// Load history from a previous session — enables `arli --resume`.
+    ///
+    /// Strips the old system prompt (first message if it's System role) so the agent
+    /// can assemble a fresh one. The parent_session_id is stored for session lineage.
+    pub fn load_history(&mut self, session_id: String, mut messages: Vec<ChatMessage>) {
+        // Strip the old system prompt — we'll rebuild it fresh in run()
+        if messages.first().map(|m| m.role == Role::System).unwrap_or(false) {
+            messages.remove(0);
+        }
+        self.session_id = Some(session_id);
+        self.messages = messages;
+        info!(
+            "Loaded {} messages from previous session {}",
+            self.messages.len(),
+            self.session_id.as_deref().unwrap_or("?")
+        );
     }
 
     /// Check if any budget has been exceeded.

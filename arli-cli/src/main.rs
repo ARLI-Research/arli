@@ -2,7 +2,7 @@ mod tui;
 
 use clap::{Parser, Subcommand};
 use arli_core::{
-    Agent, AgentConfig, Config, SessionStore, ToolRegistry,
+    Agent, AgentConfig, ChatMessage, Config, SessionStore, ToolRegistry,
     OpenAIProvider, PolicyEngine,
 };
 use arli_core::tools::builtin::register_builtin_tools;
@@ -23,6 +23,14 @@ struct Cli {
     /// Max tool-calling iterations
     #[arg(short, long, default_value = "20")]
     iterations: usize,
+
+    /// Resume a specific session by ID
+    #[arg(long, conflicts_with = "continue_session")]
+    resume: Option<String>,
+
+    /// Resume the most recent session
+    #[arg(long, conflicts_with = "resume")]
+    continue_session: bool,
 }
 
 #[derive(Subcommand)]
@@ -328,7 +336,12 @@ fn run_doctor() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn run_chat(model_override: &Option<String>, iterations: usize, query: Option<String>) -> anyhow::Result<()> {
+async fn run_chat(
+    model_override: &Option<String>,
+    iterations: usize,
+    query: Option<String>,
+    resume_id: Option<String>,
+) -> anyhow::Result<()> {
     let config = Config::from_env()?;
     let model = model_override.clone().unwrap_or(config.model);
 
@@ -349,6 +362,36 @@ async fn run_chat(model_override: &Option<String>, iterations: usize, query: Opt
     use arli_core::memory::MemoryStore;
     use std::sync::Arc;
     let memory_store = Arc::new(MemoryStore::open(memory_path)?);
+
+    // Handle --resume / --continue
+    // We must load messages BEFORE moving store into session (Connection is not Clone).
+    let resume_data: Option<(String, Vec<ChatMessage>)> = if let Some(ref rid) = resume_id {
+        // Validate session exists and has messages
+        let messages = match store.load_messages(rid) {
+            Ok(msgs) if !msgs.is_empty() => {
+                println!(
+                    "↻ Resuming session {} ({} messages)…",
+                    &rid[..8.min(rid.len())],
+                    msgs.len()
+                );
+                msgs
+            }
+            Ok(_) => {
+                anyhow::bail!("Session {} has no messages — cannot resume", rid);
+            }
+            Err(e) => {
+                anyhow::bail!("Cannot load session {}: {}", rid, e);
+            }
+        };
+        // Create a child session for lineage
+        let child_id = store.resume_session(
+            rid,
+            Some(&format!("resume-{}", &rid[..8.min(rid.len())])),
+        )?;
+        Some((child_id, messages))
+    } else {
+        None
+    };
 
     let mut tools = ToolRegistry::new();
     register_builtin_tools(&mut tools, Some(db_path), Some(memory_store.clone()), None);
@@ -374,6 +417,11 @@ async fn run_chat(model_override: &Option<String>, iterations: usize, query: Opt
         session,
         iterations.max(1),
     );
+
+    // If resuming, inject loaded history into agent
+    if let Some((child_id, messages)) = resume_data {
+        agent.load_history(child_id, messages);
+    }
 
     match query {
         Some(q) => {
@@ -466,22 +514,49 @@ async fn main() -> anyhow::Result<()> {
             let sessions = store.list_sessions(20)?;
 
             if sessions.is_empty() {
-                println!("No sessions yet.");
+                println!("No sessions yet.\nStart one: arli chat");
             } else {
-                println!("Recent sessions:");
+                println!("Recent sessions:\n");
                 for s in &sessions {
+                    let count = store.message_count(&s.id).unwrap_or(0);
+                    let parent = if s.name.contains("resume-") {
+                        " ↻"
+                    } else {
+                        "  "
+                    };
                     println!(
-                        "  {}  {}  {}  [{}]",
-                        s.id, s.updated_at, s.name, s.status
+                        "  {}{:.36}  {}  {} msgs  {}",
+                        parent,
+                        s.id,
+                        &s.updated_at[..16.min(s.updated_at.len())],
+                        count,
+                        s.name,
                     );
                 }
+                println!("\nResume: arli --resume <id>   or   arli --continue");
             }
         }
 
         Commands::Chat { query } => {
             let model_override = cli.model.clone();
             let iterations = cli.iterations;
-            run_chat(&model_override, iterations, query).await?;
+
+            // Resolve --resume / --continue into an actual session ID
+            let resume_id = if cli.continue_session {
+                // Find the most recent session
+                let data_dir = get_data_dir();
+                let db_path = data_dir.join("sessions.db");
+                let store = SessionStore::open(db_path)?;
+                let sessions = store.list_sessions(1)?;
+                if sessions.is_empty() {
+                    anyhow::bail!("No sessions to resume. Start a new chat with `arli chat`.");
+                }
+                Some(sessions[0].id.clone())
+            } else {
+                cli.resume
+            };
+
+            run_chat(&model_override, iterations, query, resume_id).await?;
         }
     }
 

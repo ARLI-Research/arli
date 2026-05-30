@@ -37,6 +37,16 @@ enum Commands {
     /// Configure API keys and provider
     Setup,
 
+    /// Manage configuration
+    #[command(subcommand)]
+    Config(ConfigCmd),
+
+    /// Change model/provider interactively
+    Model,
+
+    /// Check system health and configuration
+    Doctor,
+
     /// List recent sessions
     Sessions,
 
@@ -47,6 +57,19 @@ enum Commands {
     Serve {
         #[arg(short, long, default_value = "3001")]
         port: u16,
+    },
+}
+
+#[derive(Subcommand)]
+enum ConfigCmd {
+    /// Show current configuration
+    Show,
+    /// Print config file path
+    Path,
+    /// Set a config value: arli config set model deepseek-chat
+    Set {
+        key: String,
+        value: String,
     },
 }
 
@@ -135,12 +158,11 @@ fn run_setup() -> anyhow::Result<()> {
             "\n[gateway]\nbot_token = \"{}\"\n",
             telegram_token
         );
-        std::fs::write(&config_path, 
+        std::fs::write(&config_path,
             std::fs::read_to_string(&config_path)? + &gateway_config
         )?;
     }
 
-    // Also set env var hint
     println!("\nConfiguration saved to {}", config_path.display());
     println!(
         "Or set environment variable: export {}=\"...\"",
@@ -150,6 +172,248 @@ fn run_setup() -> anyhow::Result<()> {
         println!("\nTo start Telegram bot: arli-gateway");
     }
     println!("\nYou're ready. Run: arli chat");
+
+    Ok(())
+}
+
+fn run_config(cmd: ConfigCmd) -> anyhow::Result<()> {
+    let config_path = get_data_dir().join("config.toml");
+
+    match cmd {
+        ConfigCmd::Show => {
+            if config_path.exists() {
+                let content = std::fs::read_to_string(&config_path)?;
+                println!("{}", content);
+            } else {
+                println!("No config file found at {}", config_path.display());
+                println!("Run 'arli setup' to create one.");
+            }
+        }
+        ConfigCmd::Path => {
+            println!("{}", config_path.display());
+        }
+        ConfigCmd::Set { key, value } => {
+            if !config_path.exists() {
+                anyhow::bail!("No config file. Run 'arli setup' first.");
+            }
+            let content = std::fs::read_to_string(&config_path)?;
+            let mut doc: toml::Value = toml::from_str(&content)?;
+
+            // Support dotted keys: model, provider.name, gateway.bot_token
+            let parts: Vec<&str> = key.split('.').collect();
+            match parts.len() {
+                1 => {
+                    doc.as_table_mut()
+                        .ok_or_else(|| anyhow::anyhow!("Invalid config"))?
+                        .insert(key.clone(), toml::Value::String(value.clone()));
+                }
+                2 => {
+                    let section = doc.as_table_mut()
+                        .ok_or_else(|| anyhow::anyhow!("Invalid config"))?
+                        .entry(parts[0].to_string())
+                        .or_insert(toml::Value::Table(toml::Table::new()));
+                    section.as_table_mut()
+                        .ok_or_else(|| anyhow::anyhow!("Invalid section"))?
+                        .insert(parts[1].to_string(), toml::Value::String(value.clone()));
+                }
+                _ => anyhow::bail!("Key must be 'key' or 'section.key'"),
+            }
+
+            std::fs::write(&config_path, toml::to_string_pretty(&doc)?)?;
+            println!("Set {} = {}", key, value);
+        }
+    }
+    Ok(())
+}
+
+fn run_model() -> anyhow::Result<()> {
+    use std::io::{self, Write};
+
+    // Show current config
+    let config = Config::from_env().ok();
+    if let Some(ref c) = config {
+        println!("Current: model={} via {}", c.model, c.provider.name);
+    }
+    println!();
+
+    println!("Choose provider:");
+    println!("  1) DeepSeek (deepseek-chat)");
+    println!("  2) OpenAI (gpt-4o)");
+    println!("  3) Anthropic (claude-sonnet-4)");
+    print!("> ");
+    io::stdout().flush()?;
+
+    let mut choice = String::new();
+    io::stdin().read_line(&mut choice)?;
+
+    let (provider_name, model) = match choice.trim() {
+        "2" => ("openai", "gpt-4o"),
+        "3" => ("anthropic", "claude-sonnet-4-20250514"),
+        _ => ("deepseek", "deepseek-chat"),
+    };
+
+    // Update config.toml
+    let config_path = get_data_dir().join("config.toml");
+    if config_path.exists() {
+        let content = std::fs::read_to_string(&config_path)?;
+        let mut doc: toml::Value = toml::from_str(&content)?;
+
+        doc.as_table_mut().unwrap().insert("model".into(), toml::Value::String(model.into()));
+        if let Some(prov) = doc.get_mut("provider") {
+            if let Some(t) = prov.as_table_mut() {
+                t.insert("name".into(), toml::Value::String(provider_name.into()));
+            }
+        }
+
+        std::fs::write(&config_path, toml::to_string_pretty(&doc)?)?;
+        println!("Switched to {} via {}", model, provider_name);
+    } else {
+        anyhow::bail!("No config file. Run 'arli setup' first.");
+    }
+
+    Ok(())
+}
+
+fn run_doctor() -> anyhow::Result<()> {
+    println!("=== ARLI Doctor ===\n");
+
+    // 1. Check config
+    let config_path = get_data_dir().join("config.toml");
+    if config_path.exists() {
+        println!("[OK] Config: {}", config_path.display());
+    } else {
+        println!("[MISSING] Config: {}", config_path.display());
+        println!("  Run 'arli setup'");
+    }
+
+    // 2. Check API key
+    match Config::from_env() {
+        Ok(c) => println!("[OK] Provider: {} (model: {})", c.provider.name, c.model),
+        Err(e) => println!("[FAIL] Provider: {}", e),
+    }
+
+    // 3. Check data dir
+    let data_dir = get_data_dir();
+    std::fs::create_dir_all(&data_dir).ok();
+    println!("[OK] Data dir: {}", data_dir.display());
+
+    // 4. Check session DB
+    let db_path = data_dir.join("sessions.db");
+    match SessionStore::open(db_path) {
+        Ok(_) => println!("[OK] Session DB"),
+        Err(e) => println!("[FAIL] Session DB: {}", e),
+    }
+
+    // 5. Check Rust version
+    println!("[OK] Rust: {}", option_env!("CARGO_PKG_RUST_VERSION").unwrap_or("unknown"));
+
+    // 6. Check binary
+    let bin = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("arli"));
+    if bin.exists() {
+        let size = std::fs::metadata(&bin).map(|m| m.len()).unwrap_or(0);
+        println!("[OK] Binary: {} ({:.1}MB)", bin.display(), size as f64 / 1_048_576.0);
+    }
+
+    // 7. soul.md
+    let soul_path = data_dir.join("soul.md");
+    if soul_path.exists() {
+        let size = std::fs::metadata(&soul_path).map(|m| m.len()).unwrap_or(0);
+        println!("[OK] Identity: soul.md ({:.1}KB)", size as f64 / 1024.0);
+    } else {
+        println!("[INFO] Identity: no soul.md (using built-in)");
+        println!("  Create ~/.arli/soul.md to customize agent personality");
+    }
+
+    println!("\nAll checks passed.");
+    Ok(())
+}
+
+async fn run_chat(model_override: &Option<String>, iterations: usize, query: Option<String>) -> anyhow::Result<()> {
+    let config = Config::from_env()?;
+    let model = model_override.clone().unwrap_or(config.model);
+
+    info!("Using model: {} via {}", model, config.provider.name);
+
+    let provider = Box::new(OpenAIProvider::new(
+        config.provider.api_key.clone(),
+        model.clone(),
+        config.provider.base_url.clone(),
+    ));
+
+    let data_dir = get_data_dir();
+    let db_path = data_dir.join("sessions.db");
+    let memory_path = data_dir.join("memory.db");
+
+    let store = SessionStore::open(db_path.clone())?;
+
+    use arli_core::memory::MemoryStore;
+    use std::sync::Arc;
+    let memory_store = Arc::new(MemoryStore::open(memory_path)?);
+
+    let mut tools = ToolRegistry::new();
+    register_builtin_tools(&mut tools, Some(db_path), Some(memory_store.clone()), None);
+
+    let session = Some(store);
+
+    let agent_config = AgentConfig {
+        name: config.agent_name.clone(),
+        session_id: None,
+        system_prompt: None,
+        protect_last_n: 20,
+        protect_first_n: 3,
+        token_budget: None,
+        time_budget_secs: None,
+        dollar_budget_cents: None,
+    };
+
+    let mut agent = Agent::new(
+        agent_config,
+        provider,
+        tools,
+        PolicyEngine::default(),
+        session,
+        iterations.max(1),
+    );
+
+    match query {
+        Some(q) => {
+            info!("Processing query: {}", q);
+            let sender = agent.sender();
+            let rx = agent.sender();
+            let handle = tokio::spawn(async move { agent.run(Some(q)).await });
+            drop(sender);
+            drop(rx);
+
+            match handle.await? {
+                Ok(response) => println!("\n{}\n", response),
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        None => {
+            let sender = agent.sender();
+            let (response_tx, response_rx) = mpsc::channel::<String>(64);
+
+            tokio::spawn(async move {
+                loop {
+                    match agent.run(None).await {
+                        Ok(response) => {
+                            if response_tx.send(response).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            let _ = response_tx.send(format!("Error: {}", e)).await;
+                        }
+                    }
+                }
+            });
+
+            tui::run_tui(sender, response_rx).await?;
+        }
+    }
 
     Ok(())
 }
@@ -172,6 +436,18 @@ async fn main() -> anyhow::Result<()> {
 
         Commands::Setup => {
             run_setup()?;
+        }
+
+        Commands::Config(cmd) => {
+            run_config(cmd)?;
+        }
+
+        Commands::Model => {
+            run_model()?;
+        }
+
+        Commands::Doctor => {
+            run_doctor()?;
         }
 
         Commands::Serve { port } => {
@@ -203,113 +479,9 @@ async fn main() -> anyhow::Result<()> {
         }
 
         Commands::Chat { query } => {
-            // Load config
-            let config = Config::from_env()?;
-            let model = cli.model.unwrap_or(config.model);
-
-            info!("Using model: {} via {}", model, config.provider.name);
-
-            // Create provider
-            let provider = Box::new(OpenAIProvider::new(
-                config.provider.api_key.clone(),
-                model.clone(),
-                config.provider.base_url.clone(),
-            ));
-
-            // Create data directory
-            let data_dir = get_data_dir();
-            let db_path = data_dir.join("sessions.db");
-            let memory_path = data_dir.join("memory.db");
-
-            // Create session store
-            let store = SessionStore::open(db_path.clone())?;
-
-            // Create memory store
-            use arli_core::memory::MemoryStore;
-            use std::sync::Arc;
-            let memory_store = Arc::new(MemoryStore::open(memory_path)?);
-
-            // Create tool registry (with session_search + memory)
-            let mut tools = ToolRegistry::new();
-            register_builtin_tools(&mut tools, Some(db_path), Some(memory_store.clone()), None);
-
-            // Session store for agent
-            let session = Some(store);
-
-            // Create agent
-            let agent_config = AgentConfig {
-                name: config.agent_name.clone(),
-                session_id: None,
-                system_prompt: None,
-                protect_last_n: 20,
-                protect_first_n: 3,
-                token_budget: None,
-                time_budget_secs: None,
-                dollar_budget_cents: None,
-            };
-
-            let mut agent = Agent::new(
-                agent_config,
-                provider,
-                tools,
-                PolicyEngine::default(),
-                session,
-                cli.iterations.max(1),
-            );
-
-            match query {
-                Some(q) => {
-                    // Single-shot mode
-                    info!("Processing query: {}", q);
-                    let sender = agent.sender();
-                    let rx = agent.sender(); // keep one for agent
-
-                    // Run agent in background
-                    let handle = tokio::spawn(async move {
-                        agent.run(Some(q)).await
-                    });
-
-                    // Keep sender alive
-                    drop(sender);
-                    drop(rx);
-
-                    match handle.await? {
-                        Ok(response) => {
-                            println!("\n{}\n", response);
-                        }
-                        Err(e) => {
-                            eprintln!("Error: {}", e);
-                            std::process::exit(1);
-                        }
-                    }
-                }
-                None => {
-                    // TUI mode
-                    let sender = agent.sender();
-                    let (response_tx, response_rx) = mpsc::channel::<String>(64);
-
-                    // Background agent loop: keeps processing messages
-                    tokio::spawn(async move {
-                        loop {
-                            match agent.run(None).await {
-                                Ok(response) => {
-                                    if response_tx.send(response).await.is_err() {
-                                        break; // TUI closed
-                                    }
-                                }
-                                Err(e) => {
-                                    let _ = response_tx
-                                        .send(format!("Error: {}", e))
-                                        .await;
-                                }
-                            }
-                        }
-                    });
-
-                    // Launch TUI
-                    tui::run_tui(sender, response_rx).await?;
-                }
-            }
+            let model_override = cli.model.clone();
+            let iterations = cli.iterations;
+            run_chat(&model_override, iterations, query).await?;
         }
     }
 

@@ -142,18 +142,59 @@ If you don't need a tool to answer, respond directly without calling tools."#,
         )
     }
 
+    /// Load identity from `~/.arli/soul.md` if it exists.
+    /// This is analogous to Hermes's soul.md — the agent's core personality.
+    fn load_soul_md() -> Option<String> {
+        let home = std::env::var("ARLI_HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| {
+                let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+                std::path::PathBuf::from(home).join(".arli")
+            });
+        let soul_path = home.join("soul.md");
+        if soul_path.exists() {
+            match std::fs::read_to_string(&soul_path) {
+                Ok(content) => {
+                    let trimmed = content.trim().to_string();
+                    if !trimmed.is_empty() {
+                        tracing::info!("Loaded identity from {}", soul_path.display());
+                        return Some(trimmed);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to read {}: {}", soul_path.display(), e);
+                }
+            }
+        }
+        None
+    }
+
     /// Assemble the 3-tier system prompt.
     ///
-    /// Tier 1 (stable): Identity + tool guidance — doesn't change per turn.
-    /// Tier 2 (context): Working directory info, project files — changes per session.
-    /// Tier 3 (volatile): Memory, metrics, timestamp — changes per turn.
+    /// Priority for Tier 1 (identity):
+    ///   1. config.system_prompt (explicitly set)
+    ///   2. ~/.arli/soul.md (identity file, like Hermes)
+    ///   3. Default built-in prompt
+    ///
+    /// Tier 2 (context): Working directory + project files.
+    /// Tier 3 (volatile): Memory, metrics, timestamp.
     fn assemble_system_prompt(&self) -> String {
         let mut parts = Vec::new();
 
         // Tier 1: Stable identity
-        parts.push(self.config.system_prompt.clone().unwrap_or_else(|| {
-            Self::build_system_prompt(&self.config.name)
-        }));
+        if let Some(ref custom) = self.config.system_prompt {
+            // Explicitly configured prompt (highest priority)
+            parts.push(custom.clone());
+        } else {
+            // Check for ~/.arli/soul.md
+            let soul_md = Self::load_soul_md();
+            if let Some(soul) = soul_md {
+                parts.push(soul);
+            } else {
+                // Fallback to built-in
+                parts.push(Self::build_system_prompt(&self.config.name));
+            }
+        }
 
         // Tier 2: Context — working directory + project files
         let cwd = std::env::current_dir()

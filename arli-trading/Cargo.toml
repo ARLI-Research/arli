@@ -1,0 +1,18 @@
+[package]
+name = "arli-trading"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+arli-core = { path = "../arli-core" }
+serde.workspace = true
+serde_json.workspace = true
+async-trait.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+ulid.workspace = true

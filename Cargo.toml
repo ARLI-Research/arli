@@ -1,0 +1,67 @@
+[workspace]
+resolver = "2"
+members = [
+    "arli-core",
+    "arli-cli",
+    "arli-trading",
+    "arli-gateway",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/arliwork/arli"
+rust-version = "1.80"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# Async trait
+async-trait = "0.1"
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled", "vtab"] }
+
+# UUID generation
+uuid = { version = "1", features = ["v4"] }
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Token counting
+tiktoken-rs = "0.6"
+
+# JSON Value manipulation
+json-patch = "3"  # for JSON schema patching
+
+# Unique IDs
+ulid = "1"
+
+# System
+libc = "0.2"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Config
+toml = "0.8"
+
+# Cron scheduling
+cron = "0.15"

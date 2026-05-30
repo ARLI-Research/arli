@@ -2,34 +2,46 @@
 
 Universal agent infrastructure. Actor-based, swarm-first. ~20MB binary, ~50ms cold start.
 
-```bash
-arli chat                  # TUI chat with any LLM
-arli chat -q "..."         # Single-shot query
-arli-gateway               # Telegram bot
-```
-
----
-
 ## Quick Start
 
+### 1. Install
+
 ```bash
-# Clone and build
+curl -fsSL https://raw.githubusercontent.com/ARLI-Research/arli/main/install.sh | bash
+```
+
+Requires: Linux or macOS. No Rust toolchain needed — downloads pre-built binary.
+Falls back to building from source if no binary for your platform.
+
+### 2. Configure
+
+```bash
+arli setup
+```
+
+Or manually:
+
+```bash
+export DEEPSEEK_API_KEY="sk-..."
+# or: OPENAI_API_KEY, ANTHROPIC_API_KEY
+```
+
+### 3. Chat
+
+```bash
+arli chat                  # Interactive TUI
+arli chat -q "What is Rust?"  # Single query
+```
+
+### Build from source
+
+```bash
 git clone https://github.com/ARLI-Research/arli
 cd arli
 cargo build --release
-
-# Configure
-export DEEPSEEK_API_KEY="sk-..."
-export ARLI_MODEL="deepseek-chat"
-
-# Chat
-./target/release/arli chat
-
-# Single query
-./target/release/arli chat -q "What is Rust?"
-
-# Telegram bot
-export TELEGRAM_BOT_TOKEN="123:abc"
+./target/release/arli setup  # configure API keys
+./target/release/arli chat   # start chatting
+```
 ./target/release/arli-gateway
 ```
 

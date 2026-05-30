@@ -48,7 +48,7 @@ impl MemoryStore {
                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
-            CREATE TABLE IF NOT EXISTS memories_fts USING fts5(
+            CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
                 content,
                 target UNINDEXED,
                 content_rowid='id',

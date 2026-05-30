@@ -48,7 +48,7 @@ enum Commands {
 }
 
 fn get_data_dir() -> PathBuf {
-    let base = std::env::var("PROMETHEUS_HOME")
+    let base = std::env::var("ARLI_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
             let home = dirs_next().unwrap_or_else(|| PathBuf::from("."));
@@ -67,7 +67,7 @@ fn dirs_next() -> Option<PathBuf> {
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            std::env::var("PROMETHEUS_LOG")
+            std::env::var("ARLI_LOG")
                 .unwrap_or_else(|_| "info,arli_core=debug".to_string()),
         )
         .init();

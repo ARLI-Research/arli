@@ -52,11 +52,11 @@ impl Config {
             }
         }
 
-        if let Ok(model) = std::env::var("PROMETHEUS_MODEL") {
+        if let Ok(model) = std::env::var("ARLI_MODEL") {
             config.model = model;
         }
 
-        if let Ok(iterations) = std::env::var("PROMETHEUS_MAX_ITERATIONS") {
+        if let Ok(iterations) = std::env::var("ARLI_MAX_ITERATIONS") {
             config.max_iterations = iterations.parse().unwrap_or(20);
         }
 

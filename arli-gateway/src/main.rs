@@ -295,7 +295,7 @@ impl Gateway {
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            std::env::var("PROMETHEUS_LOG")
+            std::env::var("ARLI_LOG")
                 .unwrap_or_else(|_| "info,arli_gateway=debug".to_string()),
         )
         .init();
@@ -303,7 +303,7 @@ async fn main() -> anyhow::Result<()> {
     let token = std::env::var("TELEGRAM_BOT_TOKEN")
         .map_err(|_| anyhow::anyhow!("TELEGRAM_BOT_TOKEN env var not set"))?;
 
-    let data_dir = std::env::var("PROMETHEUS_HOME")
+    let data_dir = std::env::var("ARLI_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
             dirs_next()

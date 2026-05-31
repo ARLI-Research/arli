@@ -8,6 +8,7 @@ pub mod search;
 pub mod search_files;
 pub mod toolsets;
 pub mod web_search;
+pub mod vision;
 
 pub use delegate::DelegateTaskTool;
 pub use memory::MemoryTool;

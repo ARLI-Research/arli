@@ -57,8 +57,8 @@
 | 17 | Profiles | ✅ |
 | 18 | Webhook subscriptions | ✅ |
 | 19 | Checkpoints | ✅ |
-| 20 | Skill hub |
-| 21 | Credential pools |
+| 20 | Skill hub | ✅ |
+| 21 | Credential pools | ✅ |
 
 ## 📋 TIER 3 (уникальные фичи)
 

@@ -12,6 +12,7 @@
 - Skills (SKILL.md + TOML)
 - Cron scheduler (persistent, CLI management)
 - Telegram gateway (long-poll)
+- Multi-platform gateway (Discord, Slack, WhatsApp)
 - Shell completions (bash/zsh/fish)
 - TUI (ratatui, slash commands, /stats)
 - Install: `curl | bash` + `arli setup`
@@ -48,7 +49,7 @@
 
 | # | Что |
 |---|-----|
-| 14 | Discord/Slack/WhatsApp gateways |
+| 14 | Discord/Slack/WhatsApp gateways | ✅ |
 | 15 | MCP server |
 | 16 | Plugins |
 | 17 | Profiles |

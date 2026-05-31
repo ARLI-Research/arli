@@ -1,294 +1,49 @@
-//! ARLI Gateway — Telegram messaging bridge.
+//! ARLI Gateway — multi-platform messaging bridge.
 //!
-//! Architecture:
-//! - Long-polls Telegram for new messages
-//! - Routes each message to a session-scoped Agent
-//! - Posts agent responses back to the chat
+//! Runs multiple platform adapters (Telegram, Discord, Slack, WhatsApp)
+//! in parallel. Each platform routes messages to session-scoped Agents.
 //!
-//! Uses raw Telegram HTTP API (no heavy framework) — minimal deps.
+//! Configuration (env vars or config.toml [gateway] section):
+//!   TELEGRAM_BOT_TOKEN   — Telegram bot token
+//!   DISCORD_BOT_TOKEN    — Discord bot token
+//!   SLACK_BOT_TOKEN      — Slack bot token (xoxb-...)
+//!   SLACK_APP_TOKEN      — Slack app token (xapp-...) for Socket Mode
+//!   WHATSAPP_PHONE_ID    — WhatsApp Cloud API phone number ID
+//!   WHATSAPP_TOKEN       — WhatsApp Cloud API access token
+//!   WHATSAPP_VERIFY      — WhatsApp webhook verify token
+//!   WHATSAPP_PORT        — WhatsApp webhook port (default: 3000)
 
-use arli_core::{
-    Agent, AgentConfig, AgentMessage, Config,
-    OpenAIProvider, PolicyEngine, SessionStore, ToolRegistry,
-    memory::MemoryStore,
-};
-use arli_core::tools::builtin::register_builtin_tools;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+mod discord;
+mod slack;
+mod telegram;
+mod whatsapp;
+
 use std::path::PathBuf;
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use tracing::{info, warn, error};
+use tracing::info;
 
-// ── Telegram API types ──
-
-#[derive(Debug, Deserialize)]
-struct TelegramUpdate {
-    update_id: i64,
-    message: Option<TelegramMessage>,
-}
-
-#[derive(Debug, Deserialize)]
-struct TelegramMessage {
-    message_id: i64,
-    chat: TelegramChat,
-    text: Option<String>,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-struct TelegramChat {
-    id: i64,
-    #[serde(rename = "type")]
-    chat_type: String,
-    username: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct SendMessageRequest {
-    chat_id: i64,
-    text: String,
-    parse_mode: String,
-}
-
-/// Gateway state — shared across all chats.
-struct Gateway {
-    bot_token: String,
-    api_url: String,
-    agents: Mutex<HashMap<i64, tokio::sync::mpsc::Sender<AgentMessage>>>,
-    last_update_id: Mutex<i64>,
-    data_dir: PathBuf,
-    provider_api_key: String,
-    provider_base_url: Option<String>,
-    model: String,
-}
-
-impl Gateway {
-    fn new(token: String, data_dir: PathBuf) -> anyhow::Result<Self> {
-        let config = Config::from_env()?;
-        Ok(Self {
-            api_url: format!("https://api.telegram.org/bot{}", token),
-            bot_token: token,
-            agents: Mutex::new(HashMap::new()),
-            last_update_id: Mutex::new(0),
-            data_dir,
-            provider_api_key: config.provider.api_key,
-            provider_base_url: config.provider.base_url,
-            model: config.model,
+fn arli_data_dir() -> PathBuf {
+    std::env::var("ARLI_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::env::var("HOME")
+                .map(|h| PathBuf::from(h).join(".arli"))
+                .unwrap_or_else(|_| PathBuf::from(".arli"))
         })
-    }
+}
 
-    /// Send a message to a Telegram chat.
-    async fn send_message(&self, chat_id: i64, text: &str) -> anyhow::Result<()> {
-        let url = format!("{}/sendMessage", self.api_url);
-        let req = SendMessageRequest {
-            chat_id,
-            text: text.to_string(),
-            parse_mode: "Markdown".to_string(),
-        };
-
-        let client = reqwest::Client::new();
-        client.post(&url).json(&req).send().await?;
-        Ok(())
-    }
-
-    /// Long-poll for updates.
-    async fn get_updates(&self) -> anyhow::Result<Vec<TelegramUpdate>> {
-        let mut last_id = self.last_update_id.lock().await;
-        let url = format!(
-            "{}/getUpdates?offset={}&timeout=30",
-            self.api_url, *last_id + 1
-        );
-
-        let client = reqwest::Client::new();
-        let resp: serde_json::Value = client.get(&url).send().await?.json().await?;
-
-        let updates: Vec<TelegramUpdate> = if resp["ok"].as_bool().unwrap_or(false) {
-            serde_json::from_value(resp["result"].clone()).unwrap_or_default()
+fn resolve_token(env_var: &str, config_key: &str) -> Option<String> {
+    std::env::var(env_var).ok().or_else(|| {
+        let config_path = arli_data_dir().join("config.toml");
+        if config_path.exists() {
+            std::fs::read_to_string(&config_path).ok().and_then(|s| {
+                toml::from_str::<toml::Value>(&s).ok().and_then(|v| {
+                    v.get("gateway")?.get(config_key)?.as_str().map(String::from)
+                })
+            })
         } else {
-            warn!("Telegram API error: {:?}", resp);
-            return Ok(vec![]);
-        };
-
-        // Update last_id
-        for u in &updates {
-            *last_id = (*last_id).max(u.update_id);
+            None
         }
-
-        Ok(updates)
-    }
-
-    /// Create an agent for a chat if it doesn't exist.
-    async fn get_or_create_agent(
-        &self,
-        chat_id: i64,
-    ) -> anyhow::Result<tokio::sync::mpsc::Sender<AgentMessage>> {
-        let mut agents = self.agents.lock().await;
-
-        if let Some(sender) = agents.get(&chat_id) {
-            return Ok(sender.clone());
-        }
-
-        info!("Creating agent for chat {}", chat_id);
-
-        // Session DB per chat
-        let db_path = self.data_dir.join(format!("chat-{}.db", chat_id));
-        let store = SessionStore::open(db_path.clone())?;
-
-        // Memory store
-        let memory_path = self.data_dir.join("memory.db");
-        let memory_store = Arc::new(MemoryStore::open(memory_path)?);
-
-        // Provider
-        let provider = Box::new(OpenAIProvider::new(
-            self.provider_api_key.clone(),
-            self.model.clone(),
-            self.provider_base_url.clone(),
-        ));
-
-        // Tools
-        let mut tools = ToolRegistry::new();
-        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None);
-
-        // Agent
-        let agent_config = AgentConfig {
-            name: format!("tg-{}", chat_id),
-            session_id: None,
-            system_prompt: Some(format!(
-                "You are ARLI, an AI agent. You are communicating via Telegram. \
-                 Current chat ID: {}. Respond in the user's language. \
-                 Be concise — Telegram messages work best when brief.",
-                chat_id
-            )),
-            protect_last_n: 20,
-            protect_first_n: 3,
-            token_budget: None,
-            time_budget_secs: None,
-            dollar_budget_cents: None,
-        };
-
-        let mut agent = Agent::new(
-            agent_config,
-            provider,
-            tools,
-            PolicyEngine::default(),
-            Some(store),
-            20,
-        );
-
-        let sender = agent.sender();
-        let gateway_tx = self.api_url.clone();
-        let chat_id_copy = chat_id;
-
-        // Spawn the agent's mailbox loop
-        tokio::spawn(async move {
-            loop {
-                match agent.run(None).await {
-                    Ok(response) => {
-                        // Send response back via Telegram
-                        let url = format!("{}/sendMessage", gateway_tx);
-                        let req = SendMessageRequest {
-                            chat_id: chat_id_copy,
-                            text: if response.len() > 4000 {
-                                format!("{}... _(truncated)_", &response[..4000])
-                            } else {
-                                response
-                            },
-                            parse_mode: "Markdown".to_string(),
-                        };
-                        if let Err(e) = reqwest::Client::new().post(&url).json(&req).send().await {
-                            error!("Failed to send Telegram response: {}", e);
-                        }
-                    }
-                    Err(e) => {
-                        error!("Agent error for chat {}: {}", chat_id_copy, e);
-                        // Agent died — remove from registry so it gets recreated
-                        break;
-                    }
-                }
-            }
-        });
-
-        agents.insert(chat_id, sender.clone());
-        Ok(sender)
-    }
-
-    /// Process messages from incoming updates.
-    async fn process_updates(&self, updates: Vec<TelegramUpdate>) {
-        for update in updates {
-            if let Some(msg) = update.message {
-                let chat_id = msg.chat.id;
-                let text = match msg.text {
-                    Some(ref t) => t.clone(),
-                    None => continue,
-                };
-
-                info!("TG message from {}: {}", chat_id, text);
-
-                // Handle commands
-                if text == "/start" {
-                    if let Err(e) = self.send_message(chat_id, "🔥 ARLI agent is ready. Send a message to begin.").await {
-                        error!("Send error: {}", e);
-                    }
-                    continue;
-                }
-
-                if text == "/help" {
-                    let help = "ARLI Agent Harness\n\n\
-                        Commands:\n\
-                        /start — Initialize agent\n\
-                        /help — This help\n\
-                        /reset — Reset conversation\n\n\
-                        Just send a message to start chatting!";
-                    if let Err(e) = self.send_message(chat_id, help).await {
-                        error!("Send error: {}", e);
-                    }
-                    continue;
-                }
-
-                if text == "/reset" {
-                    self.agents.lock().await.remove(&chat_id);
-                    if let Err(e) = self.send_message(chat_id, "Conversation reset. New session started.").await {
-                        error!("Send error: {}", e);
-                    }
-                    continue;
-                }
-
-                // Route to agent
-                match self.get_or_create_agent(chat_id).await {
-                    Ok(sender) => {
-                        if let Err(e) = sender.send(AgentMessage::UserMessage(text)).await {
-                            error!("Failed to send to agent {}: {}", chat_id, e);
-                            self.agents.lock().await.remove(&chat_id);
-                        }
-                    }
-                    Err(e) => {
-                        error!("Cannot create agent for {}: {}", chat_id, e);
-                        let _ = self.send_message(chat_id, "⚠️ Agent initialization failed. Try again.").await;
-                    }
-                }
-            }
-        }
-    }
-
-    /// Main event loop — long-poll forever.
-    async fn run_forever(self: Arc<Self>) {
-        info!("ARLI Gateway starting...");
-
-        loop {
-            let updates = match self.get_updates().await {
-                Ok(u) => u,
-                Err(e) => {
-                    error!("Poll error: {}", e);
-                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-                    continue;
-                }
-            };
-
-            if !updates.is_empty() {
-                self.process_updates(updates).await;
-            }
-        }
-    }
+    })
 }
 
 #[tokio::main]
@@ -300,46 +55,74 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    // Read token: env var first, then config.toml
-    let token = std::env::var("TELEGRAM_BOT_TOKEN").ok().or_else(|| {
-        let config_path = std::env::var("ARLI_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| {
-                std::env::var("HOME")
-                    .map(|h| PathBuf::from(h).join(".arli"))
-                    .unwrap_or_else(|_| PathBuf::from(".arli"))
-            })
-            .join("config.toml");
-        if config_path.exists() {
-            std::fs::read_to_string(&config_path).ok().and_then(|s| {
-                toml::from_str::<toml::Value>(&s).ok().and_then(|v| {
-                    v.get("gateway")?.get("bot_token")?.as_str().map(String::from)
-                })
-            })
-        } else {
-            None
-        }
-    })
-    .ok_or_else(|| anyhow::anyhow!(
-        "TELEGRAM_BOT_TOKEN not set. Run 'arli setup' or set TELEGRAM_BOT_TOKEN env var"
-    ))?;
-
-    let data_dir = std::env::var("ARLI_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            dirs_next()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join(".arli")
-        });
-
+    let data_dir = arli_data_dir();
     std::fs::create_dir_all(&data_dir)?;
 
-    let gateway = Arc::new(Gateway::new(token, data_dir)?);
-    gateway.run_forever().await;
+    let mut handles = Vec::new();
+
+    // ── Telegram ──
+    if resolve_token("TELEGRAM_BOT_TOKEN", "telegram_token").is_some() {
+        info!("Platform: Telegram");
+        let dd = data_dir.clone();
+        handles.push(tokio::spawn(async move {
+            if let Err(e) = telegram::run(dd).await {
+                tracing::error!("Telegram gateway died: {}", e);
+            }
+        }));
+    }
+
+    // ── Discord ──
+    if let Some(token) = resolve_token("DISCORD_BOT_TOKEN", "discord_token") {
+        info!("Platform: Discord");
+        let dd = data_dir.clone();
+        handles.push(tokio::spawn(async move {
+            if let Err(e) = discord::run(token, dd).await {
+                tracing::error!("Discord gateway died: {}", e);
+            }
+        }));
+    }
+
+    // ── Slack ──
+    let slack_bot = resolve_token("SLACK_BOT_TOKEN", "slack_bot_token");
+    let slack_app = resolve_token("SLACK_APP_TOKEN", "slack_app_token");
+    if let (Some(bot_token), Some(app_token)) = (slack_bot, slack_app) {
+        info!("Platform: Slack (Socket Mode)");
+        let dd = data_dir.clone();
+        handles.push(tokio::spawn(async move {
+            if let Err(e) = slack::run(bot_token, app_token, dd).await {
+                tracing::error!("Slack gateway died: {}", e);
+            }
+        }));
+    }
+
+    // ── WhatsApp ──
+    let wa_phone = resolve_token("WHATSAPP_PHONE_ID", "whatsapp_phone_id");
+    let wa_token = resolve_token("WHATSAPP_TOKEN", "whatsapp_token");
+    let wa_verify = resolve_token("WHATSAPP_VERIFY", "whatsapp_verify");
+    if let (Some(phone_id), Some(token), Some(verify)) = (wa_phone, wa_token, wa_verify) {
+        let port: u16 = std::env::var("WHATSAPP_PORT")
+            .ok()
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(3000);
+        info!("Platform: WhatsApp (port {})", port);
+        let dd = data_dir.clone();
+        handles.push(tokio::spawn(async move {
+            if let Err(e) = whatsapp::run(phone_id, token, verify, port, dd).await {
+                tracing::error!("WhatsApp gateway died: {}", e);
+            }
+        }));
+    }
+
+    if handles.is_empty() {
+        // Backward compat: if no tokens, default to Telegram
+        info!("No platform tokens configured. Defaulting to Telegram...");
+        telegram::run(data_dir).await?;
+    } else {
+        info!("Gateway running {} platform(s)", handles.len());
+        for handle in handles {
+            let _ = handle.await;
+        }
+    }
 
     Ok(())
-}
-
-fn dirs_next() -> Option<PathBuf> {
-    std::env::var("HOME").ok().map(PathBuf::from)
 }

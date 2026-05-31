@@ -186,6 +186,7 @@ impl SlackBot {
             arli_core::PolicyEngine::default(),
             Some(store),
             20,
+            None,
         );
 
         let sender = agent.sender();

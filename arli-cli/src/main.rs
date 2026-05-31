@@ -738,6 +738,7 @@ async fn run_chat(
         PolicyEngine::default(),
         session,
         iterations.max(1),
+        None,
     );
 
     // If resuming, inject loaded history into agent

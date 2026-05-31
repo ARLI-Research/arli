@@ -180,6 +180,7 @@ impl Swarm {
             policy,
             session,
             max_iterations,
+            None,
         );
 
         let sender = agent.sender();

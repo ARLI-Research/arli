@@ -1,9 +1,11 @@
 use tokio::sync::mpsc;
+use std::sync::Arc;
 use tracing::{info, debug, warn};
 
 use crate::compaction::Compactor;
 use crate::context::PressureLevel;
 use crate::error::{Error, Result};
+use crate::guardrail::{GuardDecision, Guardrail, ToolCallRecord};
 use crate::policy::{Decision, PolicyEngine};
 use crate::providers::{
     ChatMessage, LlmResponseContent, Provider, Role, ToolResult,
@@ -90,6 +92,11 @@ pub struct Agent {
 
     rx: mpsc::Receiver<AgentMessage>,
     tx: mpsc::Sender<AgentMessage>,
+
+    /// Safety guardrail (Pre-Reply checkpoint from AgentDoG 1.5)
+    guardrail: Option<Arc<Guardrail>>,
+    /// Tool call history for the current trajectory
+    tool_history: Vec<ToolCallRecord>,
 }
 
 impl Agent {
@@ -100,6 +107,7 @@ impl Agent {
         policy: PolicyEngine,
         session: Option<SessionStore>,
         max_iterations: usize,
+        guardrail: Option<Arc<Guardrail>>,
     ) -> Self {
         let (tx, rx) = mpsc::channel(64);
         Self {
@@ -119,6 +127,8 @@ impl Agent {
             grace_period_used: false,
             rx,
             tx,
+            guardrail,
+            tool_history: Vec::new(),
         }
     }
 
@@ -510,11 +520,33 @@ If you don't need a tool to answer, respond directly without calling tools."#,
             match response.content {
                 LlmResponseContent::Text { content } => {
                     info!("Agent completed: {} chars", content.len());
-                    let msg = ChatMessage::assistant_text(&content);
+
+                    // --- PRE-REPLY GUARDRAIL (AgentDoG 1.5) ---
+                    let final_re = if let Some(ref guard) = self.guardrail {
+                        let decision = guard
+                            .evaluate(&self.messages, &content, &self.tool_history)
+                            .await;
+                        match decision {
+                            GuardDecision::Safe => content,
+                            GuardDecision::Unsafe { classification, replacement } => {
+                                warn!(
+                                    "Guardrail BLOCKED reply: {:?} / {:?} / {:?}",
+                                    classification.risk_source,
+                                    classification.failure_mode,
+                                    classification.real_world_harm
+                                );
+                                replacement
+                            }
+                        }
+                    } else {
+                        content
+                    };
+
+                    let msg = ChatMessage::assistant_text(&final_re);
                     self.save_message(&msg);
                     self.messages.push(msg);
                     self.state = AgentState::Completed;
-                    return Ok(content);
+                    return Ok(final_re);
                 }
                 LlmResponseContent::ToolCalls {
                     content: _text,
@@ -595,6 +627,17 @@ Try again in {} seconds.",
                                 format!("RATE LIMITED: {}", reason)
                             }
                         };
+
+                        // Record tool call for trajectory audit (AgentDoG 1.5)
+                        self.tool_history.push(ToolCallRecord::new(
+                            &tc.function.name,
+                            Some(tc.function.arguments.clone()),
+                            Some(result_content.clone()),
+                            !result_content.starts_with("Error:")
+                                && !result_content.starts_with("ACCESS DENIED")
+                                && !result_content.starts_with("APPROVAL REQUIRED")
+                                && !result_content.starts_with("RATE LIMITED"),
+                        ));
 
                         let tool_result = ToolResult::new(tc.id.clone(), result_content);
                         let result_msg = tool_result.as_message();

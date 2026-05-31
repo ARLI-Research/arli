@@ -109,6 +109,7 @@ impl DiscordBot {
             arli_core::PolicyEngine::default(),
             Some(store),
             20,
+            None,
         );
 
         let user_tx = agent.sender();

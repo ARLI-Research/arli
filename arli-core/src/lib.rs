@@ -6,6 +6,7 @@ pub mod cron;
 pub mod error;
 pub mod health;
 pub mod hooks;
+pub mod mcp;
 pub mod memory;
 pub mod policy;
 pub mod providers;

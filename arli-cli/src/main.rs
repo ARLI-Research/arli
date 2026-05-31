@@ -78,6 +78,9 @@ enum Commands {
         #[arg(short, long, default_value = "bash")]
         shell: String,
     },
+
+    /// Start MCP server (Model Context Protocol) on stdio
+    Mcp,
 }
 
 #[derive(Subcommand)]
@@ -805,6 +808,20 @@ async fn main() -> anyhow::Result<()> {
                 "fish" => generate(Shell::Fish, &mut cmd, binary_name, &mut std::io::stdout()),
                 other => anyhow::bail!("Unknown shell '{}'. Use: bash, zsh, fish", other),
             }
+        }
+
+        Commands::Mcp => {
+            use arli_core::mcp::McpServer;
+            use arli_core::tools::builtin::register_builtin_tools;
+
+            let data_dir = get_data_dir();
+            let db_path = data_dir.join("sessions.db");
+
+            let mut tools = arli_core::ToolRegistry::new();
+            register_builtin_tools(&mut tools, Some(db_path), None, None);
+
+            let mut server = McpServer::new(tools);
+            server.run_sync()?;
         }
     }
 

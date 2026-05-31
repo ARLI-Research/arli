@@ -50,7 +50,7 @@
 | # | Что |
 |---|-----|
 | 14 | Discord/Slack/WhatsApp gateways | ✅ |
-| 15 | MCP server |
+| 15 | MCP server | ✅ |
 | 16 | Plugins |
 | 17 | Profiles |
 | 18 | Webhook subscriptions |

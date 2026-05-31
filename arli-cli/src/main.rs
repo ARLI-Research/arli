@@ -93,6 +93,25 @@ enum Commands {
     /// Manage webhook subscriptions
     #[command(subcommand)]
     Webhook(WebhookCmd),
+
+    /// Manage checkpoints
+    #[command(subcommand)]
+    Checkpoint(CheckpointCmd),
+}
+
+#[derive(Subcommand)]
+enum CheckpointCmd {
+    /// List checkpoints for current session
+    List,
+    /// Create a new checkpoint
+    Create,
+    /// Rollback to last checkpoint
+    Rollback,
+    /// Prune old checkpoints (keep last N)
+    Prune {
+        #[arg(default_value = "5")]
+        keep: usize,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1040,6 +1059,43 @@ async fn main() -> anyhow::Result<()> {
                         }
                     }
                     webhooks::serve(state, port).await?;
+                }
+            }
+        }
+
+        Commands::Checkpoint(cmd) => {
+            use arli_core::checkpoints::CheckpointManager;
+
+            let base = get_data_dir().join("checkpoints");
+            let session_id = "cli".to_string(); // TODO: use actual session ID
+            let mut cm = CheckpointManager::new(base, session_id)?;
+
+            match cmd {
+                CheckpointCmd::List => {
+                    let cps = cm.list();
+                    if cps.is_empty() {
+                        println!("No checkpoints.");
+                    } else {
+                        println!("Checkpoints:\n");
+                        for cp in cps {
+                            println!("  #{}  {}  ({} files)", cp.id, cp.timestamp, cp.files.len());
+                            for (path, _) in &cp.files {
+                                println!("    {}", path);
+                            }
+                        }
+                    }
+                }
+                CheckpointCmd::Create => {
+                    let id = cm.new_checkpoint();
+                    println!("Checkpoint #{} created.", id);
+                }
+                CheckpointCmd::Rollback => {
+                    let restored = cm.rollback()?;
+                    println!("Rollback complete: {} files restored.", restored);
+                }
+                CheckpointCmd::Prune { keep } => {
+                    let removed = cm.prune(keep)?;
+                    println!("Pruned {} checkpoints (keeping {}).", removed, keep);
                 }
             }
         }

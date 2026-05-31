@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod checkpoints;
 pub mod compaction;
 pub mod config;
 pub mod context;

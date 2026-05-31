@@ -1,9 +1,11 @@
 pub mod builtin;
 pub mod browser;
 pub mod delegate;
+pub mod execute_code;
 pub mod http_get;
 pub mod memory;
 pub mod patch;
+pub mod process;
 pub mod search;
 pub mod search_files;
 pub mod toolsets;

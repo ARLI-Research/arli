@@ -318,6 +318,7 @@ impl Tool for ShellTool {
 use std::path::PathBuf;
 use std::sync::Arc;
 use crate::memory::MemoryStore;
+use crate::process::ProcessManager;
 use crate::swarm::Swarm;
 
 use super::search::SessionSearchTool;
@@ -328,18 +329,22 @@ use super::vision::VisionTool;
 use super::voice::VoiceTool;
 use super::memory::MemoryTool;
 use super::delegate::DelegateTaskTool;
+use super::execute_code::ExecuteCodeTool;
 use super::patch::PatchTool;
+use super::process::ProcessTool;
 use super::browser::BrowserTool;
 
 /// Register all built-in tools.
 /// Pass a database path to enable the session_search tool.
 /// Pass a memory store to enable the memory tool.
 /// Pass a swarm to enable the delegate_task tool.
+/// Pass a process manager to enable the process tool.
 pub fn register_builtin_tools(
     registry: &mut super::ToolRegistry,
     db_path: Option<PathBuf>,
     memory_store: Option<Arc<MemoryStore>>,
     swarm: Option<Arc<Swarm>>,
+    process_manager: Option<Arc<ProcessManager>>,
 ) {
     registry.register(Box::new(ReadFileTool));
     registry.register(Box::new(WriteFileTool));
@@ -351,6 +356,7 @@ pub fn register_builtin_tools(
     registry.register(Box::new(VoiceTool));
     registry.register(Box::new(PatchTool));
     registry.register(Box::new(BrowserTool));
+    registry.register(Box::new(ExecuteCodeTool));
 
     if let Some(path) = db_path {
         registry.register(Box::new(SessionSearchTool::new(path)));
@@ -362,5 +368,9 @@ pub fn register_builtin_tools(
 
     if let Some(swarm) = swarm {
         registry.register(Box::new(DelegateTaskTool::new(swarm)));
+    }
+
+    if let Some(pm) = process_manager {
+        registry.register(Box::new(ProcessTool::new(pm)));
     }
 }

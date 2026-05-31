@@ -12,6 +12,7 @@ pub mod mcp;
 pub mod memory;
 pub mod plugins;
 pub mod policy;
+pub mod process;
 pub mod profiles;
 pub mod providers;
 pub mod sandbox;

@@ -6,13 +6,11 @@
 //! Each subscription has a name and optional prompt template.
 //! The webhook payload is available as JSON in the agent message.
 
-use crate::agent::AgentMessage;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{info, warn};
+use tracing::info;
 
 /// A webhook subscription.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,6 +27,12 @@ pub struct WebhookSubscription {
 pub struct WebhookState {
     subscriptions: Mutex<HashMap<String, WebhookSubscription>>,
     agent_tx: Option<tokio::sync::mpsc::Sender<(String, String)>>,
+}
+
+impl Default for WebhookState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl WebhookState {

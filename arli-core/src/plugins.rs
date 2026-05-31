@@ -13,10 +13,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
-use tracing::{info, warn, error};
+use tracing::{info, warn};
 
 // ── Manifest format ──
 
@@ -59,6 +59,7 @@ pub struct PluginToolDef {
 
 struct PluginProcess {
     child: Child,
+    #[allow(dead_code)]
     plugin_name: String,
 }
 
@@ -228,7 +229,7 @@ impl PluginManager {
 
         info!("Loading plugin: {} ({})", manifest.plugin.name, exec_path.display());
 
-        let mut child = Command::new(&exec_path)
+        let child = Command::new(&exec_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -279,7 +280,7 @@ impl PluginManager {
 
     /// Register all loaded plugin tools into a ToolRegistry.
     pub fn register_tools(&self, registry: &mut ToolRegistry) {
-        for (_, info) in &self.loaded {
+        for info in self.loaded.values() {
             for tool_def in &info.manifest.tools {
                 let wrapper = PluginToolWrapper {
                     name: tool_def.name.clone(),
@@ -308,7 +309,7 @@ impl PluginManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
+    
 
     #[test]
     fn test_parse_manifest() {

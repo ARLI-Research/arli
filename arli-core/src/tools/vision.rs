@@ -114,7 +114,7 @@ impl Tool for VisionTool {
             let ext = content_type.strip_prefix("image/").unwrap_or("png");
             let safe_name = url
                 .split('/')
-                .last()
+                .next_back()
                 .unwrap_or("image")
                 .split('?')
                 .next()

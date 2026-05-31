@@ -10,7 +10,7 @@
 //! Similar to Hermes' process manager.
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -151,10 +151,10 @@ impl ProcessManager {
         // Spawn a thread to wait for completion
         {
             let processes = processes.clone();
-            let id = id_clone.clone();
+            let _id = id_clone.clone();
             std::thread::spawn(move || {
                 // We need to keep child handle alive to wait
-                let mut child = {
+                {
                     let guard = processes.lock().unwrap();
                     // Can't move out of Mutex — we'll poll instead
                     drop(guard);
@@ -268,9 +268,9 @@ impl ProcessManager {
     }
 
     /// Write data to process stdin.
-    pub fn write_stdin(&self, id: &str, data: &str) -> Result<(), String> {
+    pub fn write_stdin(&self, id: &str, _data: &str) -> Result<(), String> {
         let guard = self.processes.lock().unwrap();
-        let proc = guard.get(id).ok_or_else(|| format!("Process {} not found", id))?;
+        let _proc = guard.get(id).ok_or_else(|| format!("Process {} not found", id))?;
 
         // Note: stdin writing requires the handle to be stored separately.
         // For simplicity, we'll note this limitation.

@@ -1,8 +1,8 @@
 # ARLI Roadmap
 
-## Что уже есть (v0.2.9)
+## Что уже есть (v0.2.19)
 
-- 13 инструментов (read/write/patch/shell/search/http/browser/web_search/vision/voice/session_search/memory/delegate)
+- 13+ инструментов (read/write/patch/shell/search/http/browser/web_search/vision/voice/session_search/memory/delegate/execute_code/process)
 - 4 провайдера (OpenAI, DeepSeek, Anthropic, OpenRouter)
 - Agent actor (mailbox, pause/resume/kill/redirect)
 - Context manager (tiktoken-rs, pressure, авто-компакция)
@@ -14,11 +14,14 @@
 - Telegram gateway (long-poll)
 - Multi-platform gateway (Discord, Slack, WhatsApp)
 - MCP server (JSON-RPC stdio, Claude Desktop)
-- Plugin system (subprocess JSON-RPC, plugin.toml)
+- Skill hub + Credential pools
+- Safety guardrail (AgentDoG 1.5 — Pre-Reply checkpoint, 3D taxonomy, Hybrid judge)
+- Background process management
+- Execute code sandbox (namespace isolation)
 - Shell completions (bash/zsh/fish)
 - TUI (ratatui, slash commands, /stats)
 - Install: `curl | bash` + `arli setup`
-- 46 тестов
+- 86 тестов
 - CI/CD (GitHub Actions, release binaries)
 
 ---
@@ -47,7 +50,7 @@
 | 13 | Voice (TTS/STT) | ✅ |
 | 22 | Shell completions | ✅ |
 
-## ⏳ TIER 2 — REMAINING
+## ✅ TIER 2 — DONE (v0.2.10–v0.2.16)
 
 | # | Что |
 |---|-----|
@@ -60,6 +63,22 @@
 | 20 | Skill hub | ✅ |
 | 21 | Credential pools | ✅ |
 
-## 📋 TIER 3 (уникальные фичи)
+## ✅ TIER 2.5 — DONE (v0.2.17–v0.2.19)
 
-23–28: Trading live, Kanban, Python sandbox, Metrics, Auto-optimization, Web UI
+| # | Что | Статус |
+|---|-----|--------|
+| — | execute_code sandbox | ✅ v0.2.17 |
+| — | Background process management | ✅ v0.2.17 |
+| — | AgentDoG safety guardrail | ✅ v0.2.18 |
+| — | Чистка: 0 warnings, 86 тестов | ✅ v0.2.19 |
+
+## 📋 TIER 3 — PRODUCTION
+
+| # | Что | Статус |
+|---|-----|--------|
+| 23 | Trading live (hypersdk integration) | ⏳ |
+| 24 | Kanban — task boards | ⏳ |
+| 25 | Python sandbox improvements | ⏳ |
+| 26 | Metrics / telemetry | ⏳ |
+| 27 | Auto-optimization (DSPy-like) | ⏳ |
+| 28 | Web UI | ⏳ |

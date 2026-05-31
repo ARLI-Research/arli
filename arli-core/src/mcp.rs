@@ -22,6 +22,7 @@ use tracing::{info, warn, error};
 
 #[derive(Debug, Deserialize)]
 struct JsonRpcRequest {
+    #[allow(dead_code)]
     jsonrpc: String,
     #[serde(default)]
     id: Option<Value>,
@@ -57,9 +58,11 @@ const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Debug, Serialize, Deserialize)]
 struct InitializeResult {
-    protocolVersion: String,
+    #[serde(rename = "protocolVersion")]
+    protocol_version: String,
     capabilities: ServerCapabilities,
-    serverInfo: ServerInfo,
+    #[serde(rename = "serverInfo")]
+    server_info: ServerInfo,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -131,11 +134,11 @@ impl McpServer {
         match method {
             "initialize" => {
                 let result = InitializeResult {
-                    protocolVersion: PROTOCOL_VERSION.to_string(),
+                    protocol_version: PROTOCOL_VERSION.to_string(),
                     capabilities: ServerCapabilities {
                         tools: ToolsCapability {},
                     },
-                    serverInfo: ServerInfo {
+                    server_info: ServerInfo {
                         name: SERVER_NAME.to_string(),
                         version: SERVER_VERSION.to_string(),
                     },
@@ -367,8 +370,8 @@ mod tests {
 
         let resp = server.handle_request(req).unwrap();
         let result: InitializeResult = serde_json::from_value(resp.result.unwrap()).unwrap();
-        assert_eq!(result.protocolVersion, "2024-11-05");
-        assert_eq!(result.serverInfo.name, "arli-mcp");
+        assert_eq!(result.protocol_version, "2024-11-05");
+        assert_eq!(result.server_info.name, "arli-mcp");
     }
 
     #[test]

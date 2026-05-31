@@ -63,6 +63,7 @@ pub struct AgentHandle {
 
 impl AgentHandle {
     /// Send a steering command to the agent.
+    #[allow(dead_code)]
     async fn send(&self, msg: AgentMessage) -> std::result::Result<(), mpsc::error::SendError<AgentMessage>> {
         self.sender.send(msg).await
     }

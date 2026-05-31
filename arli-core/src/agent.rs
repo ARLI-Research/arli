@@ -257,22 +257,19 @@ If you don't need a tool to answer, respond directly without calling tools."#,
         for name in &candidates {
             let path = cwd.join(name);
             if path.exists() {
-                match std::fs::read_to_string(&path) {
-                    Ok(content) => {
-                        // Truncate very large files
-                        let truncated = if content.len() > 8000 {
-                            format!("{}...\n[truncated at 8000 chars, {} total]", 
-                                &content[..8000], content.len())
-                        } else {
-                            content
-                        };
-                        found.push(format!(
-                            "--- {} ---\n{}",
-                            name,
-                            truncated
-                        ));
-                    }
-                    Err(_) => {}
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    // Truncate very large files
+                    let truncated = if content.len() > 8000 {
+                        format!("{}...\n[truncated at 8000 chars, {} total]", 
+                            &content[..8000], content.len())
+                    } else {
+                        content
+                    };
+                    found.push(format!(
+                        "--- {} ---\n{}",
+                        name,
+                        truncated
+                    ));
                 }
             }
         }

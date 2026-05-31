@@ -14,7 +14,7 @@ use arli_core::tools::builtin::register_builtin_tools;
 use axum::{
     extract::{Query, State},
     response::IntoResponse,
-    routing::{get, post},
+    routing::get,
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -60,6 +60,7 @@ struct WebhookValue {
 #[derive(Debug, Deserialize)]
 struct WhatsAppMessage {
     from: Option<String>,
+    #[allow(dead_code)]
     id: Option<String>,
     text: Option<WhatsAppText>,
 }
@@ -88,13 +89,16 @@ struct WaState {
     /// Per-phone agent senders.
     agents: Mutex<HashMap<String, tokio::sync::mpsc::Sender<AgentMessage>>>,
     /// Response channel: (to_phone, text).
+    #[allow(dead_code)]
     response_tx: tokio::sync::mpsc::Sender<(String, String)>,
     data_dir: PathBuf,
     provider_api_key: String,
     provider_base_url: Option<String>,
     model: String,
     /// WhatsApp Cloud API config.
+    #[allow(dead_code)]
     phone_number_id: String,
+    #[allow(dead_code)]
     access_token: String,
     verify_token: String,
 }

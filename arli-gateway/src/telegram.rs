@@ -24,6 +24,7 @@ struct TelegramUpdate {
 
 #[derive(Debug, Deserialize)]
 struct TelegramMessage {
+    #[allow(dead_code)]
     message_id: i64,
     chat: TelegramChat,
     text: Option<String>,

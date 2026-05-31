@@ -161,7 +161,7 @@ impl Sandbox {
             cmd.arg("--");
             cmd.arg("sh");
             cmd.arg("-c");
-            cmd.arg(&Self::wrap_command(command, config));
+            cmd.arg(Self::wrap_command(command, config));
 
             for var in &config.env_passthrough {
                 if let Ok(val) = std::env::var(var) {
@@ -219,7 +219,7 @@ impl Sandbox {
     fn execute_direct(command: &str, config: &SandboxConfig) -> Option<Output> {
         let mut cmd = Command::new("sh");
         cmd.arg("-c");
-        cmd.arg(&Self::wrap_command(command, config));
+        cmd.arg(Self::wrap_command(command, config));
 
         for var in &config.env_passthrough {
             if let Ok(val) = std::env::var(var) {

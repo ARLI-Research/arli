@@ -286,7 +286,6 @@ fn extract_structured_text(document: &scraper::Html) -> String {
 
         if !prefix.is_empty() {
             output.push_str(prefix);
-            last_was_newline = true;
         } else if last_was_newline {
             output.push(' ');
         }

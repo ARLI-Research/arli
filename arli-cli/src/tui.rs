@@ -21,7 +21,7 @@ use ratatui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Span, Text},
+    text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
     Frame, Terminal,
 };
@@ -276,12 +276,11 @@ async fn run_app<B: Backend>(
                                     app.input.push(c);
                                     app.cursor_pos = app.input.len();
                                 }
-                                KeyCode::Backspace => {
-                                    if app.cursor_pos > 0 {
+                                KeyCode::Backspace
+                                    if app.cursor_pos > 0 => {
                                         app.input.remove(app.cursor_pos - 1);
                                         app.cursor_pos -= 1;
                                     }
-                                }
                                 KeyCode::Left => {
                                     app.cursor_pos = app.cursor_pos.saturating_sub(1);
                                 }

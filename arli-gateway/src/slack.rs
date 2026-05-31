@@ -50,6 +50,7 @@ struct SlackMessageEvent {
 }
 
 #[derive(Debug, Serialize)]
+#[allow(dead_code)]
 struct SlackAck {
     envelope_id: String,
 }

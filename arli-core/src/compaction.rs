@@ -147,7 +147,7 @@ impl Compactor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::TokenCounter;
+    
     use crate::providers::Role;
 
     #[test]

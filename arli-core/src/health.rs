@@ -49,7 +49,7 @@ impl HealthServer {
 
         loop {
             match listener.accept().await {
-                Ok((mut stream, addr)) => {
+                Ok((mut stream, _addr)) => {
                     let ready = ready.clone();
                     let metrics = metrics.clone();
 

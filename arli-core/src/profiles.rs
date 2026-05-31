@@ -15,7 +15,7 @@
 //!
 //! Profile is selected via ARLI_PROFILE env var or `arli profile use <name>`.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tracing::info;
 
 /// Resolves the active ARLI data directory, accounting for profiles.
@@ -213,7 +213,7 @@ pub struct ProfileInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
+    
 
     #[test]
     fn test_list_empty_profiles() {

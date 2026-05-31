@@ -208,7 +208,7 @@ async fn execute_stt(args: &serde_json::Value) -> ToolOutput {
     match result {
         Ok(output) if output.status.success() => {
             // Whisper creates <input>.txt with the transcription
-            let txt_path = format!("{}.txt", input_path.trim_end_matches(|c| c == '.'));
+            let txt_path = format!("{}.txt", input_path.trim_end_matches('.'));
             match std::fs::read_to_string(&txt_path) {
                 Ok(transcript) => ToolOutput {
                     success: true,

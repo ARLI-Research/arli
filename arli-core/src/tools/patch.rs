@@ -199,7 +199,7 @@ fn generate_diff(old: &str, new: &str, path: &str) -> String {
     // Very simple line-by-line diff
     let max_len = old_lines.len().max(new_lines.len());
     let mut changed = false;
-    let mut hunk_start = None;
+    let mut hunk_start;
 
     for i in 0..max_len {
         let old_line = old_lines.get(i).copied();

@@ -9,7 +9,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use tracing::{info, warn};
+use tracing::info;
 
 /// A single checkpoint — snapshot of files before a tool operation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -184,15 +184,13 @@ impl CheckpointManager {
 }
 
 fn sanitize_filename(path: &str) -> String {
-    path.replace('/', "_")
-        .replace('\\', "_")
-        .replace(':', "_")
+    path.replace(['/', '\\', ':'], "_")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
+    
 
     #[test]
     fn test_snapshot_and_rollback() {
@@ -229,7 +227,7 @@ mod tests {
         let mut cm = CheckpointManager::new(dir.clone(), "prune-test".to_string()).unwrap();
 
         // Create 5 checkpoints
-        for i in 0..5 {
+        for _i in 0..5 {
             cm.new_checkpoint();
         }
         assert_eq!(cm.list().len(), 5);

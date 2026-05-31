@@ -10,7 +10,6 @@
 //! - PostToolCall hooks receive the result for logging/metrics
 
 use async_trait::async_trait;
-use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::tools::ToolOutput;
@@ -239,6 +238,12 @@ pub struct MetricsHook {
     tool_calls: tokio::sync::Mutex<u64>,
     errors: tokio::sync::Mutex<u64>,
     compactions: tokio::sync::Mutex<u64>,
+}
+
+impl Default for MetricsHook {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MetricsHook {

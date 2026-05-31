@@ -192,11 +192,10 @@ impl SkillContract {
                             }
                         }
                     }
-                    "boolean" => {
-                        if !value.is_boolean() {
+                    "boolean"
+                        if !value.is_boolean() => {
                             errors.push(format!("{}: expected boolean, got {}", name, value));
                         }
-                    }
                     _ => {} // object, array — defer to JSON Schema
                 }
             }

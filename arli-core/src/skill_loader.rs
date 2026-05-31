@@ -46,7 +46,7 @@ pub fn load_skills_from_dir(dir: &Path) -> Result<Vec<SkillDef>> {
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().map_or(false, |e| e == "toml") {
+            if path.extension().is_some_and(|e| e == "toml") {
                 if let Ok(skill) = parse_skill_toml(&path) {
                     // Avoid duplicates
                     if !skills.iter().any(|s| s.name == skill.name) {

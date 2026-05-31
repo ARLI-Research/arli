@@ -1080,7 +1080,7 @@ async fn main() -> anyhow::Result<()> {
                         println!("Checkpoints:\n");
                         for cp in cps {
                             println!("  #{}  {}  ({} files)", cp.id, cp.timestamp, cp.files.len());
-                            for (path, _) in &cp.files {
+                            for path in cp.files.keys() {
                                 println!("    {}", path);
                             }
                         }

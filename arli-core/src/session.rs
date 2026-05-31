@@ -159,7 +159,7 @@ impl SessionStore {
         let tool_calls_json = message
             .tool_calls
             .as_ref()
-            .map(|tc| serde_json::to_string(tc))
+            .map(serde_json::to_string)
             .transpose()?;
 
         self.conn.execute(

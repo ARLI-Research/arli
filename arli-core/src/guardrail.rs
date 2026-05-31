@@ -9,8 +9,6 @@
 
 use std::sync::Arc;
 
-use crate::error::Result;
-use crate::policy::PolicyEngine;
 use crate::providers::{ChatMessage, LlmResponseContent, Provider, ToolSchema};
 use crate::safety::{ExecutionSetting, FailureMode, RealWorldHarm, RiskSource, SafetyClassification};
 use tracing::{info, warn};
@@ -172,7 +170,7 @@ impl Guardrail {
         final_reply: &str,
         tool_history: &[ToolCallRecord],
     ) -> GuardDecision {
-        let categories = self.setting.risk_categories();
+        let _categories = self.setting.risk_categories();
 
         // Check trading-specific risks
         if self.setting == ExecutionSetting::Trading {
@@ -374,7 +372,7 @@ impl Guardrail {
     }
 
     /// Parse the LLM judge's JSON response.
-    fn parse_llm_decision(&self, content: &str, final_reply: &str) -> GuardDecision {
+    fn parse_llm_decision(&self, content: &str, _final_reply: &str) -> GuardDecision {
         // Try to extract JSON from the response (may have markdown wrapping)
         let json_str = content
             .trim()

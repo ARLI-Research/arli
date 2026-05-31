@@ -54,7 +54,7 @@
 | 14 | Discord/Slack/WhatsApp gateways | ✅ |
 | 15 | MCP server | ✅ |
 | 16 | Plugins | ✅ |
-| 17 | Profiles |
+| 17 | Profiles | ✅ |
 | 18 | Webhook subscriptions |
 | 19 | Checkpoints |
 | 20 | Skill hub |

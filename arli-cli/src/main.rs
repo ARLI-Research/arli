@@ -85,6 +85,35 @@ enum Commands {
     /// Manage plugins
     #[command(subcommand)]
     Plugins(PluginsCmd),
+
+    /// Manage profiles
+    #[command(subcommand)]
+    Profile(ProfileCmd),
+}
+
+#[derive(Subcommand)]
+enum ProfileCmd {
+    /// List all profiles
+    List,
+    /// Create a new profile
+    Create {
+        /// Profile name
+        name: String,
+        /// Clone config and soul.md from default
+        #[arg(long)]
+        clone: bool,
+    },
+    /// Set default profile
+    Use {
+        /// Profile name (or \"default\" to unset)
+        name: String,
+    },
+    /// Delete a profile
+    Delete {
+        name: String,
+    },
+    /// Show current profile
+    Current,
 }
 
 #[derive(Subcommand)]
@@ -875,6 +904,59 @@ async fn main() -> anyhow::Result<()> {
                         }
                         println!("Loaded {} plugin(s)", manager.loaded_names().len());
                     }
+                }
+            }
+        }
+
+        Commands::Profile(cmd) => {
+            use arli_core::profiles;
+
+            match cmd {
+                ProfileCmd::List => {
+                    let profiles = profiles::list_profiles()?;
+                    let current = profiles::current_profile();
+
+                    if profiles.is_empty() {
+                        println!("No profiles found.");
+                        println!("Create one: arli profile create <name>");
+                    } else {
+                        println!("Profiles:\n");
+                        for p in &profiles {
+                            let marker = if p.name == current { " <- current" } else { "" };
+                            let config = if p.has_config { "cfg" } else { "-" };
+                            let soul = if p.has_soul { "soul" } else { "-" };
+                            let sessions = if p.has_sessions { "db" } else { "-" };
+                            println!("  {}{}  [{}, {}, {}]  {}", p.name, marker, config, soul, sessions, p.path.display());
+                        }
+                        println!("\nCurrent profile: {}", current);
+                        println!("Switch: arli profile use <name>  or  ARLI_PROFILE=<name>");
+                    }
+                }
+                ProfileCmd::Create { name, clone } => {
+                    let dir = profiles::create_profile(&name, clone)?;
+                    println!("Profile '{}' created at {}", name, dir.display());
+                    if clone {
+                        println!("Cloned config and soul.md from default profile.");
+                    }
+                    println!("Use it: arli profile use {}", name);
+                }
+                ProfileCmd::Use { name } => {
+                    profiles::set_default_profile(&name)?;
+                    if name == "default" || name.is_empty() {
+                        println!("Switched to default profile.");
+                    } else {
+                        println!("Switched to profile '{}'.", name);
+                    }
+                }
+                ProfileCmd::Delete { name } => {
+                    profiles::delete_profile(&name)?;
+                    println!("Profile '{}' deleted.", name);
+                }
+                ProfileCmd::Current => {
+                    let current = profiles::current_profile();
+                    let dir = profiles::arli_data_dir();
+                    println!("Profile: {}", current);
+                    println!("Data dir: {}", dir.display());
                 }
             }
         }

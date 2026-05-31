@@ -325,6 +325,7 @@ use super::search_files::SearchFilesTool;
 use super::http_get::HttpGetTool;
 use super::web_search::WebSearchTool;
 use super::vision::VisionTool;
+use super::voice::VoiceTool;
 use super::memory::MemoryTool;
 use super::delegate::DelegateTaskTool;
 use super::patch::PatchTool;
@@ -347,6 +348,7 @@ pub fn register_builtin_tools(
     registry.register(Box::new(HttpGetTool));
     registry.register(Box::new(WebSearchTool));
     registry.register(Box::new(VisionTool));
+    registry.register(Box::new(VoiceTool));
     registry.register(Box::new(PatchTool));
     registry.register(Box::new(BrowserTool));
 

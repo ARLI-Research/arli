@@ -71,6 +71,13 @@ enum Commands {
     /// Manage cron jobs
     #[command(subcommand)]
     Cron(CronCmd),
+
+    /// Generate shell completions for bash/zsh/fish
+    Completion {
+        /// Shell: bash, zsh, or fish
+        #[arg(short, long, default_value = "bash")]
+        shell: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -786,6 +793,18 @@ async fn main() -> anyhow::Result<()> {
 
         Commands::Cron(cmd) => {
             run_cron(cmd).await?;
+        }
+
+        Commands::Completion { shell } => {
+            use clap_complete::{generate, Shell};
+            let mut cmd = <Cli as clap::CommandFactory>::command();
+            let binary_name = "arli";
+            match shell.as_str() {
+                "bash" => generate(Shell::Bash, &mut cmd, binary_name, &mut std::io::stdout()),
+                "zsh" => generate(Shell::Zsh, &mut cmd, binary_name, &mut std::io::stdout()),
+                "fish" => generate(Shell::Fish, &mut cmd, binary_name, &mut std::io::stdout()),
+                other => anyhow::bail!("Unknown shell '{}'. Use: bash, zsh, fish", other),
+            }
         }
     }
 

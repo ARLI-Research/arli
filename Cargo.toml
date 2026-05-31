@@ -40,6 +40,7 @@ uuid = { version = "1", features = ["v4"] }
 
 # CLI
 clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
 
 # Logging
 tracing = "0.1"

@@ -27,3 +27,7 @@ toml.workspace = true
 cron.workspace = true
 scraper.workspace = true
 image.workspace = true
+
+# HTTP server for webhooks
+axum = "0.7"
+tower = "0.5"

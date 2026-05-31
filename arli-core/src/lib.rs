@@ -19,6 +19,7 @@ pub mod skills;
 pub mod swarm;
 pub mod tools;
 pub mod telemetry;
+pub mod webhooks;
 
 pub use agent::{Agent, AgentConfig, AgentMessage, AgentState};
 pub use config::{Config, ProviderConfig};

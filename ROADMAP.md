@@ -55,7 +55,7 @@
 | 15 | MCP server | ✅ |
 | 16 | Plugins | ✅ |
 | 17 | Profiles | ✅ |
-| 18 | Webhook subscriptions |
+| 18 | Webhook subscriptions | ✅ |
 | 19 | Checkpoints |
 | 20 | Skill hub |
 | 21 | Credential pools |

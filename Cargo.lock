@@ -126,6 +126,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "axum",
  "chrono",
  "cron",
  "image",
@@ -140,6 +141,7 @@ dependencies = [
  "tiktoken-rs",
  "tokio",
  "toml",
+ "tower",
  "tracing",
  "tracing-subscriber",
  "ulid",

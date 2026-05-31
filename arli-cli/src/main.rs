@@ -89,6 +89,33 @@ enum Commands {
     /// Manage profiles
     #[command(subcommand)]
     Profile(ProfileCmd),
+
+    /// Manage webhook subscriptions
+    #[command(subcommand)]
+    Webhook(WebhookCmd),
+}
+
+#[derive(Subcommand)]
+enum WebhookCmd {
+    /// List subscriptions
+    List,
+    /// Subscribe to a webhook
+    Subscribe {
+        /// Webhook name (URL path)
+        name: String,
+        /// Prompt template (use {{payload}} for POST body)
+        #[arg(short, long)]
+        prompt: String,
+    },
+    /// Remove a subscription
+    Remove {
+        name: String,
+    },
+    /// Start webhook server
+    Serve {
+        #[arg(short, long, default_value = "3002")]
+        port: u16,
+    },
 }
 
 #[derive(Subcommand)]
@@ -957,6 +984,62 @@ async fn main() -> anyhow::Result<()> {
                     let dir = profiles::arli_data_dir();
                     println!("Profile: {}", current);
                     println!("Data dir: {}", dir.display());
+                }
+            }
+        }
+
+        Commands::Webhook(cmd) => {
+            use arli_core::webhooks::{WebhookState, WebhookSubscription};
+            use std::sync::Arc;
+
+            let state = Arc::new(WebhookState::new());
+
+            match cmd {
+                WebhookCmd::List => {
+                    let subs = state.list().await;
+                    if subs.is_empty() {
+                        println!("No webhook subscriptions.");
+                        println!("Subscribe: arli webhook subscribe <name> -p 'Prompt with {{payload}}'");
+                    } else {
+                        println!("Webhook subscriptions:\n");
+                        for s in &subs {
+                            let target = s.target_channel.as_deref().unwrap_or("-");
+                            println!("  POST /webhooks/{}  → {}", s.name, s.prompt_template);
+                            println!("    Target: {}", target);
+                        }
+                    }
+                }
+                WebhookCmd::Subscribe { name, prompt } => {
+                    state.subscribe(WebhookSubscription {
+                        name: name.clone(),
+                        prompt_template: prompt,
+                        target_channel: None,
+                    }).await;
+                    println!("Subscribed: POST /webhooks/{}", name);
+                    println!("Start server: arli webhook serve");
+                }
+                WebhookCmd::Remove { name } => {
+                    if state.unsubscribe(&name).await {
+                        println!("Removed webhook: {}", name);
+                    } else {
+                        anyhow::bail!("Webhook '{}' not found", name);
+                    }
+                }
+                WebhookCmd::Serve { port } => {
+                    use arli_core::webhooks;
+                    // Load saved subscriptions from config
+                    let data_dir = get_data_dir();
+                    let webhook_cfg = data_dir.join("webhooks.toml");
+                    if webhook_cfg.exists() {
+                        let content = std::fs::read_to_string(&webhook_cfg)?;
+                        #[derive(Deserialize)]
+                        struct WebhookFile { subscriptions: Vec<WebhookSubscription> }
+                        let wf: WebhookFile = toml::from_str(&content)?;
+                        for sub in wf.subscriptions {
+                            state.subscribe(sub).await;
+                        }
+                    }
+                    webhooks::serve(state, port).await?;
                 }
             }
         }

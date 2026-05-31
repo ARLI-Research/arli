@@ -7,6 +7,7 @@ pub mod patch;
 pub mod search;
 pub mod search_files;
 pub mod toolsets;
+pub mod web_search;
 
 pub use delegate::DelegateTaskTool;
 pub use memory::MemoryTool;

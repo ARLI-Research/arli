@@ -8,6 +8,7 @@ pub mod health;
 pub mod hooks;
 pub mod mcp;
 pub mod memory;
+pub mod plugins;
 pub mod policy;
 pub mod providers;
 pub mod sandbox;

@@ -13,6 +13,8 @@
 - Cron scheduler (persistent, CLI management)
 - Telegram gateway (long-poll)
 - Multi-platform gateway (Discord, Slack, WhatsApp)
+- MCP server (JSON-RPC stdio, Claude Desktop)
+- Plugin system (subprocess JSON-RPC, plugin.toml)
 - Shell completions (bash/zsh/fish)
 - TUI (ratatui, slash commands, /stats)
 - Install: `curl | bash` + `arli setup`
@@ -51,7 +53,7 @@
 |---|-----|
 | 14 | Discord/Slack/WhatsApp gateways | ✅ |
 | 15 | MCP server | ✅ |
-| 16 | Plugins |
+| 16 | Plugins | ✅ |
 | 17 | Profiles |
 | 18 | Webhook subscriptions |
 | 19 | Checkpoints |

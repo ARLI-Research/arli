@@ -81,6 +81,18 @@ enum Commands {
 
     /// Start MCP server (Model Context Protocol) on stdio
     Mcp,
+
+    /// Manage plugins
+    #[command(subcommand)]
+    Plugins(PluginsCmd),
+}
+
+#[derive(Subcommand)]
+enum PluginsCmd {
+    /// List discovered plugins
+    List,
+    /// Load all enabled plugins (for testing)
+    Load,
 }
 
 #[derive(Subcommand)]
@@ -822,6 +834,49 @@ async fn main() -> anyhow::Result<()> {
 
             let mut server = McpServer::new(tools);
             server.run_sync()?;
+        }
+
+        Commands::Plugins(cmd) => {
+            use arli_core::plugins::PluginManager;
+
+            let plugins_dir = get_data_dir().join("plugins");
+            let mut manager = PluginManager::new(plugins_dir);
+
+            match cmd {
+                PluginsCmd::List => {
+                    let plugins = manager.discover()?;
+                    if plugins.is_empty() {
+                        println!("No plugins found.");
+                        println!("Add plugins to: {}", get_data_dir().join("plugins").display());
+                        println!("Each plugin needs: plugin.toml + executable");
+                    } else {
+                        println!("Discovered plugins:\n");
+                        for p in &plugins {
+                            let status = if p.plugin.enabled { "enabled" } else { "disabled" };
+                            println!("  {} v{} — {} [{}]",
+                                p.plugin.name, p.plugin.version, p.plugin.description, status);
+                            println!("    Tools: {}", p.tools.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join(", "));
+                            println!("    Exec: {}", p.plugin.executable);
+                            println!();
+                        }
+                    }
+                }
+                PluginsCmd::Load => {
+                    let plugins = manager.discover()?;
+                    let enabled: Vec<_> = plugins.into_iter().filter(|p| p.plugin.enabled).collect();
+                    if enabled.is_empty() {
+                        println!("No enabled plugins to load.");
+                    } else {
+                        for manifest in enabled {
+                            match manager.load(manifest) {
+                                Ok(()) => {}
+                                Err(e) => eprintln!("Failed to load plugin: {}", e),
+                            }
+                        }
+                        println!("Loaded {} plugin(s)", manager.loaded_names().len());
+                    }
+                }
+            }
         }
     }
 

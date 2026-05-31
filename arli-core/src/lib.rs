@@ -24,6 +24,7 @@ pub use policy::{Decision, PolicyEngine, PolicyRule, TradingLimits};
 pub use providers::{
     ChatMessage, FunctionCall, FunctionSchema, LlmResponse, LlmResponseContent,
     OpenAIProvider, Provider, Role, ToolCall, ToolResult, ToolSchema, Usage,
+    create_provider,
 };
 pub use session::SessionStore;
 pub use cron::{CronScheduler, CronJob, CronEvent};

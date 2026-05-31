@@ -8,6 +8,46 @@ pub use openai::OpenAIProvider;
 pub use anthropic::AnthropicProvider;
 pub use openrouter::OpenRouterProvider;
 
+use crate::config::Config;
+use crate::error::Result;
+
+/// Create the right provider based on config.
+/// Returns a boxed Provider trait object.
+pub fn create_provider(config: &Config) -> Result<Box<dyn Provider>> {
+    match config.provider.name.as_str() {
+        "openai" => {
+            let base_url = config.provider.base_url.clone()
+                .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
+            Ok(Box::new(OpenAIProvider::new(
+                config.provider.api_key.clone(),
+                config.model.clone(),
+                Some(base_url),
+            )))
+        }
+        "deepseek" => {
+            let base_url = config.provider.base_url.clone()
+                .unwrap_or_else(|| "https://api.deepseek.com/v1".to_string());
+            Ok(Box::new(OpenAIProvider::new(
+                config.provider.api_key.clone(),
+                config.model.clone(),
+                Some(base_url),
+            )))
+        }
+        "openrouter" => Ok(Box::new(OpenRouterProvider::new(
+            config.provider.api_key.clone(),
+            config.model.clone(),
+        ))),
+        "anthropic" => Ok(Box::new(AnthropicProvider::new(
+            config.provider.api_key.clone(),
+            config.model.clone(),
+        ))),
+        unknown => Err(crate::error::Error::Config(format!(
+            "Unknown provider '{}'. Supported: openai, deepseek, openrouter, anthropic",
+            unknown
+        ))),
+    }
+}
+
 use serde::{Deserialize, Serialize};
 
 /// Message role

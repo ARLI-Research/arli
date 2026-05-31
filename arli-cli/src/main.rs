@@ -3,7 +3,8 @@ mod tui;
 use clap::{Parser, Subcommand};
 use arli_core::{
     Agent, AgentConfig, ChatMessage, Config, CronEvent, CronJob, CronScheduler,
-    SessionStore, ToolRegistry, OpenAIProvider, PolicyEngine,
+    SessionStore, ToolRegistry, PolicyEngine,
+    create_provider,
 };
 use arli_core::tools::builtin::register_builtin_tools;
 use std::path::PathBuf;
@@ -148,6 +149,7 @@ fn run_setup() -> anyhow::Result<()> {
     println!("  1) DeepSeek (default)");
     println!("  2) OpenAI");
     println!("  3) Anthropic");
+    println!("  4) OpenRouter (200+ models)");
     print!("> ");
     io::stdout().flush()?;
 
@@ -158,6 +160,7 @@ fn run_setup() -> anyhow::Result<()> {
     let (provider_name, api_key_env) = match choice {
         "2" => ("openai", "OPENAI_API_KEY"),
         "3" => ("anthropic", "ANTHROPIC_API_KEY"),
+        "4" => ("openrouter", "OPENROUTER_API_KEY"),
         _ => ("deepseek", "DEEPSEEK_API_KEY"),
     };
 
@@ -186,6 +189,7 @@ fn run_setup() -> anyhow::Result<()> {
             "deepseek" => "deepseek-chat",
             "openai" => "gpt-4o",
             "anthropic" => "claude-sonnet-4-20250514",
+            "openrouter" => "openai/gpt-4o",
             _ => "deepseek-chat",
         },
         provider_name,
@@ -289,6 +293,7 @@ fn run_model() -> anyhow::Result<()> {
     println!("  1) DeepSeek (deepseek-chat)");
     println!("  2) OpenAI (gpt-4o)");
     println!("  3) Anthropic (claude-sonnet-4)");
+    println!("  4) OpenRouter (200+ models: openai/gpt-4o, anthropic/claude-*, etc.)");
     print!("> ");
     io::stdout().flush()?;
 
@@ -298,6 +303,7 @@ fn run_model() -> anyhow::Result<()> {
     let (provider_name, model) = match choice.trim() {
         "2" => ("openai", "gpt-4o"),
         "3" => ("anthropic", "claude-sonnet-4-20250514"),
+        "4" => ("openrouter", "openai/gpt-4o"),
         _ => ("deepseek", "deepseek-chat"),
     };
 
@@ -561,16 +567,16 @@ async fn run_chat(
     query: Option<String>,
     resume_id: Option<String>,
 ) -> anyhow::Result<()> {
-    let config = Config::from_env()?;
-    let model = model_override.clone().unwrap_or(config.model);
+    let mut config = Config::from_env()?;
 
-    info!("Using model: {} via {}", model, config.provider.name);
+    // Apply model override from -m flag
+    if let Some(ref m) = *model_override {
+        config.model = m.clone();
+    }
 
-    let provider = Box::new(OpenAIProvider::new(
-        config.provider.api_key.clone(),
-        model.clone(),
-        config.provider.base_url.clone(),
-    ));
+    info!("Using model: {} via {}", config.model, config.provider.name);
+
+    let provider = create_provider(&config)?;
 
     let data_dir = get_data_dir();
     let db_path = data_dir.join("sessions.db");

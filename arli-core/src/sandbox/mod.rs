@@ -16,6 +16,7 @@ pub mod privdrop;
 // This is lighter than Docker — no image layers, no daemon required.
 // Uses `unshare` (util-linux) under the hood.
 
+use std::os::unix::process::CommandExt;
 use std::process::{Command, Output};
 use std::time::Duration;
 
@@ -223,7 +224,89 @@ impl Sandbox {
         }
     }
 
-    /// Execute without namespace isolation (fallback).
+    /// Execute a command with full isolation — Landlock + seccomp + privilege drop.
+    ///
+    /// Uses `std::process::Command` with `pre_exec()` hook for isolation,
+    /// matching OpenShell's pattern: seccomp → Landlock → privdrop → exec.
+    ///
+    /// Falls back to `execute()` if isolation fails.
+    pub fn execute_isolated(
+        command: &str,
+        config: &SandboxConfig,
+        policy: &policy::SandboxPolicy,
+    ) -> SandboxOutput {
+        let start = std::time::Instant::now();
+
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c");
+        cmd.arg(Self::wrap_command(command, config));
+
+        // Set environment
+        for var in &config.env_passthrough {
+            if let Ok(val) = std::env::var(var) {
+                cmd.env(var, val);
+            }
+        }
+        if let Some(ref dir) = config.workdir {
+            cmd.current_dir(dir);
+        }
+
+        // Clone policy for 'static closure (pre_exec may outlive this function)
+        let policy_clone = policy.clone();
+
+        // pre_exec: runs in child after fork, before exec
+        unsafe {
+            cmd.pre_exec(move || {
+                // 0. Seccomp FIRST (can only be tightened)
+                let filter = seccomp::SeccompSandbox::build_filter();
+                if let Err(e) = seccomp::SeccompSandbox::apply(&filter) {
+                    eprintln!("seccomp: {}", e);
+                    return Err(std::io::Error::new(std::io::ErrorKind::Other, e));
+                }
+
+                // 1. Landlock filesystem
+                if let Err(e) = landlock::LandlockSandbox::enforce(&policy_clone) {
+                    eprintln!("landlock: {}", e);
+                    return Err(std::io::Error::new(std::io::ErrorKind::Other, e));
+                }
+
+                // 2. Privilege drop
+                if let Err(e) = privdrop::PrivilegeDrop::isolate(&policy_clone.process) {
+                    eprintln!("privdrop: {}", e);
+                    return Err(std::io::Error::new(std::io::ErrorKind::Other, e));
+                }
+
+                Ok(())
+            });
+        }
+
+        let result = if config.timeout_secs > 0 {
+            Self::execute_with_timeout(&mut cmd, Duration::from_secs(config.timeout_secs))
+        } else {
+            cmd.output().ok()
+        };
+
+        let wall_time_ms = start.elapsed().as_millis() as u64;
+
+        match result {
+            Some(out) => SandboxOutput {
+                stdout: String::from_utf8_lossy(&out.stdout).to_string(),
+                stderr: String::from_utf8_lossy(&out.stderr).to_string(),
+                exit_code: out.status.code().unwrap_or(-1),
+                success: out.status.success(),
+                killed_by_timeout: false,
+                wall_time_ms,
+            },
+            None => SandboxOutput {
+                stdout: String::new(),
+                stderr: "Isolated sandbox execution failed".into(),
+                exit_code: -1,
+                success: false,
+                killed_by_timeout: false,
+                wall_time_ms,
+            },
+        }
+    }
     fn execute_direct(command: &str, config: &SandboxConfig) -> Option<Output> {
         let mut cmd = Command::new("sh");
         cmd.arg("-c");

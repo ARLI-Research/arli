@@ -20,6 +20,8 @@ serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
 toml.workspace = true
+clap.workspace = true
+libc.workspace = true
 
 # Discord
 serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "rustls_backend", "model"] }

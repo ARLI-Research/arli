@@ -79,8 +79,9 @@ if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
 fi
 
 echo ""
-echo -e "${BOLD}Next:  ${CYAN}arli setup${NC}     — configure API keys + Telegram"
-echo -e "${BOLD}Then:  ${CYAN}arli chat${NC}      — start chatting"
-echo -e "${BOLD}Or:    ${CYAN}arli-gateway${NC}  — Telegram bot"
+echo -e "${BOLD}Next:  ${CYAN}arli setup${NC}        — configure API keys + Telegram"
+echo -e "${BOLD}Then:  ${CYAN}arli chat${NC}         — start chatting"
+echo -e "${BOLD}Or:    ${CYAN}arli gateway start${NC} — Telegram bot daemon"
+echo -e "${BOLD}       ${CYAN}arli-gateway${NC}       — foreground"
 echo ""
 echo -e "${GREEN}Done.${NC}"

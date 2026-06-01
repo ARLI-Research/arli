@@ -12,14 +12,37 @@
 //!   WHATSAPP_TOKEN       — WhatsApp Cloud API access token
 //!   WHATSAPP_VERIFY      — WhatsApp webhook verify token
 //!   WHATSAPP_PORT        — WhatsApp webhook port (default: 3000)
+//!
+//! Daemon mode:
+//!   arli-gateway --daemon           Start in background (writes PID to ~/.arli/gateway.pid)
+//!   arli-gateway --daemon --pid-file /path/to/pid
 
 mod discord;
 mod slack;
 mod telegram;
 mod whatsapp;
 
+use clap::Parser;
+use std::fs;
 use std::path::PathBuf;
 use tracing::info;
+
+/// ARLI Gateway — multi-platform AI agent messaging bridge
+#[derive(Parser)]
+#[command(name = "arli-gateway", version, about)]
+struct Cli {
+    /// Run as a background daemon (fork, detach, write PID file)
+    #[arg(long)]
+    daemon: bool,
+
+    /// PID file path (default: ~/.arli/gateway.pid)
+    #[arg(long, default_value = "")]
+    pid_file: String,
+
+    /// Log file path for daemon mode (default: ~/.arli/gateway.log)
+    #[arg(long, default_value = "")]
+    log_file: String,
+}
 
 fn arli_data_dir() -> PathBuf {
     std::env::var("ARLI_HOME")
@@ -46,13 +69,103 @@ fn resolve_token(env_var: &str, config_key: &str) -> Option<String> {
     })
 }
 
+/// Fork and detach the process as a daemon.
+///
+/// Returns the PID of the child process from the parent's perspective.
+/// The child continues running; the parent exits after printing the PID.
+fn daemonize(pid_file: &str, log_file: &str) -> anyhow::Result<()> {
+    // First fork: parent exits, child continues
+    match unsafe { libc::fork() } {
+        -1 => anyhow::bail!("fork failed: {}", std::io::Error::last_os_error()),
+        0 => {
+            // Child continues
+        }
+        pid => {
+            // Parent: write PID and exit
+            println!("Gateway daemon started (PID: {})", pid);
+            if !pid_file.is_empty() {
+                fs::write(pid_file, pid.to_string())?;
+            }
+            std::process::exit(0);
+        }
+    }
+
+    // Create new session (become session leader, detach from terminal)
+    if unsafe { libc::setsid() } == -1 {
+        anyhow::bail!("setsid failed: {}", std::io::Error::last_os_error());
+    }
+
+    // Second fork: prevent re-acquiring a controlling terminal
+    match unsafe { libc::fork() } {
+        -1 => anyhow::bail!("second fork failed: {}", std::io::Error::last_os_error()),
+        0 => {
+            // Grandchild continues as daemon
+        }
+        _ => {
+            std::process::exit(0);
+        }
+    }
+
+    // Change working directory to root
+    unsafe { libc::chdir(b"/\0".as_ptr() as *const _) };
+
+    // Set file creation mask
+    unsafe { libc::umask(0o022) };
+
+    // Redirect stdio to log file (or /dev/null)
+    let log_target = if log_file.is_empty() {
+        "/dev/null".to_string()
+    } else {
+        log_file.to_string()
+    };
+
+    let log = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_target)?;
+
+    unsafe {
+        libc::dup2(log.as_raw_fd(), 0); // stdin
+        libc::dup2(log.as_raw_fd(), 1); // stdout
+        libc::dup2(log.as_raw_fd(), 2); // stderr
+    }
+
+    Ok(())
+}
+
+use std::os::fd::AsRawFd;
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+
+    // ── Daemon mode ──
+    if cli.daemon {
+        let data_dir = arli_data_dir();
+        let pid_file = if cli.pid_file.is_empty() {
+            data_dir.join("gateway.pid").display().to_string()
+        } else {
+            cli.pid_file
+        };
+        let log_file = if cli.log_file.is_empty() {
+            data_dir.join("gateway.log").display().to_string()
+        } else {
+            cli.log_file
+        };
+
+        daemonize(&pid_file, &log_file)?;
+        // After daemonize, we're the child. Write our PID.
+        if !pid_file.is_empty() {
+            fs::write(&pid_file, std::process::id().to_string())?;
+        }
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(
             std::env::var("ARLI_LOG")
                 .unwrap_or_else(|_| "info,arli_gateway=debug".to_string()),
         )
+        .with_writer(std::io::stderr)
         .init();
 
     let data_dir = arli_data_dir();

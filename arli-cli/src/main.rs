@@ -104,6 +104,26 @@ enum Commands {
         #[arg(long)]
         check: bool,
     },
+
+    /// Manage the gateway daemon
+    #[command(subcommand)]
+    Gateway(GatewayCmd),
+}
+
+#[derive(Subcommand)]
+enum GatewayCmd {
+    /// Start the gateway as a background daemon
+    Start,
+    /// Stop the running gateway daemon
+    Stop,
+    /// Show gateway daemon status (running/stopped)
+    Status,
+    /// Show recent gateway logs
+    Log {
+        /// Number of lines to show (default: 20)
+        #[arg(short, long, default_value = "20")]
+        lines: usize,
+    },
 }
 
 #[derive(Subcommand)]
@@ -326,7 +346,25 @@ fn run_setup() -> anyhow::Result<()> {
         api_key_env
     );
     if !telegram_token.is_empty() {
-        println!("\nTo start Telegram bot: arli-gateway");
+        println!("\nTo start Telegram bot: arli gateway start");
+        println!("To run in foreground:   arli-gateway");
+
+        // Offer to start daemon immediately
+        let mut start_daemon = String::new();
+        print!("\nStart gateway daemon now? [y/N]: ");
+        io::stdout().flush()?;
+        io::stdin().read_line(&mut start_daemon)?;
+        if start_daemon.trim().eq_ignore_ascii_case("y") {
+            let status = std::process::Command::new("arli")
+                .arg("gateway")
+                .arg("start")
+                .status();
+            match status {
+                Ok(s) if s.success() => println!("Gateway daemon started."),
+                Ok(s) => eprintln!("Gateway start failed (exit: {:?})", s.code()),
+                Err(e) => eprintln!("Could not start gateway: {}. Run 'arli gateway start' manually.", e),
+            }
+        }
     }
     println!("\nYou're ready. Run: arli chat");
 
@@ -662,6 +700,139 @@ async fn run_cron(cmd: CronCmd) -> anyhow::Result<()> {
             }
         }
     }
+    Ok(())
+}
+
+fn run_gateway(cmd: GatewayCmd) -> anyhow::Result<()> {
+    let data_dir = get_data_dir();
+    let pid_file = data_dir.join("gateway.pid");
+    let log_file = data_dir.join("gateway.log");
+
+    // Find the gateway binary — prefer release build next to arli, then PATH
+    let gateway_bin = {
+        let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("arli"));
+        let sibling = exe.parent().map(|p| p.join("arli-gateway"));
+        sibling.filter(|p| p.exists()).unwrap_or_else(|| PathBuf::from("arli-gateway"))
+    };
+
+    match cmd {
+        GatewayCmd::Start => {
+            if pid_file.exists() {
+                let pid_str = std::fs::read_to_string(&pid_file)?;
+                if let Ok(pid) = pid_str.trim().parse::<i32>() {
+                    // Check if process is still running
+                    unsafe {
+                        if libc::kill(pid, 0) == 0 {
+                            println!("Gateway is already running (PID: {})", pid);
+                            println!("Stop it first: arli gateway stop");
+                            return Ok(());
+                        }
+                    }
+                }
+                // PID file exists but process is dead — remove stale PID
+                std::fs::remove_file(&pid_file)?;
+            }
+
+            if !gateway_bin.exists() {
+                anyhow::bail!(
+                    "Gateway binary not found at {}. Build it: cargo build --release -p arli-gateway",
+                    gateway_bin.display()
+                );
+            }
+
+            let status = std::process::Command::new(&gateway_bin)
+                .arg("--daemon")
+                .arg("--pid-file")
+                .arg(pid_file.to_str().unwrap())
+                .arg("--log-file")
+                .arg(log_file.to_str().unwrap())
+                .env("ARLI_HOME", &data_dir)
+                .status()?;
+
+            if !status.success() {
+                anyhow::bail!("Gateway failed to start (exit code: {:?})", status.code());
+            }
+        }
+
+        GatewayCmd::Stop => {
+            if !pid_file.exists() {
+                println!("Gateway is not running (no PID file).");
+                return Ok(());
+            }
+
+            let pid_str = std::fs::read_to_string(&pid_file)?;
+            let pid: i32 = pid_str.trim().parse()?;
+
+            unsafe {
+                if libc::kill(pid, 0) != 0 {
+                    println!("Gateway is not running (PID {} is dead).", pid);
+                    std::fs::remove_file(&pid_file)?;
+                    return Ok(());
+                }
+                libc::kill(pid, libc::SIGTERM);
+            }
+
+            // Wait for process to exit (up to 5 seconds)
+            for _ in 0..50 {
+                unsafe {
+                    if libc::kill(pid, 0) != 0 {
+                        break;
+                    }
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+
+            // Force kill if still alive
+            unsafe {
+                if libc::kill(pid, 0) == 0 {
+                    libc::kill(pid, libc::SIGKILL);
+                    println!("Gateway force-killed (PID: {})", pid);
+                } else {
+                    println!("Gateway stopped (PID: {})", pid);
+                }
+            }
+
+            std::fs::remove_file(&pid_file).ok();
+        }
+
+        GatewayCmd::Status => {
+            if !pid_file.exists() {
+                println!("Gateway: stopped (no PID file)");
+                return Ok(());
+            }
+
+            let pid_str = std::fs::read_to_string(&pid_file)?;
+            let pid: i32 = pid_str.trim().parse()?;
+
+            unsafe {
+                if libc::kill(pid, 0) == 0 {
+                    println!("Gateway: running (PID: {})", pid);
+                } else {
+                    println!("Gateway: stopped (PID {} is dead)", pid);
+                    std::fs::remove_file(&pid_file).ok();
+                }
+            }
+        }
+
+        GatewayCmd::Log { lines } => {
+            if !log_file.exists() {
+                println!("No log file at {}", log_file.display());
+                return Ok(());
+            }
+            // Read and tail the log file
+            let content = std::fs::read_to_string(&log_file)?;
+            let all_lines: Vec<&str> = content.lines().collect();
+            let start = if all_lines.len() > lines {
+                all_lines.len() - lines
+            } else {
+                0
+            };
+            for line in &all_lines[start..] {
+                println!("{}", line);
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -1143,6 +1314,10 @@ async fn main() -> anyhow::Result<()> {
 
         Commands::Update { check } => {
             tokio::task::spawn_blocking(move || run_update(check)).await??;
+        }
+
+        Commands::Gateway(cmd) => {
+            run_gateway(cmd)?;
         }
     }
 

@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod audit;
 pub mod checkpoints;
 pub mod compaction;
 pub mod config;
@@ -9,6 +10,7 @@ pub mod error;
 pub mod guardrail;
 pub mod health;
 pub mod hooks;
+pub mod inference;
 pub mod mcp;
 pub mod memory;
 pub mod plugins;

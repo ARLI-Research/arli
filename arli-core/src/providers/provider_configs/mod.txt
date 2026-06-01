@@ -1,0 +1,11 @@
+deepseek
+openai
+anthropic
+openrouter
+xai
+google
+ollama
+lmstudio
+nvidia
+qwen
+zhipu

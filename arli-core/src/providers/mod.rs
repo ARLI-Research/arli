@@ -1,11 +1,13 @@
 pub mod anthropic;
 pub mod openai;
 pub mod openrouter;
+pub mod registry;
 pub mod traits;
 
 pub use anthropic::AnthropicProvider;
 pub use openai::OpenAIProvider;
 pub use openrouter::OpenRouterProvider;
+pub use registry::{ProviderDef, ProviderRegistry};
 pub use traits::Provider;
 
 use crate::config::Config;

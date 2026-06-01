@@ -7,6 +7,7 @@
 //! Phase 2 upgrade (OpenShell patterns): Landlock filesystem + seccomp syscalls + privilege drop.
 
 pub mod policy;
+pub mod engine;
 pub mod landlock;
 pub mod seccomp;
 pub mod privdrop;

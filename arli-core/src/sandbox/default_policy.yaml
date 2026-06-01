@@ -1,0 +1,62 @@
+# ARLI Default Sandbox Policy
+#
+# Restrictive default: blocks everything except essential system paths
+# and known LLM API endpoints. All other network access denied.
+
+filesystem:
+  read_only:
+    - /usr
+    - /lib
+    - /lib64
+    - /bin
+    - /etc
+    - /opt
+  read_write:
+    - /tmp
+    - /dev/null
+    - /dev/urandom
+    - /dev/stdout
+    - /dev/stderr
+  include_workdir: true
+
+process:
+  run_as_user: nobody
+  run_as_group: nogroup
+  allow_core_dumps: false
+
+network:
+  mode: proxy
+  allowed_endpoints:
+    # GitHub API — required for gh CLI, repo access
+    - host: api.github.com
+      port: 443
+      tls: true
+    - host: "*.github.com"
+      tls: true
+    # LLM APIs
+    - host: api.deepseek.com
+      port: 443
+      tls: true
+    - host: api.anthropic.com
+      port: 443
+      tls: true
+    - host: api.openai.com
+      port: 443
+      tls: true
+    - host: api.openrouter.ai
+      port: 443
+      tls: true
+    # Crates.io (Rust dependency resolution)
+    - host: crates.io
+      port: 443
+      tls: true
+    - host: static.crates.io
+      port: 443
+      tls: true
+    # General — DNS, NTP
+    - host: "*.pool.ntp.org"
+      port: 123
+      tls: false
+
+landlock:
+  compatibility: best_effort

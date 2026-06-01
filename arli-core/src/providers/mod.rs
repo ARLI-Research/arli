@@ -41,8 +41,22 @@ pub fn create_provider(config: &Config) -> Result<Box<dyn Provider>> {
             config.provider.api_key.clone(),
             config.model.clone(),
         ))),
+        "google" | "xai" | "copilot" => {
+            let base_url = config.provider.base_url.clone()
+                .unwrap_or_else(|| match config.provider.name.as_str() {
+                    "google" => "https://generativelanguage.googleapis.com/v1beta/openai/".to_string(),
+                    "xai" => "https://api.x.ai/v1".to_string(),
+                    "copilot" => "https://api.githubcopilot.com".to_string(),
+                    _ => unreachable!(),
+                });
+            Ok(Box::new(OpenAIProvider::new(
+                config.provider.api_key.clone(),
+                config.model.clone(),
+                Some(base_url.to_string()),
+            )))
+        }
         unknown => Err(crate::error::Error::Config(format!(
-            "Unknown provider '{}'. Supported: openai, deepseek, openrouter, anthropic",
+            "Unknown provider '{}'. Supported: openai, deepseek, openrouter, anthropic, google, xai, copilot",
             unknown
         ))),
     }

@@ -98,6 +98,38 @@ impl Config {
             }
         }
 
+        if let Ok(key) = std::env::var("GOOGLE_API_KEY") {
+            config.provider.api_key = key;
+            config.provider.name = "google".to_string();
+            config.provider.base_url = Some("https://generativelanguage.googleapis.com/v1beta/openai/".to_string());
+            if config.model == "gpt-4o" {
+                config.model = "gemini-2.5-flash".to_string();
+            }
+        }
+
+        if let Ok(key) = std::env::var("XAI_API_KEY") {
+            config.provider.api_key = key;
+            config.provider.name = "xai".to_string();
+            config.provider.base_url = Some("https://api.x.ai/v1".to_string());
+            if config.model == "gpt-4o" {
+                config.model = "grok-4".to_string();
+            }
+        }
+
+        if let Ok(key) = std::env::var("GITHUB_TOKEN") {
+            // Only use GitHub token if no other provider is explicitly set
+            if config.provider.api_key.is_empty()
+                || config.provider.name == "openai"
+            {
+                config.provider.api_key = key;
+                config.provider.name = "copilot".to_string();
+                config.provider.base_url = Some("https://api.githubcopilot.com".to_string());
+                if config.model == "gpt-4o" {
+                    config.model = "gpt-4o".to_string();
+                }
+            }
+        }
+
         if let Ok(model) = std::env::var("ARLI_MODEL") {
             config.model = model;
         }
@@ -108,7 +140,7 @@ impl Config {
 
         if config.provider.api_key.is_empty() {
             return Err(crate::error::Error::Config(
-                "No API key found. Run 'arli setup' or set DEEPSEEK_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY".into(),
+                "No API key found. Run 'arli setup' or set DEEPSEEK_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_API_KEY / XAI_API_KEY / GITHUB_TOKEN".into(),
             ));
         }
 
@@ -118,6 +150,9 @@ impl Config {
                 "openai" => Some("https://api.openai.com/v1".to_string()),
                 "deepseek" => Some("https://api.deepseek.com/v1".to_string()),
                 "anthropic" => Some("https://api.anthropic.com/v1".to_string()),
+                "google" => Some("https://generativelanguage.googleapis.com/v1beta/openai/".to_string()),
+                "xai" => Some("https://api.x.ai/v1".to_string()),
+                "copilot" => Some("https://api.githubcopilot.com".to_string()),
                 _ => None,
             };
         }

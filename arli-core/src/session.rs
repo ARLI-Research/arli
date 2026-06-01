@@ -1,4 +1,4 @@
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 use std::path::PathBuf;
 
 use crate::error::{Error, Result};
@@ -17,9 +17,8 @@ impl SessionStore {
     pub fn open(path: PathBuf) -> Result<Self> {
         // Create parent directory if needed
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                Error::Session(format!("Cannot create DB directory: {}", e))
-            })?;
+            std::fs::create_dir_all(parent)
+                .map_err(|e| Error::Session(format!("Cannot create DB directory: {}", e)))?;
         }
 
         let conn = Connection::open(&path)?;
@@ -87,7 +86,7 @@ impl SessionStore {
                 session_id UNINDEXED,
                 content_rowid='id',
                 content='messages'
-            );"
+            );",
         )?;
 
         // Create triggers to keep FTS in sync
@@ -107,7 +106,7 @@ impl SessionStore {
                 VALUES ('delete', old.id, old.content, old.role, old.session_id);
                 INSERT INTO messages_fts(rowid, content, role, session_id)
                 VALUES (new.id, new.content, new.role, new.session_id);
-            END;"
+            END;",
         )?;
 
         Ok(())
@@ -125,11 +124,7 @@ impl SessionStore {
             params![id, name, parent_id],
         )?;
 
-        tracing::info!(
-            "Resumed session: {} (parent: {})",
-            id,
-            parent_id
-        );
+        tracing::info!("Resumed session: {} (parent: {})", id, parent_id);
         Ok(id)
     }
 
@@ -189,7 +184,7 @@ impl SessionStore {
             "SELECT role, content, tool_calls, tool_call_id
              FROM messages
              WHERE session_id = ?1
-             ORDER BY id ASC"
+             ORDER BY id ASC",
         )?;
 
         let messages = stmt
@@ -207,8 +202,8 @@ impl SessionStore {
                     _ => Role::User,
                 };
 
-                let tool_calls: Option<Vec<crate::providers::ToolCall>> = tool_calls_json
-                    .and_then(|json| serde_json::from_str(&json).ok());
+                let tool_calls: Option<Vec<crate::providers::ToolCall>> =
+                    tool_calls_json.and_then(|json| serde_json::from_str(&json).ok());
 
                 Ok(ChatMessage {
                     role,
@@ -240,7 +235,7 @@ impl SessionStore {
             "SELECT id, name, created_at, updated_at, status
              FROM sessions
              ORDER BY updated_at DESC
-             LIMIT ?1"
+             LIMIT ?1",
         )?;
 
         let sessions = stmt
@@ -306,18 +301,15 @@ impl SessionStore {
             .take(limit)
             .collect()
         } else {
-            stmt.query_map(
-                rusqlite::params![query, limit as i64],
-                |row| {
-                    Ok(SearchResult {
-                        content: row.get::<_, Option<String>>(0)?.unwrap_or_default(),
-                        role: row.get::<_, String>(1)?,
-                        session_id: row.get::<_, String>(2)?,
-                        context_before: None,
-                        context_after: None,
-                    })
-                },
-            )?
+            stmt.query_map(rusqlite::params![query, limit as i64], |row| {
+                Ok(SearchResult {
+                    content: row.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                    role: row.get::<_, String>(1)?,
+                    session_id: row.get::<_, String>(2)?,
+                    context_before: None,
+                    context_after: None,
+                })
+            })?
             .filter_map(|r| r.ok())
             .take(limit)
             .collect()
@@ -326,11 +318,7 @@ impl SessionStore {
         Ok(results)
     }
     /// Record a compaction event (for session lineage).
-    pub fn record_compaction(
-        &self,
-        session_id: &str,
-        summary: &str,
-    ) -> Result<()> {
+    pub fn record_compaction(&self, session_id: &str, summary: &str) -> Result<()> {
         self.conn.execute(
             "INSERT INTO compactions (session_id, summary) VALUES (?1, ?2)",
             params![session_id, summary],
@@ -441,7 +429,6 @@ pub fn should_reset_session(
 
 /// Helper: convert a UNIX timestamp to a UTC DateTime.
 fn utc_from_timestamp(ts: i64) -> chrono::DateTime<chrono::Utc> {
-    chrono::DateTime::from_timestamp(ts, 0).unwrap_or_else(|| {
-        chrono::DateTime::from_timestamp(0, 0).unwrap()
-    })
+    chrono::DateTime::from_timestamp(ts, 0)
+        .unwrap_or_else(|| chrono::DateTime::from_timestamp(0, 0).unwrap())
 }

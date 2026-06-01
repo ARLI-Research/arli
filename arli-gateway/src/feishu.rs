@@ -10,24 +10,18 @@
 //!
 //! Reference: https://open.feishu.cn/document/
 
-use arli_core::{
-    Agent, AgentConfig, AgentMessage, Config,
-    OpenAIProvider, SessionStore, ToolRegistry,
-    memory::MemoryStore,
-};
 use arli_core::tools::builtin::register_builtin_tools;
-use axum::{
-    extract::State,
-    response::IntoResponse,
-    routing::post,
-    Json, Router,
+use arli_core::{
+    memory::MemoryStore, Agent, AgentConfig, AgentMessage, Config, OpenAIProvider, SessionStore,
+    ToolRegistry,
 };
+use axum::{extract::State, response::IntoResponse, routing::post, Json, Router};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 // ── Feishu API types ──
 
@@ -159,7 +153,7 @@ impl FeishuState {
         ));
 
         let mut tools = ToolRegistry::new();
-        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None);
+        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None, None);
 
         let agent_config = AgentConfig {
             name: format!("feishu-{}", safe_id),
@@ -167,7 +161,8 @@ impl FeishuState {
             system_prompt: Some(
                 "You are ARLI, an AI agent communicating via Feishu/Lark. \
                  Respond in the user's language. Be concise and use plain text \
-                 or basic markdown formatting.".to_string()
+                 or basic markdown formatting."
+                    .to_string(),
             ),
             protect_last_n: 20,
             protect_first_n: 3,
@@ -285,7 +280,8 @@ async fn feishu_webhook(
                 info!("Feishu webhook URL verified");
                 return Json(ChallengeResponse {
                     challenge: challenge.clone(),
-                }).into_response();
+                })
+                .into_response();
             }
         }
         return Json(serde_json::json!({"challenge": ""})).into_response();
@@ -320,12 +316,10 @@ async fn feishu_webhook(
 
     // Parse text from JSON-encoded content field
     let text = match &message.content {
-        Some(content_str) => {
-            match serde_json::from_str::<FeishuTextContent>(content_str) {
-                Ok(tc) => tc.text.unwrap_or_default().trim().to_string(),
-                Err(_) => return Json(serde_json::json!({"code": 0})).into_response(),
-            }
-        }
+        Some(content_str) => match serde_json::from_str::<FeishuTextContent>(content_str) {
+            Ok(tc) => tc.text.unwrap_or_default().trim().to_string(),
+            Err(_) => return Json(serde_json::json!({"code": 0})).into_response(),
+        },
         None => return Json(serde_json::json!({"code": 0})).into_response(),
     };
 
@@ -340,7 +334,10 @@ async fn feishu_webhook(
         .and_then(|id| id.open_id.clone())
         .unwrap_or_else(|| "unknown".to_string());
 
-    info!("Feishu message from {} (chat {}): {}", user_id, chat_id, text);
+    info!(
+        "Feishu message from {} (chat {}): {}",
+        user_id, chat_id, text
+    );
 
     match FeishuState::get_or_create_agent(
         &state.agents,
@@ -378,8 +375,7 @@ pub async fn run(
 ) -> anyhow::Result<()> {
     info!("Feishu gateway starting on port {}...", webhook_port);
 
-    let (response_tx, mut response_rx) =
-        tokio::sync::mpsc::channel::<(String, String)>(128);
+    let (response_tx, mut response_rx) = tokio::sync::mpsc::channel::<(String, String)>(128);
 
     let config = Config::from_env()?;
     let state = Arc::new(FeishuState {

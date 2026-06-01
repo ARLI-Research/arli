@@ -1,12 +1,12 @@
-pub mod traits;
-pub mod openai;
 pub mod anthropic;
+pub mod openai;
 pub mod openrouter;
+pub mod traits;
 
-pub use traits::Provider;
-pub use openai::OpenAIProvider;
 pub use anthropic::AnthropicProvider;
+pub use openai::OpenAIProvider;
 pub use openrouter::OpenRouterProvider;
+pub use traits::Provider;
 
 use crate::config::Config;
 use crate::error::Result;

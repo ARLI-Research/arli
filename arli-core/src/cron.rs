@@ -10,7 +10,7 @@ use chrono::{DateTime, Utc};
 use cron::Schedule;
 use std::collections::HashMap;
 use std::str::FromStr;
-use tokio::sync::{Mutex, broadcast};
+use tokio::sync::{broadcast, Mutex};
 use tokio::task::JoinHandle;
 
 use crate::error::{Error, Result};
@@ -75,7 +75,6 @@ impl Default for CronScheduler {
 }
 
 impl CronScheduler {
-
     /// Subscribe to cron events (JobRunning, JobCompleted, JobFailed).
     pub fn subscribe(&self) -> broadcast::Receiver<CronEvent> {
         self.tx.subscribe()
@@ -102,7 +101,10 @@ impl CronScheduler {
             task: handle,
         };
 
-        self.jobs.lock().await.insert(job_id_for_insert, handle_wrapper);
+        self.jobs
+            .lock()
+            .await
+            .insert(job_id_for_insert, handle_wrapper);
         Ok(())
     }
 
@@ -159,14 +161,19 @@ impl CronScheduler {
             let event_tx = self.tx.clone();
 
             tokio::spawn(async move {
-                let _ = event_tx.send(CronEvent::JobRunning { job_id: job_id.clone() });
+                let _ = event_tx.send(CronEvent::JobRunning {
+                    job_id: job_id.clone(),
+                });
 
                 match execute_job(&job_id, &prompt).await {
                     Ok(output) => {
                         let _ = event_tx.send(CronEvent::JobCompleted { job_id, output });
                     }
                     Err(e) => {
-                        let _ = event_tx.send(CronEvent::JobFailed { job_id, error: e.to_string() });
+                        let _ = event_tx.send(CronEvent::JobFailed {
+                            job_id,
+                            error: e.to_string(),
+                        });
                     }
                 }
             });
@@ -251,10 +258,7 @@ fn parse_schedule(spec: &str) -> Result<Schedule> {
     }
 
     // Human-readable intervals: "30s", "5m", "1h", "every 2h"
-    let cleaned = spec
-        .trim()
-        .trim_start_matches("every ")
-        .trim();
+    let cleaned = spec.trim().trim_start_matches("every ").trim();
 
     if let Some(secs) = parse_interval(cleaned) {
         // Convert to cron: "every N seconds"

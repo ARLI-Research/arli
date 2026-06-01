@@ -23,19 +23,23 @@ pub mod skill_hub;
 pub mod skill_loader;
 pub mod skills;
 pub mod swarm;
-pub mod tools;
 pub mod telemetry;
+pub mod tools;
 pub mod webhooks;
+pub mod x402;
 
 pub use agent::{Agent, AgentConfig, AgentMessage, AgentState};
-pub use config::{Config, ProviderConfig, SessionResetConfig, SearchConfig, MemoryConfig, TerminalConfig};
+pub use config::{Config, ProviderConfig, SessionResetConfig, SearchConfig, MemoryConfig, TerminalConfig, BrowserConfig, X402Config};
+pub use cron::{CronEvent, CronJob, CronScheduler};
 pub use error::Error;
 pub use policy::{Decision, PolicyEngine, PolicyRule, TradingLimits};
 pub use providers::{
-    ChatMessage, FunctionCall, FunctionSchema, LlmResponse, LlmResponseContent,
+    create_provider, ChatMessage, FunctionCall, FunctionSchema, LlmResponse, LlmResponseContent,
     OpenAIProvider, Provider, Role, ToolCall, ToolResult, ToolSchema, Usage,
-    create_provider,
 };
 pub use session::SessionStore;
-pub use cron::{CronScheduler, CronJob, CronEvent};
+pub use skill_loader::{
+    SkillDef, ToolSequenceTracker, create_skill_from_template, load_skill_on_activate,
+    load_skills_from_dir, suggest_skill,
+};
 pub use tools::{Tool, ToolOutput, ToolRegistry};

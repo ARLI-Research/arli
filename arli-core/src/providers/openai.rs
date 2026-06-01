@@ -31,11 +31,7 @@ impl OpenAIProvider {
 
 #[async_trait]
 impl Provider for OpenAIProvider {
-    async fn chat(
-        &self,
-        messages: &[ChatMessage],
-        tools: &[ToolSchema],
-    ) -> Result<LlmResponse> {
+    async fn chat(&self, messages: &[ChatMessage], tools: &[ToolSchema]) -> Result<LlmResponse> {
         let url = format!("{}/chat/completions", self.base_url);
 
         let mut body = serde_json::json!({
@@ -92,8 +88,14 @@ impl Provider for OpenAIProvider {
                     id: tc["id"].as_str().unwrap_or("unknown").to_string(),
                     call_type: tc["type"].as_str().unwrap_or("function").to_string(),
                     function: super::FunctionCall {
-                        name: tc["function"]["name"].as_str().unwrap_or("unknown").to_string(),
-                        arguments: tc["function"]["arguments"].as_str().unwrap_or("{}").to_string(),
+                        name: tc["function"]["name"]
+                            .as_str()
+                            .unwrap_or("unknown")
+                            .to_string(),
+                        arguments: tc["function"]["arguments"]
+                            .as_str()
+                            .unwrap_or("{}")
+                            .to_string(),
                     },
                 })
                 .collect();
@@ -104,7 +106,10 @@ impl Provider for OpenAIProvider {
             }
         } else {
             LlmResponseContent::Text {
-                content: message["content"].as_str().unwrap_or("(no response)").to_string(),
+                content: message["content"]
+                    .as_str()
+                    .unwrap_or("(no response)")
+                    .to_string(),
             }
         };
 

@@ -10,12 +10,11 @@
 //!
 //! Reference: https://bot.q.qq.com/wiki/develop/api-v2/
 
-use arli_core::{
-    Agent, AgentConfig, AgentMessage, Config,
-    OpenAIProvider, SessionStore, ToolRegistry,
-    memory::MemoryStore,
-};
 use arli_core::tools::builtin::register_builtin_tools;
+use arli_core::{
+    memory::MemoryStore, Agent, AgentConfig, AgentMessage, Config, OpenAIProvider, SessionStore,
+    ToolRegistry,
+};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -24,7 +23,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 // ── QQ Gateway payload types ──
 
@@ -128,10 +127,7 @@ impl QqGateway {
             )
         } else {
             // DM: chat_id = user openid
-            format!(
-                "https://api.sgroup.qq.com/v2/users/{}/messages",
-                chat_id
-            )
+            format!("https://api.sgroup.qq.com/v2/users/{}/messages", chat_id)
         };
 
         let req = SendMessageReq {
@@ -150,7 +146,11 @@ impl QqGateway {
 
         let status = resp.status();
         if !status.is_success() {
-            warn!("QQ send error ({}): {}", status, resp.text().await.unwrap_or_default());
+            warn!(
+                "QQ send error ({}): {}",
+                status,
+                resp.text().await.unwrap_or_default()
+            );
         }
 
         Ok(())
@@ -187,14 +187,15 @@ impl QqGateway {
         ));
 
         let mut tools = ToolRegistry::new();
-        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None);
+        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None, None);
 
         let agent_config = AgentConfig {
             name: format!("qq-{}", safe_id),
             session_id: None,
             system_prompt: Some(
                 "You are ARLI, an AI agent communicating via QQ. \
-                 Respond in the user's language. Be concise.".to_string()
+                 Respond in the user's language. Be concise."
+                    .to_string(),
             ),
             protect_last_n: 20,
             protect_first_n: 3,
@@ -227,12 +228,9 @@ impl QqGateway {
                         } else {
                             response
                         };
-                        if let Err(e) = Self::send_message(
-                            &app_owned,
-                            &token_owned,
-                            &chat_owned,
-                            &truncated,
-                        ).await
+                        if let Err(e) =
+                            Self::send_message(&app_owned, &token_owned, &chat_owned, &truncated)
+                                .await
                         {
                             error!("Failed to send QQ response: {}", e);
                         }
@@ -249,10 +247,7 @@ impl QqGateway {
         Ok(sender)
     }
 
-    async fn handle_message_event(
-        &self,
-        event: &MessageEvent,
-    ) {
+    async fn handle_message_event(&self, event: &MessageEvent) {
         let author_id = match &event.author {
             Some(a) => a.id.as_deref().unwrap_or("unknown"),
             None => "unknown",
@@ -287,7 +282,8 @@ impl QqGateway {
             &chat_id,
             &self.app_id,
             &self.bot_token,
-        ).await
+        )
+        .await
         {
             Ok(sender) => {
                 if let Err(e) = sender.send(AgentMessage::UserMessage(text)).await {
@@ -313,16 +309,19 @@ impl QqGateway {
             if let Some(Ok(Message::Text(text))) = read.next().await {
                 if let Ok(payload) = serde_json::from_str::<GatewayPayload>(&text) {
                     if payload.op == 10 {
-                        break payload.d.and_then(|d| {
-                            d.get("heartbeat_interval").and_then(|v| v.as_i64())
-                        });
+                        break payload
+                            .d
+                            .and_then(|d| d.get("heartbeat_interval").and_then(|v| v.as_i64()));
                     }
                 }
             }
         };
 
         let heartbeat_ms = hello.unwrap_or(41250);
-        info!("QQ gateway connected, heartbeat interval: {}ms", heartbeat_ms);
+        info!(
+            "QQ gateway connected, heartbeat interval: {}ms",
+            heartbeat_ms
+        );
 
         // Send Identify (op=2)
         let identify = IdentifyPayload {
@@ -334,7 +333,9 @@ impl QqGateway {
                 properties: serde_json::json!({}),
             },
         };
-        write.send(Message::Text(serde_json::to_string(&identify)?)).await?;
+        write
+            .send(Message::Text(serde_json::to_string(&identify)?))
+            .await?;
 
         let last_seq: Arc<Mutex<Option<i64>>> = Arc::new(Mutex::new(None));
         let heartbeat = heartbeat_ms as u64;
@@ -380,7 +381,9 @@ impl QqGateway {
                                     || event_type == "AT_MESSAGE_CREATE"
                                     || event_type == "MESSAGE_CREATE"
                                 {
-                                    if let Ok(event) = serde_json::from_value::<MessageEvent>(d.clone()) {
+                                    if let Ok(event) =
+                                        serde_json::from_value::<MessageEvent>(d.clone())
+                                    {
                                         self.handle_message_event(&event).await;
                                     }
                                 }

@@ -9,19 +9,18 @@
 //!
 //! Reference: https://modern.ircdocs.horse/
 
-use arli_core::{
-    Agent, AgentConfig, AgentMessage, Config,
-    OpenAIProvider, SessionStore, ToolRegistry,
-    memory::MemoryStore,
-};
 use arli_core::tools::builtin::register_builtin_tools;
+use arli_core::{
+    memory::MemoryStore, Agent, AgentConfig, AgentMessage, Config, OpenAIProvider, SessionStore,
+    ToolRegistry,
+};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
-use tracing::{info, error};
+use tracing::{error, info};
 
 /// Shared state for IRC gateway.
 struct IrcState {
@@ -66,7 +65,7 @@ impl IrcState {
         ));
 
         let mut tools = ToolRegistry::new();
-        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None);
+        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None, None);
 
         let agent_config = AgentConfig {
             name: format!("irc-{}", safe_id),
@@ -119,7 +118,10 @@ impl IrcState {
 }
 
 /// Send a raw IRC message.
-async fn irc_send(writer: &Mutex<tokio::io::WriteHalf<TcpStream>>, msg: &str) -> anyhow::Result<()> {
+async fn irc_send(
+    writer: &Mutex<tokio::io::WriteHalf<TcpStream>>,
+    msg: &str,
+) -> anyhow::Result<()> {
     let mut w = writer.lock().await;
     w.write_all(format!("{}\r\n", msg).as_bytes()).await?;
     w.flush().await?;
@@ -185,8 +187,7 @@ pub async fn run(data_dir: PathBuf) -> anyhow::Result<()> {
         .and_then(|p| p.parse().ok())
         .unwrap_or(6667);
 
-    let nick = std::env::var("IRC_NICK")
-        .map_err(|_| anyhow::anyhow!("IRC_NICK not set"))?;
+    let nick = std::env::var("IRC_NICK").map_err(|_| anyhow::anyhow!("IRC_NICK not set"))?;
 
     let channels: Vec<String> = std::env::var("IRC_CHANNELS")
         .unwrap_or_default()
@@ -302,22 +303,15 @@ pub async fn run(data_dir: PathBuf) -> anyhow::Result<()> {
                     {
                         Ok(sender) => {
                             let chat_prefix = format!("[{}] {}", sender_nick, message);
-                            if let Err(e) = sender
-                                .send(AgentMessage::UserMessage(chat_prefix))
-                                .await
+                            if let Err(e) =
+                                sender.send(AgentMessage::UserMessage(chat_prefix)).await
                             {
-                                error!(
-                                    "Failed to send to IRC agent {}: {}",
-                                    channel, e
-                                );
+                                error!("Failed to send to IRC agent {}: {}", channel, e);
                                 state.agents.lock().await.remove(&channel);
                             }
                         }
                         Err(e) => {
-                            error!(
-                                "Cannot create IRC agent for {}: {}",
-                                channel, e
-                            );
+                            error!("Cannot create IRC agent for {}: {}", channel, e);
                         }
                     }
                 }

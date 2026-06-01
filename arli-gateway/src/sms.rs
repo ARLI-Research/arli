@@ -8,23 +8,17 @@
 //!   TWILIO_PHONE_NUMBER   — Your Twilio phone number (e.g., "+1234****890")
 //!   SMS_PORT              — Webhook listen port (default: 3008)
 
-use arli_core::{
-    Agent, AgentConfig, AgentMessage, Config,
-    OpenAIProvider, SessionStore, ToolRegistry,
-    memory::MemoryStore,
-};
 use arli_core::tools::builtin::register_builtin_tools;
-use axum::{
-    extract::State,
-    response::IntoResponse,
-    routing::post,
-    Router,
+use arli_core::{
+    memory::MemoryStore, Agent, AgentConfig, AgentMessage, Config, OpenAIProvider, SessionStore,
+    ToolRegistry,
 };
+use axum::{extract::State, response::IntoResponse, routing::post, Router};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 // ── Shared state ──
 
@@ -69,7 +63,7 @@ impl SmsState {
         ));
 
         let mut tools = ToolRegistry::new();
-        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None);
+        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None, None);
 
         let agent_config = AgentConfig {
             name: format!("sms-{}", safe_id),
@@ -77,7 +71,8 @@ impl SmsState {
             system_prompt: Some(
                 "You are ARLI, an AI agent communicating via SMS. \
                  Respond in the user's language. Be very concise — SMS messages are \
-                 limited to 1600 characters and users expect short replies.".to_string()
+                 limited to 1600 characters and users expect short replies."
+                    .to_string(),
             ),
             protect_last_n: 20,
             protect_first_n: 3,
@@ -142,11 +137,7 @@ async fn send_twilio_sms(
     let resp = client
         .post(&url)
         .basic_auth(account_sid, Some(auth_token))
-        .form(&[
-            ("To", to),
-            ("From", twilio_phone),
-            ("Body", &truncated),
-        ])
+        .form(&[("To", to), ("From", twilio_phone), ("Body", &truncated)])
         .send()
         .await?;
 
@@ -228,8 +219,7 @@ pub async fn run(
 ) -> anyhow::Result<()> {
     info!("SMS gateway starting on port {}...", port);
 
-    let (_response_tx, mut response_rx) =
-        tokio::sync::mpsc::channel::<(String, String)>(128);
+    let (_response_tx, mut response_rx) = tokio::sync::mpsc::channel::<(String, String)>(128);
 
     let config = Config::from_env()?;
     let state = Arc::new(SmsState {
@@ -296,20 +286,26 @@ fn resolve_sms_value(env_var: &str, config_key: &str) -> Option<String> {
 
 /// Convenience wrapper that reads env vars and starts the gateway.
 pub async fn run_from_env(data_dir: PathBuf) -> anyhow::Result<()> {
-    let account_sid = resolve_sms_value("TWILIO_ACCOUNT_SID", "twilio_account_sid")
-        .ok_or_else(|| anyhow::anyhow!(
+    let account_sid =
+        resolve_sms_value("TWILIO_ACCOUNT_SID", "twilio_account_sid").ok_or_else(|| {
+            anyhow::anyhow!(
             "TWILIO_ACCOUNT_SID not set. Set env var or gateway.twilio_account_sid in config.toml"
-        ))?;
+        )
+        })?;
 
-    let auth_token = resolve_sms_value("TWILIO_AUTH_TOKEN", "twilio_auth_token")
-        .ok_or_else(|| anyhow::anyhow!(
+    let auth_token =
+        resolve_sms_value("TWILIO_AUTH_TOKEN", "twilio_auth_token").ok_or_else(|| {
+            anyhow::anyhow!(
             "TWILIO_AUTH_TOKEN not set. Set env var or gateway.twilio_auth_token in config.toml"
-        ))?;
+        )
+        })?;
 
-    let twilio_phone = resolve_sms_value("TWILIO_PHONE_NUMBER", "twilio_phone_number")
-        .ok_or_else(|| anyhow::anyhow!(
+    let twilio_phone =
+        resolve_sms_value("TWILIO_PHONE_NUMBER", "twilio_phone_number").ok_or_else(|| {
+            anyhow::anyhow!(
             "TWILIO_PHONE_NUMBER not set. Set env var or gateway.twilio_phone_number in config.toml"
-        ))?;
+        )
+        })?;
 
     let port: u16 = std::env::var("SMS_PORT")
         .ok()

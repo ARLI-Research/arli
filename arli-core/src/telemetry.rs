@@ -26,10 +26,7 @@ pub fn init_tracing(service_name: Option<&str>) {
         .with_span_list(true)
         .with_current_span(true);
 
-    Registry::default()
-        .with(filter)
-        .with(fmt_layer)
-        .init();
+    Registry::default().with(filter).with(fmt_layer).init();
 
     tracing::info!(
         service = _service,

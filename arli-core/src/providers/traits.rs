@@ -1,6 +1,6 @@
-use async_trait::async_trait;
-use crate::error::Result;
 use crate::context::TokenCounter;
+use crate::error::Result;
+use async_trait::async_trait;
 
 use super::{ChatMessage, LlmResponse, LlmResponseContent, StreamDelta, ToolSchema};
 
@@ -8,11 +8,7 @@ use super::{ChatMessage, LlmResponse, LlmResponseContent, StreamDelta, ToolSchem
 #[async_trait]
 pub trait Provider: Send + Sync {
     /// Send a chat completion request.
-    async fn chat(
-        &self,
-        messages: &[ChatMessage],
-        tools: &[ToolSchema],
-    ) -> Result<LlmResponse>;
+    async fn chat(&self, messages: &[ChatMessage], tools: &[ToolSchema]) -> Result<LlmResponse>;
 
     /// Send a streaming chat completion request.
     /// Returns a receiver for delta chunks.
@@ -27,25 +23,34 @@ pub trait Provider: Send + Sync {
         let response = self.chat(messages, tools).await?;
         match response.content {
             LlmResponseContent::Text { content } => {
-                let _ = tx.send(StreamDelta {
-                    content: Some(content),
-                    tool_calls: None,
-                    done: true,
-                }).await;
-            }
-            LlmResponseContent::ToolCalls { content, tool_calls } => {
-                if let Some(text) = content {
-                    let _ = tx.send(StreamDelta {
-                        content: Some(text),
+                let _ = tx
+                    .send(StreamDelta {
+                        content: Some(content),
                         tool_calls: None,
-                        done: false,
-                    }).await;
+                        done: true,
+                    })
+                    .await;
+            }
+            LlmResponseContent::ToolCalls {
+                content,
+                tool_calls,
+            } => {
+                if let Some(text) = content {
+                    let _ = tx
+                        .send(StreamDelta {
+                            content: Some(text),
+                            tool_calls: None,
+                            done: false,
+                        })
+                        .await;
                 }
-                let _ = tx.send(StreamDelta {
-                    content: None,
-                    tool_calls: Some(tool_calls),
-                    done: true,
-                }).await;
+                let _ = tx
+                    .send(StreamDelta {
+                        content: None,
+                        tool_calls: Some(tool_calls),
+                        done: true,
+                    })
+                    .await;
             }
         }
         Ok(rx)

@@ -11,19 +11,18 @@
 //!   EMAIL_USER         — Login username / email address (required)
 //!   EMAIL_PASSWORD     — Login password (required)
 
-use arli_core::{
-    Agent, AgentConfig, AgentMessage, Config,
-    OpenAIProvider, SessionStore, ToolRegistry,
-    memory::MemoryStore,
-};
 use arli_core::tools::builtin::register_builtin_tools;
+use arli_core::{
+    memory::MemoryStore, Agent, AgentConfig, AgentMessage, Config, OpenAIProvider, SessionStore,
+    ToolRegistry,
+};
 use futures_util::TryStreamExt;
+use lettre::AsyncTransport;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{info, warn, error};
-use lettre::AsyncTransport;
+use tracing::{error, info, warn};
 
 // ── Email gateway state ──
 
@@ -73,9 +72,10 @@ impl EmailGateway {
     /// Returns a list of (sender_email, subject, body, uid).
     async fn fetch_new_emails(&self) -> anyhow::Result<Vec<(String, String, String, u32)>> {
         let tls = async_native_tls::TlsConnector::new();
-        let stream = async_std::net::TcpStream::connect((self.imap_server.as_str(), self.imap_port))
-            .await
-            .map_err(|e| anyhow::anyhow!("IMAP TCP connect failed: {}", e))?;
+        let stream =
+            async_std::net::TcpStream::connect((self.imap_server.as_str(), self.imap_port))
+                .await
+                .map_err(|e| anyhow::anyhow!("IMAP TCP connect failed: {}", e))?;
         let tls_stream = tls
             .connect(self.imap_server.as_str(), stream)
             .await
@@ -140,10 +140,14 @@ impl EmailGateway {
                 .as_ref()
                 .and_then(|addrs| addrs.first())
                 .map(|addr| {
-                    let mailbox = addr.mailbox.as_ref()
+                    let mailbox = addr
+                        .mailbox
+                        .as_ref()
                         .and_then(|m| std::str::from_utf8(m).ok())
                         .unwrap_or("");
-                    let host = addr.host.as_ref()
+                    let host = addr
+                        .host
+                        .as_ref()
                         .and_then(|h| std::str::from_utf8(h).ok())
                         .unwrap_or("");
                     if host.is_empty() {
@@ -171,7 +175,11 @@ impl EmailGateway {
         }
 
         // Mark fetched messages as seen
-        let seen_uids = results.iter().map(|(_, _, _, uid)| uid.to_string()).collect::<Vec<_>>().join(",");
+        let seen_uids = results
+            .iter()
+            .map(|(_, _, _, uid)| uid.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
         if !seen_uids.is_empty() {
             if let Err(e) = session.uid_store(seen_uids, "+FLAGS (\\Seen)").await {
                 warn!("Failed to mark emails as seen: {}", e);
@@ -188,12 +196,7 @@ impl EmailGateway {
 
     /// Send an email reply via SMTP.
     #[allow(dead_code)]
-    async fn send_email_reply(
-        &self,
-        to: &str,
-        subject: &str,
-        body: &str,
-    ) -> anyhow::Result<()> {
+    async fn send_email_reply(&self, to: &str, subject: &str, body: &str) -> anyhow::Result<()> {
         let creds = lettre::transport::smtp::authentication::Credentials::new(
             self.email_user.clone(),
             self.email_password.clone(),
@@ -260,7 +263,7 @@ impl EmailGateway {
         ));
 
         let mut tools = ToolRegistry::new();
-        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None);
+        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None, None);
 
         let agent_config = AgentConfig {
             name: format!("email-{}", safe_key),
@@ -321,9 +324,7 @@ impl EmailGateway {
                             .from(
                                 format!("ARLI <{}>", email_user)
                                     .parse()
-                                    .unwrap_or_else(|_| {
-                                        format!("{}", email_user).parse().unwrap()
-                                    }),
+                                    .unwrap_or_else(|_| format!("{}", email_user).parse().unwrap()),
                             )
                             .to(match sender_email_owned.parse() {
                                 Ok(a) => a,
@@ -362,38 +363,28 @@ impl EmailGateway {
     async fn run_forever(self: Arc<Self>) {
         info!(
             "Email gateway starting (IMAP: {}:{}, SMTP: {}:{}, user: {})",
-            self.imap_server, self.imap_port,
-            self.smtp_server, self.smtp_port,
-            self.email_user,
+            self.imap_server, self.imap_port, self.smtp_server, self.smtp_port, self.email_user,
         );
 
         loop {
             match self.fetch_new_emails().await {
                 Ok(emails) => {
                     for (sender_email, subject, body, _uid) in emails {
-                        info!(
-                            "Email from {}: Subject: \"{}\"",
-                            sender_email, subject
-                        );
+                        info!("Email from {}: Subject: \"{}\"", sender_email, subject);
 
                         // Combine subject and body as the message content
                         let text = format!("Subject: {}\n\n{}", subject, body);
 
                         match self.get_or_create_agent(&sender_email).await {
                             Ok(agent_tx) => {
-                                if let Err(e) = agent_tx.send(AgentMessage::UserMessage(text)).await {
-                                    error!(
-                                        "Failed to send to email agent {}: {}",
-                                        sender_email, e
-                                    );
+                                if let Err(e) = agent_tx.send(AgentMessage::UserMessage(text)).await
+                                {
+                                    error!("Failed to send to email agent {}: {}", sender_email, e);
                                     self.agents.lock().await.remove(&sender_email);
                                 }
                             }
                             Err(e) => {
-                                error!(
-                                    "Cannot create email agent for {}: {}",
-                                    sender_email, e
-                                );
+                                error!("Cannot create email agent for {}: {}", sender_email, e);
                             }
                         }
                     }

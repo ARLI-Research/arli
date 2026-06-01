@@ -152,7 +152,7 @@ dependencies = [
 
 [[package]]
 name = "arli-cli"
-version = "0.3.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "arli-core",
@@ -174,7 +174,7 @@ dependencies = [
 
 [[package]]
 name = "arli-core"
-version = "0.3.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -203,7 +203,7 @@ dependencies = [
 
 [[package]]
 name = "arli-gateway"
-version = "0.3.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "arli-core",
@@ -234,7 +234,7 @@ dependencies = [
 
 [[package]]
 name = "arli-trading"
-version = "0.3.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "arli-core",

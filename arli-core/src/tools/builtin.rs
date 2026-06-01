@@ -315,38 +315,136 @@ impl Tool for ShellTool {
     }
 }
 
-use std::path::PathBuf;
-use std::sync::Arc;
 use crate::memory::MemoryStore;
 use crate::process::ProcessManager;
 use crate::swarm::Swarm;
+use std::path::PathBuf;
+use std::sync::Arc;
 
-use super::search::SessionSearchTool;
-use super::search_files::SearchFilesTool;
-use super::http_get::HttpGetTool;
-use super::web_search::WebSearchTool;
-use super::vision::VisionTool;
-use super::voice::VoiceTool;
-use super::image_gen::ImageGenTool;
-use super::video_gen::VideoGenTool;
-use super::memory::MemoryTool;
+use super::browser::BrowserTool;
+
+use crate::x402::X402Client;
 use super::delegate::DelegateTaskTool;
 use super::execute_code::ExecuteCodeTool;
+use super::http_get::HttpGetTool;
+use super::image_gen::ImageGenTool;
+use super::memory::MemoryTool;
 use super::patch::PatchTool;
 use super::process::ProcessTool;
-use super::browser::BrowserTool;
+use super::search::SessionSearchTool;
+use super::search_files::SearchFilesTool;
+use super::video_gen::VideoGenTool;
+use super::vision::VisionTool;
+use super::voice::VoiceTool;
+use super::web_search::WebSearchTool;
+
+/// x402_pay — pay for a premium tool call via the x402 agentic wallet.
+pub struct X402PayTool {
+    client: Arc<X402Client>,
+}
+
+impl X402PayTool {
+    pub fn new(client: Arc<X402Client>) -> Self {
+        Self { client }
+    }
+}
+
+#[async_trait]
+impl Tool for X402PayTool {
+    fn name(&self) -> &str {
+        "x402_pay"
+    }
+
+    fn description(&self) -> &str {
+        "Pay for a premium tool call using the x402 agentic wallet with USDC. \
+         Returns a transaction hash (stub — actual transfer is TODO)."
+    }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "tool_name": {
+                    "type": "string",
+                    "description": "Name of the premium tool being paid for"
+                },
+                "cost_cents": {
+                    "type": "integer",
+                    "description": "Cost in USDC cents (e.g. 5 = $0.05)"
+                }
+            },
+            "required": ["tool_name", "cost_cents"]
+        })
+    }
+
+    async fn execute(&self, arguments: &str) -> ToolOutput {
+        let args: serde_json::Value = match serde_json::from_str(arguments) {
+            Ok(v) => v,
+            Err(e) => {
+                return ToolOutput {
+                    success: false,
+                    content: String::new(),
+                    error: Some(format!("Invalid JSON arguments: {}", e)),
+                }
+            }
+        };
+
+        let tool_name = match args["tool_name"].as_str() {
+            Some(n) => n,
+            None => {
+                return ToolOutput {
+                    success: false,
+                    content: String::new(),
+                    error: Some("Missing required parameter: tool_name".into()),
+                }
+            }
+        };
+
+        let cost_cents = match args["cost_cents"].as_u64() {
+            Some(c) => c,
+            None => {
+                return ToolOutput {
+                    success: false,
+                    content: String::new(),
+                    error: Some("Missing required parameter: cost_cents".into()),
+                }
+            }
+        };
+
+        match self.client.pay(tool_name, cost_cents) {
+            Ok(tx_hash) => ToolOutput {
+                success: true,
+                content: format!(
+                    "x402 payment confirmed for '{}': {}¢ (tx: {}, remaining budget: {}¢)",
+                    tool_name,
+                    cost_cents,
+                    tx_hash,
+                    self.client.remaining_budget()
+                ),
+                error: None,
+            },
+            Err(e) => ToolOutput {
+                success: false,
+                content: String::new(),
+                error: Some(e),
+            },
+        }
+    }
+}
 
 /// Register all built-in tools.
 /// Pass a database path to enable the session_search tool.
 /// Pass a memory store to enable the memory tool.
 /// Pass a swarm to enable the delegate_task tool.
 /// Pass a process manager to enable the process tool.
+/// Pass an x402 client to enable the x402_pay payment tool.
 pub fn register_builtin_tools(
     registry: &mut super::ToolRegistry,
     db_path: Option<PathBuf>,
     memory_store: Option<Arc<MemoryStore>>,
     swarm: Option<Arc<Swarm>>,
     process_manager: Option<Arc<ProcessManager>>,
+    x402_client: Option<Arc<X402Client>>,
 ) {
     registry.register(Box::new(ReadFileTool));
     registry.register(Box::new(WriteFileTool));
@@ -376,5 +474,9 @@ pub fn register_builtin_tools(
 
     if let Some(pm) = process_manager {
         registry.register(Box::new(ProcessTool::new(pm)));
+    }
+
+    if let Some(client) = x402_client {
+        registry.register(Box::new(X402PayTool::new(client)));
     }
 }

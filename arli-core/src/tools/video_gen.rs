@@ -4,8 +4,8 @@
 //! This is a premium feature stub — the tool returns an informative
 //! message directing users to set up the required API keys.
 
-use async_trait::async_trait;
 use super::{Tool, ToolOutput};
+use async_trait::async_trait;
 
 pub struct VideoGenTool;
 
@@ -47,7 +47,8 @@ impl Tool for VideoGenTool {
     async fn execute(&self, _arguments: &str) -> ToolOutput {
         ToolOutput {
             success: true,
-            content: "Video generation is a premium feature. Use FAL.ai Kling or Runway API.".to_string(),
+            content: "Video generation is a premium feature. Use FAL.ai Kling or Runway API."
+                .to_string(),
             error: None,
         }
     }

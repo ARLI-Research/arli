@@ -174,7 +174,9 @@ impl ProcessManager {
     /// Poll a process: return current status and any new output.
     pub fn poll(&self, id: &str) -> Result<PollResult, String> {
         let mut guard = self.processes.lock().unwrap();
-        let proc = guard.get_mut(id).ok_or_else(|| format!("Process {} not found", id))?;
+        let proc = guard
+            .get_mut(id)
+            .ok_or_else(|| format!("Process {} not found", id))?;
 
         // Check if still running
         match proc.child.try_wait() {
@@ -255,7 +257,9 @@ impl ProcessManager {
     /// Kill a process by ID.
     pub fn kill(&self, id: &str) -> Result<(), String> {
         let mut guard = self.processes.lock().unwrap();
-        let proc = guard.get_mut(id).ok_or_else(|| format!("Process {} not found", id))?;
+        let proc = guard
+            .get_mut(id)
+            .ok_or_else(|| format!("Process {} not found", id))?;
 
         match proc.child.kill() {
             Ok(()) => {
@@ -269,7 +273,9 @@ impl ProcessManager {
     /// Write data to process stdin.
     pub fn write_stdin(&self, id: &str, _data: &str) -> Result<(), String> {
         let guard = self.processes.lock().unwrap();
-        let _proc = guard.get(id).ok_or_else(|| format!("Process {} not found", id))?;
+        let _proc = guard
+            .get(id)
+            .ok_or_else(|| format!("Process {} not found", id))?;
 
         // Note: stdin writing requires the handle to be stored separately.
         // For simplicity, we'll note this limitation.
@@ -293,7 +299,9 @@ impl ProcessManager {
     /// Remove a completed/killed process from the manager.
     pub fn remove(&self, id: &str) -> Result<(), String> {
         let mut guard = self.processes.lock().unwrap();
-        guard.remove(id).ok_or_else(|| format!("Process {} not found", id))?;
+        guard
+            .remove(id)
+            .ok_or_else(|| format!("Process {} not found", id))?;
         Ok(())
     }
 }
@@ -377,7 +385,10 @@ mod tests {
 
         let poll = pm.poll(&id).unwrap();
         // After kill, process should be either Killed or Completed with -1
-        assert!(matches!(poll.status, ProcessStatus::Killed | ProcessStatus::Completed { .. }));
+        assert!(matches!(
+            poll.status,
+            ProcessStatus::Killed | ProcessStatus::Completed { .. }
+        ));
     }
 
     #[test]

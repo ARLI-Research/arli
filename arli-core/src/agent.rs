@@ -1,4 +1,5 @@
 use tokio::sync::mpsc;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{info, debug, warn};
 
@@ -11,9 +12,8 @@ use crate::providers::{
     ChatMessage, LlmResponseContent, Provider, Role, ToolResult,
 };
 use crate::session::SessionStore;
+use crate::skill_loader::{suggest_skill, ToolSequenceTracker};
 use crate::tools::ToolRegistry;
-
-/// Messages that the Agent actor can receive
 #[derive(Debug)]
 pub enum AgentMessage {
     UserMessage(String),
@@ -97,6 +97,10 @@ pub struct Agent {
     guardrail: Option<Arc<Guardrail>>,
     /// Tool call history for the current trajectory
     tool_history: Vec<ToolCallRecord>,
+    /// Tool sequence tracker for auto-skill suggestion (key="tool1->tool2->tool3", value=count)
+    tool_sequences: ToolSequenceTracker,
+    /// Rolling window of last N tool names for sequence detection
+    last_tool_names: Vec<String>,
 }
 
 impl Agent {
@@ -129,6 +133,8 @@ impl Agent {
             tx,
             guardrail,
             tool_history: Vec::new(),
+            tool_sequences: HashMap::new(),
+            last_tool_names: Vec::new(),
         }
     }
 
@@ -260,16 +266,15 @@ If you don't need a tool to answer, respond directly without calling tools."#,
                 if let Ok(content) = std::fs::read_to_string(&path) {
                     // Truncate very large files
                     let truncated = if content.len() > 8000 {
-                        format!("{}...\n[truncated at 8000 chars, {} total]", 
-                            &content[..8000], content.len())
+                        format!(
+                            "{}...\n[truncated at 8000 chars, {} total]",
+                            &content[..8000],
+                            content.len()
+                        )
                     } else {
                         content
                     };
-                    found.push(format!(
-                        "--- {} ---\n{}",
-                        name,
-                        truncated
-                    ));
+                    found.push(format!("--- {} ---\n{}", name, truncated));
                 }
             }
         }
@@ -362,7 +367,7 @@ If you don't need a tool to answer, respond directly without calling tools."#,
                 self.grace_period_used = true;
                 self.messages.push(ChatMessage::user(
                     "[SYSTEM: Budget exceeded (tokens/time/dollars). This is your FINAL response. \
-                     Summarize your current state, any pending work, and wrap up concisely.]"
+                     Summarize your current state, any pending work, and wrap up concisely.]",
                 ));
             }
 
@@ -417,23 +422,27 @@ If you don't need a tool to answer, respond directly without calling tools."#,
                     );
 
                     // Trigger automatic compaction
-                    let compactor = Compactor::new(
-                        self.config.protect_last_n,
-                        self.config.protect_first_n,
-                    );
+                    let compactor =
+                        Compactor::new(self.config.protect_last_n, self.config.protect_first_n);
 
-                    match compactor.compact(self.provider.as_ref(), &self.messages).await {
+                    match compactor
+                        .compact(self.provider.as_ref(), &self.messages)
+                        .await
+                    {
                         Ok(Some(result)) => {
                             info!(
                                 "Compacted {} messages: {} → {} tokens ({:.0}% reduction)",
                                 result.compacted_count,
                                 result.tokens_before,
                                 result.tokens_after,
-                                (1.0 - result.tokens_after as f64 / result.tokens_before as f64) * 100.0
+                                (1.0 - result.tokens_after as f64 / result.tokens_before as f64)
+                                    * 100.0
                             );
-                            
+
                             // Record compaction in session lineage
-                            if let (Some(ref session), Some(ref sid)) = (&self.session, &self.session_id) {
+                            if let (Some(ref session), Some(ref sid)) =
+                                (&self.session, &self.session_id)
+                            {
                                 if let Err(e) = session.record_compaction(sid, &result.summary) {
                                     warn!("Failed to record compaction: {}", e);
                                 }
@@ -509,7 +518,9 @@ If you don't need a tool to answer, respond directly without calling tools."#,
                 self.tokens_consumed += usage.total_tokens as usize;
                 debug!(
                     "LLM: {}p + {}c = {}t (total consumed: {})",
-                    usage.prompt_tokens, usage.completion_tokens, usage.total_tokens,
+                    usage.prompt_tokens,
+                    usage.completion_tokens,
+                    usage.total_tokens,
                     self.tokens_consumed
                 );
             }
@@ -525,7 +536,10 @@ If you don't need a tool to answer, respond directly without calling tools."#,
                             .await;
                         match decision {
                             GuardDecision::Safe => content,
-                            GuardDecision::Unsafe { classification, replacement } => {
+                            GuardDecision::Unsafe {
+                                classification,
+                                replacement,
+                            } => {
                                 warn!(
                                     "Guardrail BLOCKED reply: {:?} / {:?} / {:?}",
                                     classification.risk_source,
@@ -543,6 +557,16 @@ If you don't need a tool to answer, respond directly without calling tools."#,
                     self.save_message(&msg);
                     self.messages.push(msg);
                     self.state = AgentState::Completed;
+
+                    // Record tool sequence for auto-skill suggestion
+                    self.record_sequence();
+                    if let Some((skill_name, prompt)) = self.suggest_skill() {
+                        info!(
+                            "Auto-skill suggestion: '{}' (tool sequence repeated 3+ times)\n{}",
+                            skill_name, prompt
+                        );
+                    }
+
                     return Ok(final_re);
                 }
                 LlmResponseContent::ToolCalls {
@@ -556,24 +580,34 @@ If you don't need a tool to answer, respond directly without calling tools."#,
                     for tc in &tool_calls {
                         info!("Tool: {} ({})", tc.function.name, tc.id);
 
+                        // Track tool name for sequence detection
+                        self.last_tool_names.push(tc.function.name.clone());
+                        if self.last_tool_names.len() > 5 {
+                            self.last_tool_names.remove(0);
+                        }
+
                         // Parse arguments for policy check
                         let args: serde_json::Value = serde_json::from_str(&tc.function.arguments)
                             .unwrap_or(serde_json::json!({}));
 
                         // --- POLICY CHECK ---
-                        let decision = self.policy.evaluate(
-                            &tc.function.name,
-                            &args,
-                            Some(&self.config.name),
-                        );
+                        let decision =
+                            self.policy
+                                .evaluate(&tc.function.name, &args, Some(&self.config.name));
 
                         let result_content = match decision {
                             Decision::Allow => {
                                 // --- RATE LIMIT CHECK ---
                                 let rate_decision = self.policy.check_rate_limit(&tc.function.name);
                                 match rate_decision {
-                                    Decision::RateLimited { ref reason, retry_after_secs } => {
-                                        warn!("Tool '{}' RATE LIMITED: {}", tc.function.name, reason);
+                                    Decision::RateLimited {
+                                        ref reason,
+                                        retry_after_secs,
+                                    } => {
+                                        warn!(
+                                            "Tool '{}' RATE LIMITED: {}",
+                                            tc.function.name, reason
+                                        );
                                         format!(
                                             "RATE LIMITED: {}
 Try again in {} seconds.",
@@ -598,10 +632,7 @@ Try again in {} seconds.",
                                 }
                             }
                             Decision::Deny { ref reason } => {
-                                warn!(
-                                    "Tool '{}' DENIED by policy: {}",
-                                    tc.function.name, reason
-                                );
+                                warn!("Tool '{}' DENIED by policy: {}", tc.function.name, reason);
                                 format!(
                                     "ACCESS DENIED by policy engine: {}\n\
                                      Tool '{}' is blocked. Use a different approach.",
@@ -609,10 +640,7 @@ Try again in {} seconds.",
                                 )
                             }
                             Decision::NeedsApproval { ref reason } => {
-                                warn!(
-                                    "Tool '{}' NEEDS APPROVAL: {}",
-                                    tc.function.name, reason
-                                );
+                                warn!("Tool '{}' NEEDS APPROVAL: {}", tc.function.name, reason);
                                 format!(
                                     "APPROVAL REQUIRED: {}\n\
                                      The tool '{}' needs human confirmation to proceed.\n\
@@ -646,6 +674,27 @@ Try again in {} seconds.",
         }
     }
 
+    /// Record the current tool sequence in the tracker.
+    fn record_sequence(&mut self) {
+        if self.last_tool_names.is_empty() {
+            return;
+        }
+        let sequence = self.last_tool_names.join("->");
+        let count = self.tool_sequences.entry(sequence).or_insert(0);
+        *count += 1;
+        debug!(
+            "Recorded tool sequence (count={}): {:?}",
+            count,
+            self.last_tool_names
+        );
+    }
+
+    /// Check if any tool sequence has repeated 3+ times across runs.
+    /// Returns `Some((skill_name, prompt_suggestion))` if a skill should be created.
+    pub fn suggest_skill(&self) -> Option<(String, String)> {
+        suggest_skill(&self.tool_sequences)
+    }
+
     fn save_message(&self, message: &ChatMessage) {
         if let (Some(ref session), Some(ref session_id)) = (&self.session, &self.session_id) {
             if let Err(e) = session.save_message(session_id, message) {
@@ -668,7 +717,11 @@ Try again in {} seconds.",
     /// can assemble a fresh one. The parent_session_id is stored for session lineage.
     pub fn load_history(&mut self, session_id: String, mut messages: Vec<ChatMessage>) {
         // Strip the old system prompt — we'll rebuild it fresh in run()
-        if messages.first().map(|m| m.role == Role::System).unwrap_or(false) {
+        if messages
+            .first()
+            .map(|m| m.role == Role::System)
+            .unwrap_or(false)
+        {
             messages.remove(0);
         }
         self.session_id = Some(session_id);

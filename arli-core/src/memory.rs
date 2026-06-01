@@ -1,8 +1,13 @@
 //! Persistent cross-session memory store.
 //!
-//! Two targets (like Hermes):
+//! Three targets:
 //! - `user`: who the user is — preferences, name, role, communication style
 //! - `memory`: agent notes — environment facts, project conventions, lessons learned
+//! - `correction`: feedback loop — user corrections the agent learns from
+//!
+//! Two recall modes:
+//! - `recall` — fast FTS5 keyword search
+//! - `reflect` — deep LLM-powered synthesis across all memories for a target
 //!
 //! Stored in SQLite for durability across agent restarts.
 
@@ -42,7 +47,7 @@ impl MemoryStore {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS memories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                target TEXT NOT NULL CHECK(target IN ('user', 'memory')),
+                target TEXT NOT NULL CHECK(target IN ('user', 'memory', 'correction')),
                 content TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -53,7 +58,7 @@ impl MemoryStore {
                 target UNINDEXED,
                 content_rowid='id',
                 content='memories'
-            );"
+            );",
         )?;
 
         // FTS5 sync triggers
@@ -73,10 +78,12 @@ impl MemoryStore {
                 VALUES ('delete', old.id, old.content, old.target);
                 INSERT INTO memories_fts(rowid, content, target)
                 VALUES (new.id, new.content, new.target);
-            END;"
+            END;",
         )?;
 
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
     /// Open an in-memory store (for tests).
@@ -85,7 +92,7 @@ impl MemoryStore {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS memories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                target TEXT NOT NULL CHECK(target IN ('user', 'memory')),
+                target TEXT NOT NULL CHECK(target IN ('user', 'memory', 'correction')),
                 content TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -101,10 +108,12 @@ impl MemoryStore {
             CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
                 INSERT INTO memories_fts(rowid, content, target)
                 VALUES (new.id, new.content, new.target);
-            END;"
+            END;",
         )?;
 
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
     /// Add a new memory entry. Returns the new ID.
@@ -115,7 +124,10 @@ impl MemoryStore {
             params![target, content],
         )?;
         let id = conn.last_insert_rowid();
-        tracing::info!("Memory added: [{target}] id={id} ({:.80}...)", &content[..content.len().min(80)]);
+        tracing::info!(
+            "Memory added: [{target}] id={id} ({:.80}...)",
+            &content[..content.len().min(80)]
+        );
         Ok(id)
     }
 
@@ -186,7 +198,28 @@ impl MemoryStore {
         Ok((user_count, mem_count))
     }
 
-    /// Search memories using FTS5.
+    /// Reflect: deep LLM-powered synthesis across all memories for a target.
+    ///
+    /// Returns a prompt string that the calling agent can send to its LLM
+    /// for synthesis — finding connections, identifying patterns, and
+    /// answering the query using only the stored memories.
+    pub fn reflect(&self, target: &str, query: &str) -> Result<String> {
+        let memories = self.get_all(Some(target))?;
+
+        let mut prompt = format!(
+            "Synthesize memories about '{}' in response to query '{}'.\n\nMemories:\n",
+            target, query
+        );
+        for m in &memories {
+            prompt.push_str(&format!("- [{}] {}\n", m.created_at, m.content));
+        }
+        prompt.push_str(
+            "\nFind connections, identify patterns, and answer the query using ONLY the memories above.",
+        );
+        Ok(prompt)
+    }
+
+    /// Search memories using FTS5 — also aliased as "recall".
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<MemoryEntry>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -195,7 +228,7 @@ impl MemoryStore {
              JOIN memories m ON f.rowid = m.id
              WHERE memories_fts MATCH ?1
              ORDER BY rank
-             LIMIT ?2"
+             LIMIT ?2",
         )?;
 
         let rows = stmt.query_map(params![query, limit as i64], Self::map_row)?;
@@ -204,6 +237,32 @@ impl MemoryStore {
             entries.push(row?);
         }
         Ok(entries)
+    }
+
+    /// Add a user correction to the feedback loop.
+    ///
+    /// Stores both the original (what the agent did/said) and the
+    /// correction (what the user wanted instead) in a single entry
+    /// with target="correction".
+    pub fn add_correction(&self, original: &str, correction: &str) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        let content = format!("USER: {}\nCORRECTED: {}", original, correction);
+        conn.execute(
+            "INSERT INTO memories (target, content) VALUES ('correction', ?1)",
+            params![content],
+        )?;
+        let id = conn.last_insert_rowid();
+        tracing::info!(
+            "Correction saved: id={id} ({:.80}... → {:.80}...)",
+            &original[..original.len().min(80)],
+            &correction[..correction.len().min(80)]
+        );
+        Ok(id)
+    }
+
+    /// Retrieve all stored corrections (target="correction").
+    pub fn get_corrections(&self) -> Result<Vec<MemoryEntry>> {
+        self.get_all(Some("correction"))
     }
 
     fn map_row(row: &rusqlite::Row<'_>) -> std::result::Result<MemoryEntry, rusqlite::Error> {
@@ -236,7 +295,13 @@ mod tests {
     fn test_replace_memory() {
         let store = MemoryStore::open_in_memory().unwrap();
         store.add("memory", "Project uses cargo").unwrap();
-        let updated = store.replace("memory", "Project uses cargo", "Project uses cargo workspace").unwrap();
+        let updated = store
+            .replace(
+                "memory",
+                "Project uses cargo",
+                "Project uses cargo workspace",
+            )
+            .unwrap();
         assert_eq!(updated, 1);
 
         let entries = store.get_all(Some("memory")).unwrap();
@@ -278,6 +343,54 @@ mod tests {
         let results = store.search("rustc", 10).unwrap();
         assert_eq!(results.len(), 1);
         assert!(results[0].content.contains("rustc"));
+    }
+
+    #[test]
+    fn test_reflect() {
+        let store = MemoryStore::open_in_memory().unwrap();
+        store.add("memory", "Project uses Rust").unwrap();
+        store.add("memory", "Tests are written with cargo test").unwrap();
+        store.add("memory", "CI runs on GitHub Actions").unwrap();
+
+        let prompt = store.reflect("memory", "What tools do we use?").unwrap();
+        assert!(prompt.contains("Synthesize memories about 'memory'"));
+        assert!(prompt.contains("Project uses Rust"));
+        assert!(prompt.contains("cargo test"));
+        assert!(prompt.contains("GitHub Actions"));
+        assert!(prompt.contains("ONLY the memories above"));
+    }
+
+    #[test]
+    fn test_reflect_empty() {
+        let store = MemoryStore::open_in_memory().unwrap();
+        let prompt = store.reflect("user", "any query").unwrap();
+        assert!(prompt.contains("Synthesize memories about 'user'"));
+        assert!(prompt.contains("Find connections"));
+    }
+
+    #[test]
+    fn test_add_and_get_corrections() {
+        let store = MemoryStore::open_in_memory().unwrap();
+        let id = store.add_correction("I used python", "Use uv instead").unwrap();
+        assert!(id > 0);
+
+        let corrections = store.get_corrections().unwrap();
+        assert_eq!(corrections.len(), 1);
+        assert_eq!(corrections[0].target, "correction");
+        assert_eq!(
+            corrections[0].content,
+            "USER: I used python\nCORRECTED: Use uv instead"
+        );
+    }
+
+    #[test]
+    fn test_multiple_corrections() {
+        let store = MemoryStore::open_in_memory().unwrap();
+        store.add_correction("bad output 1", "correct output 1").unwrap();
+        store.add_correction("bad output 2", "correct output 2").unwrap();
+
+        let corrections = store.get_corrections().unwrap();
+        assert_eq!(corrections.len(), 2);
     }
 }
 
@@ -329,7 +442,10 @@ pub fn create_memory_store(
 /// Mem0 is a cloud-hosted memory API at https://api.mem0.ai/v1.
 /// This stub logs that mem0 is configured and falls back to SQLite.
 /// Full integration would use an HTTP client to the Mem0 API.
-fn create_mem0_store(config: &crate::config::MemoryConfig, db_path: PathBuf) -> Result<MemoryStore> {
+fn create_mem0_store(
+    config: &crate::config::MemoryConfig,
+    db_path: PathBuf,
+) -> Result<MemoryStore> {
     let base_url = if config.base_url.is_empty() {
         "https://api.mem0.ai/v1"
     } else {
@@ -338,7 +454,11 @@ fn create_mem0_store(config: &crate::config::MemoryConfig, db_path: PathBuf) -> 
     tracing::info!(
         "Memory provider: mem0 (API: {}, key: {})",
         base_url,
-        if config.api_key.is_empty() { "not set" } else { "configured" }
+        if config.api_key.is_empty() {
+            "not set"
+        } else {
+            "configured"
+        }
     );
     // TODO: Implement full mem0 HTTP client integration
     // For now, fall back to SQLite for backward compatibility
@@ -350,7 +470,10 @@ fn create_mem0_store(config: &crate::config::MemoryConfig, db_path: PathBuf) -> 
 /// ChromaDB is a local open-source vector database.
 /// Default URL: http://localhost:8000 (env CHROMA_URL).
 /// This stub logs that chroma is configured and falls back to SQLite.
-fn create_chroma_store(config: &crate::config::MemoryConfig, db_path: PathBuf) -> Result<MemoryStore> {
+fn create_chroma_store(
+    config: &crate::config::MemoryConfig,
+    db_path: PathBuf,
+) -> Result<MemoryStore> {
     let base_url = if config.base_url.is_empty() {
         "http://localhost:8000"
     } else {
@@ -366,7 +489,10 @@ fn create_chroma_store(config: &crate::config::MemoryConfig, db_path: PathBuf) -
 /// Qdrant is a vector database (local or cloud).
 /// Requires QDRANT_URL and QDRANT_API_KEY env vars.
 /// This stub logs that qdrant is configured and falls back to SQLite.
-fn create_qdrant_store(config: &crate::config::MemoryConfig, db_path: PathBuf) -> Result<MemoryStore> {
+fn create_qdrant_store(
+    config: &crate::config::MemoryConfig,
+    db_path: PathBuf,
+) -> Result<MemoryStore> {
     let base_url = if config.base_url.is_empty() {
         "http://localhost:6333"
     } else {
@@ -375,7 +501,11 @@ fn create_qdrant_store(config: &crate::config::MemoryConfig, db_path: PathBuf) -
     tracing::info!(
         "Memory provider: qdrant (URL: {}, key: {})",
         base_url,
-        if config.api_key.is_empty() { "not set" } else { "configured" }
+        if config.api_key.is_empty() {
+            "not set"
+        } else {
+            "configured"
+        }
     );
     // TODO: Implement full Qdrant client integration
     MemoryStore::open(db_path)
@@ -384,70 +514,122 @@ fn create_qdrant_store(config: &crate::config::MemoryConfig, db_path: PathBuf) -
 // ── New memory provider stubs ──
 
 /// Byterover — cloud-hosted memory (bytabox.ai, requires API key).
-fn create_byterover_store(config: &crate::config::MemoryConfig, db_path: PathBuf) -> Result<MemoryStore> {
+fn create_byterover_store(
+    config: &crate::config::MemoryConfig,
+    db_path: PathBuf,
+) -> Result<MemoryStore> {
     tracing::info!(
         "Memory provider: byterover (key: {})",
-        if config.api_key.is_empty() { "not set" } else { "configured" }
+        if config.api_key.is_empty() {
+            "not set"
+        } else {
+            "configured"
+        }
     );
     MemoryStore::open(db_path)
 }
 
 /// Hindsight — local/cloud memory store (API key or local).
-fn create_hindsight_store(config: &crate::config::MemoryConfig, db_path: PathBuf) -> Result<MemoryStore> {
+fn create_hindsight_store(
+    config: &crate::config::MemoryConfig,
+    db_path: PathBuf,
+) -> Result<MemoryStore> {
     tracing::info!(
         "Memory provider: hindsight (mode: {})",
-        if config.api_key.is_empty() { "local" } else { "cloud" }
+        if config.api_key.is_empty() {
+            "local"
+        } else {
+            "cloud"
+        }
     );
     MemoryStore::open(db_path)
 }
 
 /// Holographic — local holographic memory store.
-fn create_holographic_store(_config: &crate::config::MemoryConfig, db_path: PathBuf) -> Result<MemoryStore> {
+fn create_holographic_store(
+    _config: &crate::config::MemoryConfig,
+    db_path: PathBuf,
+) -> Result<MemoryStore> {
     tracing::info!("Memory provider: holographic (local)");
     MemoryStore::open(db_path)
 }
 
 /// Honcho — local/cloud memory for AI agents.
-fn create_honcho_store(config: &crate::config::MemoryConfig, db_path: PathBuf) -> Result<MemoryStore> {
+fn create_honcho_store(
+    config: &crate::config::MemoryConfig,
+    db_path: PathBuf,
+) -> Result<MemoryStore> {
     tracing::info!(
         "Memory provider: honcho (mode: {})",
-        if config.api_key.is_empty() { "local" } else { "cloud" }
+        if config.api_key.is_empty() {
+            "local"
+        } else {
+            "cloud"
+        }
     );
     MemoryStore::open(db_path)
 }
 
 /// OpenViking — API key / local memory store.
-fn create_openviking_store(config: &crate::config::MemoryConfig, db_path: PathBuf) -> Result<MemoryStore> {
+fn create_openviking_store(
+    config: &crate::config::MemoryConfig,
+    db_path: PathBuf,
+) -> Result<MemoryStore> {
     tracing::info!(
         "Memory provider: openviking (mode: {})",
-        if config.api_key.is_empty() { "local" } else { "cloud" }
+        if config.api_key.is_empty() {
+            "local"
+        } else {
+            "cloud"
+        }
     );
     MemoryStore::open(db_path)
 }
 
 /// RetainDB — API key / local vector memory.
-fn create_retaindb_store(config: &crate::config::MemoryConfig, db_path: PathBuf) -> Result<MemoryStore> {
+fn create_retaindb_store(
+    config: &crate::config::MemoryConfig,
+    db_path: PathBuf,
+) -> Result<MemoryStore> {
     tracing::info!(
         "Memory provider: retaindb (mode: {})",
-        if config.api_key.is_empty() { "local" } else { "cloud" }
+        if config.api_key.is_empty() {
+            "local"
+        } else {
+            "cloud"
+        }
     );
     MemoryStore::open(db_path)
 }
 
 /// Supermemory — cloud memory API (supermemory.ai, requires API key).
-fn create_supermemory_store(config: &crate::config::MemoryConfig, db_path: PathBuf) -> Result<MemoryStore> {
+fn create_supermemory_store(
+    config: &crate::config::MemoryConfig,
+    db_path: PathBuf,
+) -> Result<MemoryStore> {
     tracing::info!(
         "Memory provider: supermemory (key: {})",
-        if config.api_key.is_empty() { "not set" } else { "configured" }
+        if config.api_key.is_empty() {
+            "not set"
+        } else {
+            "configured"
+        }
     );
     MemoryStore::open(db_path)
 }
 
 /// AgentMemory — API key / local memory for agents.
-fn create_agentmemory_store(config: &crate::config::MemoryConfig, db_path: PathBuf) -> Result<MemoryStore> {
+fn create_agentmemory_store(
+    config: &crate::config::MemoryConfig,
+    db_path: PathBuf,
+) -> Result<MemoryStore> {
     tracing::info!(
         "Memory provider: agentmemory (mode: {})",
-        if config.api_key.is_empty() { "local" } else { "cloud" }
+        if config.api_key.is_empty() {
+            "local"
+        } else {
+            "cloud"
+        }
     );
     MemoryStore::open(db_path)
 }

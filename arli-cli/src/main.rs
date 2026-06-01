@@ -1,12 +1,11 @@
 mod tui;
 
-use clap::{Parser, Subcommand};
-use arli_core::{
-    Agent, AgentConfig, ChatMessage, Config, CronEvent, CronJob, CronScheduler,
-    SessionStore, ToolRegistry, PolicyEngine,
-    create_provider,
-};
 use arli_core::tools::builtin::register_builtin_tools;
+use arli_core::{
+    create_provider, Agent, AgentConfig, ChatMessage, Config, CronEvent, CronJob, CronScheduler,
+    PolicyEngine, SessionStore, ToolRegistry,
+};
+use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use tokio::sync::mpsc;
 use tracing::info;
@@ -154,9 +153,7 @@ enum WebhookCmd {
         prompt: String,
     },
     /// Remove a subscription
-    Remove {
-        name: String,
-    },
+    Remove { name: String },
     /// Start webhook server
     Serve {
         #[arg(short, long, default_value = "3002")]
@@ -182,9 +179,7 @@ enum ProfileCmd {
         name: String,
     },
     /// Delete a profile
-    Delete {
-        name: String,
-    },
+    Delete { name: String },
     /// Show current profile
     Current,
 }
@@ -204,10 +199,7 @@ enum ConfigCmd {
     /// Print config file path
     Path,
     /// Set a config value: arli config set model deepseek-chat
-    Set {
-        key: String,
-        value: String,
-    },
+    Set { key: String, value: String },
 }
 
 #[derive(Subcommand)]
@@ -232,19 +224,13 @@ enum CronCmd {
         id: String,
     },
     /// Pause a cron job
-    Pause {
-        id: String,
-    },
+    Pause { id: String },
     /// Resume a paused cron job
-    Resume {
-        id: String,
-    },
+    Resume { id: String },
     /// Start the cron scheduler daemon
     Start,
     /// Run a job immediately (for testing)
-    Run {
-        id: String,
-    },
+    Run { id: String },
 }
 
 fn get_data_dir() -> PathBuf {
@@ -313,17 +299,47 @@ fn run_setup() -> anyhow::Result<()> {
     io::stdin().read_line(&mut choice)?;
     let choice = choice.trim();
 
-    let (provider_name, api_key_env, default_model, base_url_override): (&str, &str, &str, Option<&str>) = match choice {
+    let (provider_name, api_key_env, default_model, base_url_override): (
+        &str,
+        &str,
+        &str,
+        Option<&str>,
+    ) = match choice {
         "2" => ("openai", "OPENAI_API_KEY", "gpt-4o", None),
-        "3" => ("anthropic", "ANTHROPIC_API_KEY", "claude-sonnet-4-20250514", None),
+        "3" => (
+            "anthropic",
+            "ANTHROPIC_API_KEY",
+            "claude-sonnet-4-20250514",
+            None,
+        ),
         "4" => ("openrouter", "OPENROUTER_API_KEY", "openai/gpt-4o", None),
         "5" => ("google", "GOOGLE_API_KEY", "gemini-2.5-flash", None),
         "6" => ("xai", "XAI_API_KEY", "grok-4", None),
         "7" => ("copilot", "GITHUB_TOKEN", "gpt-4o", None),
-        "9" => ("lmstudio", "LM_STUDIO_API_KEY", "local-model", Some("http://localhost:1234/v1")),
-        "10" => ("ollama", "OLLAMA_API_KEY", "llama3", Some("http://localhost:11434/v1")),
-        "11" => ("huggingface", "HF_API_KEY", "meta-llama/Meta-Llama-3-70B-Instruct", None),
-        "12" => ("bedrock", "AWS_ACCESS_KEY_ID", "us.anthropic.claude-sonnet-4-20250514-v1:0", None),
+        "9" => (
+            "lmstudio",
+            "LM_STUDIO_API_KEY",
+            "local-model",
+            Some("http://localhost:1234/v1"),
+        ),
+        "10" => (
+            "ollama",
+            "OLLAMA_API_KEY",
+            "llama3",
+            Some("http://localhost:11434/v1"),
+        ),
+        "11" => (
+            "huggingface",
+            "HF_API_KEY",
+            "meta-llama/Meta-Llama-3-70B-Instruct",
+            None,
+        ),
+        "12" => (
+            "bedrock",
+            "AWS_ACCESS_KEY_ID",
+            "us.anthropic.claude-sonnet-4-20250514-v1:0",
+            None,
+        ),
         "13" => ("azure", "AZURE_API_KEY", "gpt-4o", None),
         "14" => ("codex", "OPENAI_CODEX_API_KEY", "gpt-4o", None),
         "15" => ("nous", "NOUS_API_KEY", "hermes-3", None),
@@ -391,7 +407,11 @@ fn run_setup() -> anyhow::Result<()> {
             io::stdout().flush()?;
             let mut tp = String::new();
             io::stdin().read_line(&mut tp)?;
-            let tool_progress = if tp.trim().is_empty() { "all".to_string() } else { tp.trim().to_string() };
+            let tool_progress = if tp.trim().is_empty() {
+                "all".to_string()
+            } else {
+                tp.trim().to_string()
+            };
 
             print!("Compression threshold (0.5-0.95) [0.5]: ");
             io::stdout().flush()?;
@@ -429,7 +449,11 @@ fn run_setup() -> anyhow::Result<()> {
     io::stdout().flush()?;
     let mut model = String::new();
     io::stdin().read_line(&mut model)?;
-    let model = if model.trim().is_empty() { default_model.to_string() } else { model.trim().to_string() };
+    let model = if model.trim().is_empty() {
+        default_model.to_string()
+    } else {
+        model.trim().to_string()
+    };
 
     // ── 4. Max iterations ──
     print!("Max tool-calling iterations [90]: ");
@@ -629,7 +653,60 @@ fn run_setup() -> anyhow::Result<()> {
         format!("\n[browser]\nprovider = \"{}\"\n", browser_provider)
     };
 
-    // ── 10. Write config ──
+    // ── 10. x402 agentic wallet ──
+    println!();
+    println!("x402 agentic wallet (for premium tools like Nansen, Exa, etc.)?");
+    println!("  Seed a wallet with $5-10 USDC. Each tool call costs a few cents.");
+    println!("  This avoids subscribing to every API individually.");
+    let mut x402_enable = String::new();
+    print!("Enable x402? [skip]: ");
+    io::stdout().flush()?;
+    io::stdin().read_line(&mut x402_enable)?;
+    let x402_enable = x402_enable.trim().eq_ignore_ascii_case("y")
+        || x402_enable.trim().eq_ignore_ascii_case("yes");
+
+    let x402_section = if x402_enable {
+        print!("Wallet address (hex): ");
+        io::stdout().flush()?;
+        let mut wallet_address = String::new();
+        io::stdin().read_line(&mut wallet_address)?;
+        let wallet_address = wallet_address.trim().to_string();
+
+        print!("Private key (input hidden): ");
+        io::stdout().flush()?;
+        let private_key = rpassword::read_password()?;
+
+        print!("RPC URL (base chain for USDC): ");
+        io::stdout().flush()?;
+        let mut rpc_url = String::new();
+        io::stdin().read_line(&mut rpc_url)?;
+        let rpc_url = rpc_url.trim().to_string();
+
+        print!("Total budget in USDC cents [1000 = $10.00]: ");
+        io::stdout().flush()?;
+        let mut budget = String::new();
+        io::stdin().read_line(&mut budget)?;
+        let total_budget_cents: u64 = budget.trim().parse().unwrap_or(1000);
+
+        print!("Max spend per call in cents [50 = $0.50]: ");
+        io::stdout().flush()?;
+        let mut max_spend = String::new();
+        io::stdin().read_line(&mut max_spend)?;
+        let max_spend_per_call_cents: u64 = max_spend.trim().parse().unwrap_or(50);
+
+        format!(
+            "[x402]\nenabled = true\nwallet_address = \"{}\"\nprivate_key = \"{}\"\nrpc_url = \"{}\"\ntotal_budget_cents = {}\nmax_spend_per_call_cents = {}\n",
+            wallet_address,
+            private_key,
+            rpc_url,
+            total_budget_cents,
+            max_spend_per_call_cents,
+        )
+    } else {
+        String::new()
+    };
+
+    // ── 11. Write config ──
     let data_dir = get_data_dir();
     let config_path = data_dir.join("config.toml");
 
@@ -647,6 +724,7 @@ fn run_setup() -> anyhow::Result<()> {
     config_content.push_str(&memory_section);
     config_content.push_str(&terminal_section);
     config_content.push_str(&browser_section);
+    config_content.push_str(&x402_section);
     std::fs::write(&config_path, config_content)?;
 
     // ── 11. Telegram / Gateway ──
@@ -675,12 +753,10 @@ fn run_setup_finish(
     let telegram_token = telegram_token.trim().to_string();
 
     if !telegram_token.is_empty() {
-        let gateway_config = format!(
-            "\n[gateway]\ntelegram_token = \"{}\"\n",
-            telegram_token
-        );
-        std::fs::write(&config_path,
-            std::fs::read_to_string(&config_path)? + &gateway_config
+        let gateway_config = format!("\n[gateway]\ntelegram_token = \"{}\"\n", telegram_token);
+        std::fs::write(
+            &config_path,
+            std::fs::read_to_string(&config_path)? + &gateway_config,
         )?;
     }
 
@@ -750,8 +826,14 @@ fn run_setup_finish(
                 .status();
             match status {
                 Ok(s) if s.success() => println!("Gateway daemon started."),
-                Ok(s) => eprintln!("Gateway start failed (exit: {:?}). Run 'arli gateway start' manually.", s.code()),
-                Err(e) => eprintln!("Could not start gateway: {}. Run 'arli gateway start' manually.", e),
+                Ok(s) => eprintln!(
+                    "Gateway start failed (exit: {:?}). Run 'arli gateway start' manually.",
+                    s.code()
+                ),
+                Err(e) => eprintln!(
+                    "Could not start gateway: {}. Run 'arli gateway start' manually.",
+                    e
+                ),
             }
         }
     }
@@ -809,7 +891,9 @@ fn install_gateway_user_service() -> anyhow::Result<()> {
         println!();
         println!("⚠ System service also detected at /etc/systemd/system/arli-gateway.service");
         println!("  Having both can cause confusion. Remove one:");
-        println!("    sudo rm /etc/systemd/system/arli-gateway.service && sudo systemctl daemon-reload");
+        println!(
+            "    sudo rm /etc/systemd/system/arli-gateway.service && sudo systemctl daemon-reload"
+        );
         println!("  Or: sudo arli gateway uninstall --system");
     }
 
@@ -859,7 +943,10 @@ fn install_gateway_system_service() -> anyhow::Result<()> {
 
     println!("System service template written to {}", tmp_path.display());
     println!("To install (requires sudo):");
-    println!("  sudo cp {} /etc/systemd/system/arli-gateway.service", tmp_path.display());
+    println!(
+        "  sudo cp {} /etc/systemd/system/arli-gateway.service",
+        tmp_path.display()
+    );
     println!("  sudo systemctl daemon-reload");
     println!("  sudo systemctl enable --now arli-gateway");
 
@@ -908,11 +995,13 @@ fn run_config(cmd: ConfigCmd) -> anyhow::Result<()> {
                         .insert(key.clone(), toml::Value::String(value.clone()));
                 }
                 2 => {
-                    let section = doc.as_table_mut()
+                    let section = doc
+                        .as_table_mut()
                         .ok_or_else(|| anyhow::anyhow!("Invalid config"))?
                         .entry(parts[0].to_string())
                         .or_insert(toml::Value::Table(toml::Table::new()));
-                    section.as_table_mut()
+                    section
+                        .as_table_mut()
                         .ok_or_else(|| anyhow::anyhow!("Invalid section"))?
                         .insert(parts[1].to_string(), toml::Value::String(value.clone()));
                 }
@@ -960,7 +1049,9 @@ fn run_model() -> anyhow::Result<()> {
         let content = std::fs::read_to_string(&config_path)?;
         let mut doc: toml::Value = toml::from_str(&content)?;
 
-        doc.as_table_mut().unwrap().insert("model".into(), toml::Value::String(model.into()));
+        doc.as_table_mut()
+            .unwrap()
+            .insert("model".into(), toml::Value::String(model.into()));
         if let Some(prov) = doc.get_mut("provider") {
             if let Some(t) = prov.as_table_mut() {
                 t.insert("name".into(), toml::Value::String(provider_name.into()));
@@ -1007,13 +1098,20 @@ fn run_doctor() -> anyhow::Result<()> {
     }
 
     // 5. Check Rust version
-    println!("[OK] Rust: {}", option_env!("CARGO_PKG_RUST_VERSION").unwrap_or("unknown"));
+    println!(
+        "[OK] Rust: {}",
+        option_env!("CARGO_PKG_RUST_VERSION").unwrap_or("unknown")
+    );
 
     // 6. Check binary
     let bin = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("arli"));
     if bin.exists() {
         let size = std::fs::metadata(&bin).map(|m| m.len()).unwrap_or(0);
-        println!("[OK] Binary: {} ({:.1}MB)", bin.display(), size as f64 / 1_048_576.0);
+        println!(
+            "[OK] Binary: {} ({:.1}MB)",
+            bin.display(),
+            size as f64 / 1_048_576.0
+        );
     }
 
     // 7. soul.md
@@ -1070,7 +1168,11 @@ fn save_cron(cf: &CronFile) -> anyhow::Result<()> {
 
 async fn run_cron(cmd: CronCmd) -> anyhow::Result<()> {
     match cmd {
-        CronCmd::Add { name, schedule, prompt } => {
+        CronCmd::Add {
+            name,
+            schedule,
+            prompt,
+        } => {
             let mut cf = load_cron()?;
             let id = ulid::Ulid::new().to_string();
             let id_trunc = &id[..8];
@@ -1096,11 +1198,7 @@ async fn run_cron(cmd: CronCmd) -> anyhow::Result<()> {
                     let status = if j.enabled { "▶" } else { "⏸" };
                     println!(
                         "  {} {:.8}  {}  {}  {}",
-                        status,
-                        j.id,
-                        j.schedule,
-                        j.name,
-                        j.prompt,
+                        status, j.id, j.schedule, j.name, j.prompt,
                     );
                 }
                 println!("\nStart: arli cron start");
@@ -1143,7 +1241,9 @@ async fn run_cron(cmd: CronCmd) -> anyhow::Result<()> {
         CronCmd::Start => {
             let cf = load_cron()?;
             if cf.jobs.is_empty() {
-                anyhow::bail!("No cron jobs. Add one first: arli cron add -n 'job' -s 5m -p 'prompt'");
+                anyhow::bail!(
+                    "No cron jobs. Add one first: arli cron add -n 'job' -s 5m -p 'prompt'"
+                );
             }
             println!("Starting cron scheduler with {} jobs…", cf.jobs.len());
             let scheduler = CronScheduler::new();
@@ -1175,13 +1275,27 @@ async fn run_cron(cmd: CronCmd) -> anyhow::Result<()> {
                 while let Ok(event) = rx.recv().await {
                     match event {
                         CronEvent::JobRunning { job_id } => {
-                            println!("[{}] Running job {}", chrono::Utc::now().format("%H:%M:%S"), &job_id[..8]);
+                            println!(
+                                "[{}] Running job {}",
+                                chrono::Utc::now().format("%H:%M:%S"),
+                                &job_id[..8]
+                            );
                         }
                         CronEvent::JobCompleted { job_id, output } => {
-                            println!("[{}] Job {} done: {}", chrono::Utc::now().format("%H:%M:%S"), &job_id[..8], output);
+                            println!(
+                                "[{}] Job {} done: {}",
+                                chrono::Utc::now().format("%H:%M:%S"),
+                                &job_id[..8],
+                                output
+                            );
                         }
                         CronEvent::JobFailed { job_id, error } => {
-                            eprintln!("[{}] Job {} FAILED: {}", chrono::Utc::now().format("%H:%M:%S"), &job_id[..8], error);
+                            eprintln!(
+                                "[{}] Job {} FAILED: {}",
+                                chrono::Utc::now().format("%H:%M:%S"),
+                                &job_id[..8],
+                                error
+                            );
                         }
                         _ => {}
                     }
@@ -1195,7 +1309,10 @@ async fn run_cron(cmd: CronCmd) -> anyhow::Result<()> {
         }
         CronCmd::Run { id } => {
             let cf = load_cron()?;
-            let job = cf.jobs.iter().find(|j| j.id.starts_with(&id))
+            let job = cf
+                .jobs
+                .iter()
+                .find(|j| j.id.starts_with(&id))
                 .ok_or_else(|| anyhow::anyhow!("Job not found: {}", id))?;
             println!("Running job: {} ({})", &job.id[..8], job.name);
             // Use the cron module's execution (currently a placeholder)
@@ -1217,7 +1334,9 @@ fn run_gateway(cmd: GatewayCmd) -> anyhow::Result<()> {
     let gateway_bin = {
         let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("arli"));
         let sibling = exe.parent().map(|p| p.join("arli-gateway"));
-        sibling.filter(|p| p.exists()).unwrap_or_else(|| PathBuf::from("arli-gateway"))
+        sibling
+            .filter(|p| p.exists())
+            .unwrap_or_else(|| PathBuf::from("arli-gateway"))
     };
 
     match cmd {
@@ -1389,17 +1508,22 @@ async fn run_chat(
             }
         };
         // Create a child session for lineage
-        let child_id = store.resume_session(
-            rid,
-            Some(&format!("resume-{}", &rid[..8.min(rid.len())])),
-        )?;
+        let child_id =
+            store.resume_session(rid, Some(&format!("resume-{}", &rid[..8.min(rid.len())])))?;
         Some((child_id, messages))
     } else {
         None
     };
 
     let mut tools = ToolRegistry::new();
-    register_builtin_tools(&mut tools, Some(db_path), Some(memory_store.clone()), None, None);
+    register_builtin_tools(
+        &mut tools,
+        Some(db_path),
+        Some(memory_store.clone()),
+        None,
+        None,
+        None,
+    );
 
     let session = Some(store);
 
@@ -1522,8 +1646,7 @@ fn run_update(check_only: bool) -> anyhow::Result<()> {
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            std::env::var("ARLI_LOG")
-                .unwrap_or_else(|_| "info,arli_core=debug".to_string()),
+            std::env::var("ARLI_LOG").unwrap_or_else(|_| "info,arli_core=debug".to_string()),
         )
         .init();
 
@@ -1554,7 +1677,9 @@ async fn main() -> anyhow::Result<()> {
             use arli_core::health::HealthServer;
             let health = HealthServer::new(port);
             health.set_ready(true).await;
-            health.set_metric("arli_version", env!("CARGO_PKG_VERSION")).await;
+            health
+                .set_metric("arli_version", env!("CARGO_PKG_VERSION"))
+                .await;
             health.set_metric("rust_version", "1.95").await;
             health.serve().await;
         }
@@ -1635,7 +1760,7 @@ async fn main() -> anyhow::Result<()> {
             let db_path = data_dir.join("sessions.db");
 
             let mut tools = arli_core::ToolRegistry::new();
-            register_builtin_tools(&mut tools, Some(db_path), None, None, None);
+            register_builtin_tools(&mut tools, Some(db_path), None, None, None, None);
 
             let mut server = McpServer::new(tools);
             server.run_sync()?;
@@ -1652,15 +1777,31 @@ async fn main() -> anyhow::Result<()> {
                     let plugins = manager.discover()?;
                     if plugins.is_empty() {
                         println!("No plugins found.");
-                        println!("Add plugins to: {}", get_data_dir().join("plugins").display());
+                        println!(
+                            "Add plugins to: {}",
+                            get_data_dir().join("plugins").display()
+                        );
                         println!("Each plugin needs: plugin.toml + executable");
                     } else {
                         println!("Discovered plugins:\n");
                         for p in &plugins {
-                            let status = if p.plugin.enabled { "enabled" } else { "disabled" };
-                            println!("  {} v{} — {} [{}]",
-                                p.plugin.name, p.plugin.version, p.plugin.description, status);
-                            println!("    Tools: {}", p.tools.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join(", "));
+                            let status = if p.plugin.enabled {
+                                "enabled"
+                            } else {
+                                "disabled"
+                            };
+                            println!(
+                                "  {} v{} — {} [{}]",
+                                p.plugin.name, p.plugin.version, p.plugin.description, status
+                            );
+                            println!(
+                                "    Tools: {}",
+                                p.tools
+                                    .iter()
+                                    .map(|t| t.name.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            );
                             println!("    Exec: {}", p.plugin.executable);
                             println!();
                         }
@@ -1668,7 +1809,8 @@ async fn main() -> anyhow::Result<()> {
                 }
                 PluginsCmd::Load => {
                     let plugins = manager.discover()?;
-                    let enabled: Vec<_> = plugins.into_iter().filter(|p| p.plugin.enabled).collect();
+                    let enabled: Vec<_> =
+                        plugins.into_iter().filter(|p| p.plugin.enabled).collect();
                     if enabled.is_empty() {
                         println!("No enabled plugins to load.");
                     } else {
@@ -1702,7 +1844,15 @@ async fn main() -> anyhow::Result<()> {
                             let config = if p.has_config { "cfg" } else { "-" };
                             let soul = if p.has_soul { "soul" } else { "-" };
                             let sessions = if p.has_sessions { "db" } else { "-" };
-                            println!("  {}{}  [{}, {}, {}]  {}", p.name, marker, config, soul, sessions, p.path.display());
+                            println!(
+                                "  {}{}  [{}, {}, {}]  {}",
+                                p.name,
+                                marker,
+                                config,
+                                soul,
+                                sessions,
+                                p.path.display()
+                            );
                         }
                         println!("\nCurrent profile: {}", current);
                         println!("Switch: arli profile use <name>  or  ARLI_PROFILE=<name>");
@@ -1748,7 +1898,9 @@ async fn main() -> anyhow::Result<()> {
                     let subs = state.list().await;
                     if subs.is_empty() {
                         println!("No webhook subscriptions.");
-                        println!("Subscribe: arli webhook subscribe <name> -p 'Prompt with {{payload}}'");
+                        println!(
+                            "Subscribe: arli webhook subscribe <name> -p 'Prompt with {{payload}}'"
+                        );
                     } else {
                         println!("Webhook subscriptions:\n");
                         for s in &subs {
@@ -1759,11 +1911,13 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
                 WebhookCmd::Subscribe { name, prompt } => {
-                    state.subscribe(WebhookSubscription {
-                        name: name.clone(),
-                        prompt_template: prompt,
-                        target_channel: None,
-                    }).await;
+                    state
+                        .subscribe(WebhookSubscription {
+                            name: name.clone(),
+                            prompt_template: prompt,
+                            target_channel: None,
+                        })
+                        .await;
                     println!("Subscribed: POST /webhooks/{}", name);
                     println!("Start server: arli webhook serve");
                 }
@@ -1782,7 +1936,9 @@ async fn main() -> anyhow::Result<()> {
                     if webhook_cfg.exists() {
                         let content = std::fs::read_to_string(&webhook_cfg)?;
                         #[derive(Deserialize)]
-                        struct WebhookFile { subscriptions: Vec<WebhookSubscription> }
+                        struct WebhookFile {
+                            subscriptions: Vec<WebhookSubscription>,
+                        }
                         let wf: WebhookFile = toml::from_str(&content)?;
                         for sub in wf.subscriptions {
                             state.subscribe(sub).await;

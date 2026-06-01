@@ -10,7 +10,9 @@
 use std::sync::Arc;
 
 use crate::providers::{ChatMessage, LlmResponseContent, Provider, ToolSchema};
-use crate::safety::{ExecutionSetting, FailureMode, RealWorldHarm, RiskSource, SafetyClassification};
+use crate::safety::{
+    ExecutionSetting, FailureMode, RealWorldHarm, RiskSource, SafetyClassification,
+};
 use tracing::{info, warn};
 
 /// Guardrail decision after evaluating a trajectory.
@@ -63,11 +65,17 @@ impl Clone for GuardMode {
     fn clone(&self) -> Self {
         match self {
             GuardMode::PolicyBased => GuardMode::PolicyBased,
-            GuardMode::LlmJudge { provider, model_name } => GuardMode::LlmJudge {
+            GuardMode::LlmJudge {
+                provider,
+                model_name,
+            } => GuardMode::LlmJudge {
                 provider: Arc::clone(provider),
                 model_name: model_name.clone(),
             },
-            GuardMode::Hybrid { provider, model_name } => GuardMode::Hybrid {
+            GuardMode::Hybrid {
+                provider,
+                model_name,
+            } => GuardMode::Hybrid {
                 provider: Arc::clone(provider),
                 model_name: model_name.clone(),
             },
@@ -144,7 +152,8 @@ impl Guardrail {
         match &self.mode {
             GuardMode::PolicyBased => self.evaluate_policy(messages, final_reply, tool_history),
             GuardMode::LlmJudge { provider, .. } => {
-                self.evaluate_llm(provider, messages, final_reply, tool_history).await
+                self.evaluate_llm(provider, messages, final_reply, tool_history)
+                    .await
             }
             GuardMode::Hybrid { provider, .. } => {
                 let policy_decision = self.evaluate_policy(messages, final_reply, tool_history);
@@ -152,7 +161,8 @@ impl Guardrail {
                     GuardDecision::Safe => {
                         // Policy says safe — double-check with LLM if tool history is complex
                         if tool_history.len() > 5 {
-                            self.evaluate_llm(provider, messages, final_reply, tool_history).await
+                            self.evaluate_llm(provider, messages, final_reply, tool_history)
+                                .await
                         } else {
                             GuardDecision::Safe
                         }
@@ -220,7 +230,8 @@ impl Guardrail {
                     if let Some(ref cmd) = record.input {
                         let lower = cmd.to_lowercase();
                         // Destructive commands
-                        if lower.contains("rm -rf /") || lower.contains("rm -rf ~")
+                        if lower.contains("rm -rf /")
+                            || lower.contains("rm -rf ~")
                             || lower.contains("rm -rf .")
                         {
                             return GuardDecision::Unsafe {
@@ -237,7 +248,8 @@ impl Guardrail {
                             };
                         }
                         // Force push to main
-                        if lower.contains("push") && lower.contains("--force")
+                        if lower.contains("push")
+                            && lower.contains("--force")
                             && (lower.contains("main") || lower.contains("master"))
                         {
                             return GuardDecision::Unsafe {
@@ -262,8 +274,13 @@ impl Guardrail {
         if self.setting == ExecutionSetting::Gateway {
             // Scan final reply for potential information disclosure
             let sensitive_patterns = [
-                "API_KEY", "api_key", "token", "secret", "password",
-                "private key", "mnemonic",
+                "API_KEY",
+                "api_key",
+                "token",
+                "secret",
+                "password",
+                "private key",
+                "mnemonic",
             ];
             for pattern in &sensitive_patterns {
                 if final_reply.contains(pattern) {
@@ -285,8 +302,13 @@ impl Guardrail {
 
         // Check for harmful content in final reply
         let harmful_keywords = [
-            "hack", "exploit", "vulnerability", "backdoor",
-            "malware", "phishing", "bypass security",
+            "hack",
+            "exploit",
+            "vulnerability",
+            "backdoor",
+            "malware",
+            "phishing",
+            "bypass security",
         ];
         let lower_reply = final_reply.to_lowercase();
         for kw in &harmful_keywords {
@@ -401,7 +423,9 @@ impl Guardrail {
                     parse_risk_source(json["risk_source"].as_str().unwrap_or("Other")),
                     parse_failure_mode(json["failure_mode"].as_str().unwrap_or("Other")),
                     parse_harm(json["real_world_harm"].as_str().unwrap_or("NoImpact")),
-                    json["rationale"].as_str().unwrap_or("No rationale provided"),
+                    json["rationale"]
+                        .as_str()
+                        .unwrap_or("No rationale provided"),
                 )
                 .with_confidence(confidence);
 
@@ -424,7 +448,10 @@ impl Guardrail {
                 }
             }
             Err(e) => {
-                warn!("Failed to parse guardrail LLM response: {}. Raw: {}", e, content);
+                warn!(
+                    "Failed to parse guardrail LLM response: {}. Raw: {}",
+                    e, content
+                );
                 GuardDecision::Safe // Parse error: don't block
             }
         }
@@ -476,7 +503,12 @@ pub struct ToolCallRecord {
 }
 
 impl ToolCallRecord {
-    pub fn new(tool_name: impl Into<String>, input: Option<String>, output: Option<String>, success: bool) -> Self {
+    pub fn new(
+        tool_name: impl Into<String>,
+        input: Option<String>,
+        output: Option<String>,
+        success: bool,
+    ) -> Self {
         Self {
             tool_name: tool_name.into(),
             input,
@@ -542,7 +574,8 @@ mod tests {
         )];
 
         let messages = vec![];
-        let decision = tokio_test::block_on(guard.evaluate(&messages, "Trade executed", &tool_history));
+        let decision =
+            tokio_test::block_on(guard.evaluate(&messages, "Trade executed", &tool_history));
 
         assert!(!decision.is_safe());
     }
@@ -576,7 +609,8 @@ mod tests {
         )];
 
         let messages = vec![];
-        let decision = tokio_test::block_on(guard.evaluate(&messages, "File contents", &tool_history));
+        let decision =
+            tokio_test::block_on(guard.evaluate(&messages, "File contents", &tool_history));
 
         assert!(decision.is_safe());
     }

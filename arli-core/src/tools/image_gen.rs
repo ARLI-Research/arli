@@ -5,14 +5,16 @@
 //!   2. openai — OpenAI DALL-E 3 (env OPENAI_API_KEY, highest quality)
 //!   3. auto   — try FAL first, fall back to OpenAI
 
-use async_trait::async_trait;
 use super::{Tool, ToolOutput};
+use async_trait::async_trait;
 
 pub struct ImageGenTool;
 
 #[async_trait]
 impl Tool for ImageGenTool {
-    fn name(&self) -> &str { "image_generate" }
+    fn name(&self) -> &str {
+        "image_generate"
+    }
 
     fn description(&self) -> &str {
         "Generate an image from a text prompt. \
@@ -61,7 +63,9 @@ impl Tool for ImageGenTool {
         let provider = args["provider"].as_str().unwrap_or("fal");
         let size = args["size"].as_str().unwrap_or("1024x1024");
 
-        let output_path = args["output_path"].as_str().map(|s| s.to_string())
+        let output_path = args["output_path"]
+            .as_str()
+            .map(|s| s.to_string())
             .unwrap_or_else(default_output_path);
 
         // Ensure output directory exists
@@ -232,7 +236,8 @@ async fn generate_openai(prompt: &str, output_path: &str, size: &str) -> ToolOut
         }
     };
 
-    let image_url = json["data"][0]["url"].as_str()
+    let image_url = json["data"][0]["url"]
+        .as_str()
         .or_else(|| json["data"][0]["b64_json"].as_str());
 
     let image_url = match image_url {
@@ -264,7 +269,10 @@ async fn download_and_save(url: &str, output_path: &str, provider_name: &str) ->
             return ToolOutput {
                 success: false,
                 content: String::new(),
-                error: Some(format!("Failed to download image from {}: {}", provider_name, e)),
+                error: Some(format!(
+                    "Failed to download image from {}: {}",
+                    provider_name, e
+                )),
             }
         }
     };
@@ -275,7 +283,8 @@ async fn download_and_save(url: &str, output_path: &str, provider_name: &str) ->
             content: String::new(),
             error: Some(format!(
                 "Download image HTTP {} from {}",
-                resp.status(), provider_name
+                resp.status(),
+                provider_name
             )),
         };
     }
@@ -286,7 +295,10 @@ async fn download_and_save(url: &str, output_path: &str, provider_name: &str) ->
             return ToolOutput {
                 success: false,
                 content: String::new(),
-                error: Some(format!("Failed to read image bytes from {}: {}", provider_name, e)),
+                error: Some(format!(
+                    "Failed to read image bytes from {}: {}",
+                    provider_name, e
+                )),
             }
         }
     };
@@ -304,7 +316,8 @@ async fn download_and_save(url: &str, output_path: &str, provider_name: &str) ->
             success: true,
             content: format!(
                 "Image generated: {}, Size: {} bytes",
-                output_path, bytes.len()
+                output_path,
+                bytes.len()
             ),
             error: None,
         },

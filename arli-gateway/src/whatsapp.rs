@@ -5,12 +5,11 @@
 //!
 //! Reference: https://developers.facebook.com/docs/whatsapp/cloud-api
 
-use arli_core::{
-    Agent, AgentConfig, AgentMessage, Config,
-    OpenAIProvider, SessionStore, ToolRegistry,
-    memory::MemoryStore,
-};
 use arli_core::tools::builtin::register_builtin_tools;
+use arli_core::{
+    memory::MemoryStore, Agent, AgentConfig, AgentMessage, Config, OpenAIProvider, SessionStore,
+    ToolRegistry,
+};
 use axum::{
     extract::{Query, State},
     response::IntoResponse,
@@ -22,7 +21,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 // ── WhatsApp Cloud API types ──
 
@@ -132,14 +131,15 @@ impl WaState {
         ));
 
         let mut tools = ToolRegistry::new();
-        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None);
+        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None, None);
 
         let agent_config = AgentConfig {
             name: format!("wa-{}", phone),
             session_id: None,
             system_prompt: Some(
                 "You are ARLI, an AI agent communicating via WhatsApp. \
-                 Respond in the user's language. Be concise — WhatsApp messages work best short.".to_string()
+                 Respond in the user's language. Be concise — WhatsApp messages work best short."
+                    .to_string(),
             ),
             protect_last_n: 20,
             protect_first_n: 3,
@@ -254,7 +254,9 @@ async fn webhook_receive(
                     &state.provider_base_url,
                     &state.model,
                     &from,
-                ).await {
+                )
+                .await
+                {
                     Ok(sender) => {
                         if let Err(e) = sender.send(AgentMessage::UserMessage(body)).await {
                             error!("Failed to send to WhatsApp agent {}: {}", from, e);

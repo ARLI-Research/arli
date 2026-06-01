@@ -64,7 +64,11 @@ impl ToolsetRegistry {
         self.toolsets
             .iter()
             .map(|(name, ts)| {
-                (name.clone(), self.enabled.contains(name), ts.description.clone())
+                (
+                    name.clone(),
+                    self.enabled.contains(name),
+                    ts.description.clone(),
+                )
             })
             .collect()
     }
@@ -98,10 +102,7 @@ pub fn default_toolsets() -> ToolsetRegistry {
     registry.register(Toolset {
         name: "session".to_string(),
         description: "Session tools: search past conversations".into(),
-        tools: ["session_search"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
+        tools: ["session_search"].iter().map(|s| s.to_string()).collect(),
     });
 
     registry

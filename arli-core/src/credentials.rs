@@ -121,7 +121,10 @@ impl CredentialManager {
             pool.active_index = (pool.active_index + 1) % len;
             if let Some(next) = pool.credentials.get(pool.active_index as usize) {
                 if !next.exhausted {
-                    info!("Rotated to credential #{} for {}", pool.active_index, provider);
+                    info!(
+                        "Rotated to credential #{} for {}",
+                        pool.active_index, provider
+                    );
                     return true;
                 }
             }
@@ -221,8 +224,10 @@ mod tests {
         let _ = std::fs::remove_file(&path);
 
         let cm = CredentialManager::new(path.clone()).unwrap();
-        cm.add("openai", "sk-key1".to_string(), "primary".to_string()).unwrap();
-        cm.add("openai", "sk-key2".to_string(), "fallback".to_string()).unwrap();
+        cm.add("openai", "sk-key1".to_string(), "primary".to_string())
+            .unwrap();
+        cm.add("openai", "sk-key2".to_string(), "fallback".to_string())
+            .unwrap();
 
         assert_eq!(cm.get_active("openai"), Some("sk-key1".to_string()));
 
@@ -235,8 +240,10 @@ mod tests {
         let _ = std::fs::remove_file(&path);
 
         let cm = CredentialManager::new(path.clone()).unwrap();
-        cm.add("openai", "sk-key1".to_string(), "p1".to_string()).unwrap();
-        cm.add("openai", "sk-key2".to_string(), "p2".to_string()).unwrap();
+        cm.add("openai", "sk-key1".to_string(), "p1".to_string())
+            .unwrap();
+        cm.add("openai", "sk-key2".to_string(), "p2".to_string())
+            .unwrap();
 
         assert!(cm.rotate("openai"));
         assert_eq!(cm.get_active("openai"), Some("sk-key2".to_string()));

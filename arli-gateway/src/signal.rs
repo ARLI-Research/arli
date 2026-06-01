@@ -4,17 +4,16 @@
 //!   SIGNAL_CLI_PATH        — Path to the signal-cli binary (default: "signal-cli")
 //!   SIGNAL_PHONE_NUMBER    — Registered Signal phone number (e.g., "+1234567890")
 
-use arli_core::{
-    Agent, AgentConfig, AgentMessage, Config,
-    OpenAIProvider, SessionStore, ToolRegistry,
-    memory::MemoryStore,
-};
 use arli_core::tools::builtin::register_builtin_tools;
+use arli_core::{
+    memory::MemoryStore, Agent, AgentConfig, AgentMessage, Config, OpenAIProvider, SessionStore,
+    ToolRegistry,
+};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 // ── Signal JSON types ──
 
@@ -74,7 +73,15 @@ impl SignalGateway {
 
     async fn receive_messages(&self) -> anyhow::Result<Vec<(String, String)>> {
         let output = tokio::process::Command::new(&self.cli_path)
-            .args(["-u", &self.phone_number, "receive", "--json", "--ignore-attachments", "--timeout", "5"])
+            .args([
+                "-u",
+                &self.phone_number,
+                "receive",
+                "--json",
+                "--ignore-attachments",
+                "--timeout",
+                "5",
+            ])
             .output()
             .await?;
 
@@ -143,7 +150,7 @@ impl SignalGateway {
         ));
 
         let mut tools = ToolRegistry::new();
-        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None);
+        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None, None);
 
         let agent_config = AgentConfig {
             name: format!("signal-{}", safe_id),
@@ -210,7 +217,10 @@ pub async fn run(data_dir: PathBuf) -> anyhow::Result<()> {
     let phone_number = std::env::var("SIGNAL_PHONE_NUMBER")
         .map_err(|_| anyhow::anyhow!("SIGNAL_PHONE_NUMBER not set"))?;
 
-    info!("Signal gateway starting (phone: {}, cli: {})...", phone_number, cli_path);
+    info!(
+        "Signal gateway starting (phone: {}, cli: {})...",
+        phone_number, cli_path
+    );
 
     let gateway = Arc::new(SignalGateway::new(cli_path, phone_number, data_dir)?);
 

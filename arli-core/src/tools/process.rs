@@ -6,8 +6,8 @@
 use async_trait::async_trait;
 use std::sync::Arc;
 
-use crate::process::ProcessManager;
 use super::{Tool, ToolOutput};
+use crate::process::ProcessManager;
 
 pub struct ProcessTool {
     manager: Arc<ProcessManager>,
@@ -223,8 +223,7 @@ impl ProcessTool {
                         success: false,
                         content: format!(
                             "Process {} failed in {}s (exit {}):\nstdout:\n{}\nstderr:\n{}",
-                            id, result.elapsed_secs, result.exit_code,
-                            result.stdout, result.stderr
+                            id, result.elapsed_secs, result.exit_code, result.stdout, result.stderr
                         ),
                         error: Some(format!("Exit code: {}", result.exit_code)),
                     }

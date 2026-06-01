@@ -1,5 +1,5 @@
-pub mod builtin;
 pub mod browser;
+pub mod builtin;
 pub mod delegate;
 pub mod execute_code;
 pub mod http_get;
@@ -10,17 +10,17 @@ pub mod process;
 pub mod search;
 pub mod search_files;
 pub mod toolsets;
-pub mod web_search;
+pub mod video_gen;
 pub mod vision;
 pub mod voice;
-pub mod video_gen;
+pub mod web_search;
 
 pub use delegate::DelegateTaskTool;
 pub use image_gen::ImageGenTool;
 pub use memory::MemoryTool;
 
-use async_trait::async_trait;
 use crate::providers::ToolSchema;
+use async_trait::async_trait;
 use std::collections::HashMap;
 
 /// Result of executing a tool
@@ -99,7 +99,11 @@ impl ToolRegistry {
 
 impl ToolOutput {
     pub fn error(msg: &str) -> Self {
-        Self { success: false, content: String::new(), error: Some(msg.to_string()) }
+        Self {
+            success: false,
+            content: String::new(),
+            error: Some(msg.to_string()),
+        }
     }
 }
 

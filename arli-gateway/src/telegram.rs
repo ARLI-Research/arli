@@ -1,19 +1,18 @@
 //! Telegram gateway — long-polls Telegram Bot API for messages,
 //! routes each chat to a dedicated ARLI Agent.
 
-use arli_core::{
-    Agent, AgentConfig, AgentMessage, Config,
-    OpenAIProvider, SessionStore, ToolRegistry,
-    memory::MemoryStore,
-};
 use arli_core::policy::{Decision, PolicyEngine, PolicyRule};
 use arli_core::tools::builtin::register_builtin_tools;
+use arli_core::{
+    memory::MemoryStore, Agent, AgentConfig, AgentMessage, Config, OpenAIProvider, SessionStore,
+    ToolRegistry,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 // ── Telegram API types ──
 
@@ -120,25 +119,31 @@ impl TelegramGateway {
         Ok(())
     }
 
-    async fn send_approval_request(&self, chat_id: i64, tool_name: &str, reason: &str) -> anyhow::Result<()> {
+    async fn send_approval_request(
+        &self,
+        chat_id: i64,
+        tool_name: &str,
+        reason: &str,
+    ) -> anyhow::Result<()> {
         let url = format!("{}/sendMessage", self.api_url);
         let markup = InlineKeyboardMarkup {
-            inline_keyboard: vec![
-                vec![
-                    InlineKeyboardButton {
-                        text: "Approve".to_string(),
-                        callback_data: format!("approve:{}", tool_name),
-                    },
-                    InlineKeyboardButton {
-                        text: "Deny".to_string(),
-                        callback_data: format!("deny:{}", tool_name),
-                    },
-                ],
-            ],
+            inline_keyboard: vec![vec![
+                InlineKeyboardButton {
+                    text: "Approve".to_string(),
+                    callback_data: format!("approve:{}", tool_name),
+                },
+                InlineKeyboardButton {
+                    text: "Deny".to_string(),
+                    callback_data: format!("deny:{}", tool_name),
+                },
+            ]],
         };
         let req = SendMessageRequest {
             chat_id,
-            text: format!("*Approval required*: {}\n\nTool: `{}`\nReason: {}", "\u{26a0}\u{fe0f}", tool_name, reason),
+            text: format!(
+                "*Approval required*: {}\n\nTool: `{}`\nReason: {}",
+                "\u{26a0}\u{fe0f}", tool_name, reason
+            ),
             parse_mode: "Markdown".to_string(),
             reply_markup: Some(markup),
         };
@@ -160,7 +165,8 @@ impl TelegramGateway {
         let mut last_id = self.last_update_id.lock().await;
         let url = format!(
             "{}/getUpdates?offset={}&timeout=30",
-            self.api_url, *last_id + 1
+            self.api_url,
+            *last_id + 1
         );
         let client = reqwest::Client::new();
         let resp: serde_json::Value = client.get(&url).send().await?.json().await?;
@@ -218,7 +224,7 @@ impl TelegramGateway {
         ));
 
         let mut tools = ToolRegistry::new();
-        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None);
+        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None, None);
 
         let agent_config = AgentConfig {
             name: format!("tg-{}", chat_id),
@@ -254,13 +260,17 @@ impl TelegramGateway {
                 // Send typing indicator
                 let action_url = format!("{}/sendChatAction", api_url);
                 let action_body = serde_json::json!({"chat_id": chat_id_clone, "action": "typing"});
-                let _ = reqwest::Client::new().post(&action_url).json(&action_body).send().await;
+                let _ = reqwest::Client::new()
+                    .post(&action_url)
+                    .json(&action_body)
+                    .send()
+                    .await;
 
                 match agent.run(None).await {
                     Ok(response) => {
                         // Check for approval requests in the response
                         let needs_approval = response.contains("APPROVAL REQUIRED");
-                        
+
                         let url = format!("{}/sendMessage", api_url);
                         let text = if response.len() > 4000 {
                             format!("{}... _(truncated)_", &response[..4000])
@@ -271,18 +281,16 @@ impl TelegramGateway {
                         // Build message with inline keyboard if approval needed
                         let reply_markup = if needs_approval {
                             Some(InlineKeyboardMarkup {
-                                inline_keyboard: vec![
-                                    vec![
-                                        InlineKeyboardButton {
-                                            text: "Approve".to_string(),
-                                            callback_data: "approve:generic".to_string(),
-                                        },
-                                        InlineKeyboardButton {
-                                            text: "Deny".to_string(),
-                                            callback_data: "deny:generic".to_string(),
-                                        },
-                                    ],
-                                ],
+                                inline_keyboard: vec![vec![
+                                    InlineKeyboardButton {
+                                        text: "Approve".to_string(),
+                                        callback_data: "approve:generic".to_string(),
+                                    },
+                                    InlineKeyboardButton {
+                                        text: "Deny".to_string(),
+                                        callback_data: "deny:generic".to_string(),
+                                    },
+                                ]],
                             })
                         } else {
                             None
@@ -330,7 +338,7 @@ impl TelegramGateway {
 
         let approved = data.starts_with("approve:");
         let status = if approved { "Approved" } else { "Denied" };
-        
+
         // Answer the callback to remove loading state
         self.answer_callback(&callback.id, status).await;
 
@@ -389,19 +397,28 @@ pub async fn run(data_dir: PathBuf) -> anyhow::Result<()> {
                     if let Some(ref msg) = update.message {
                         if let Some(ref text) = msg.text {
                             if text == "/start" {
-                                let _ = gateway.send_message(msg.chat.id,
-                                    "ARLI at your service. Send me any message to begin."
-                                ).await;
+                                let _ = gateway
+                                    .send_message(
+                                        msg.chat.id,
+                                        "ARLI at your service. Send me any message to begin.",
+                                    )
+                                    .await;
                                 continue;
                             }
-                            
+
                             let sender = gateway.get_or_create_agent(msg.chat.id).await?;
                             let user_msg = AgentMessage::UserMessage(text.clone());
                             if let Err(e) = sender.send(user_msg).await {
-                                error!("Failed to send message to agent for chat {}: {}", msg.chat.id, e);
-                                let _ = gateway.send_message(msg.chat.id,
-                                    &format!("Error processing message: {}", e)
-                                ).await;
+                                error!(
+                                    "Failed to send message to agent for chat {}: {}",
+                                    msg.chat.id, e
+                                );
+                                let _ = gateway
+                                    .send_message(
+                                        msg.chat.id,
+                                        &format!("Error processing message: {}", e),
+                                    )
+                                    .await;
                             }
                         }
                     }

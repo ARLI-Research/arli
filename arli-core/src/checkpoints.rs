@@ -82,7 +82,10 @@ impl CheckpointManager {
 
         // Add to current checkpoint or create new one
         if let Some(last) = self.manifest.checkpoints.last_mut() {
-            last.files.insert(rel_path.clone(), snapshot_path.to_string_lossy().to_string());
+            last.files.insert(
+                rel_path.clone(),
+                snapshot_path.to_string_lossy().to_string(),
+            );
         } else {
             let cp = Checkpoint {
                 id,
@@ -118,7 +121,10 @@ impl CheckpointManager {
 
     /// Rollback to the last checkpoint — restore all files.
     pub fn rollback(&self) -> anyhow::Result<usize> {
-        let last = self.manifest.checkpoints.last()
+        let last = self
+            .manifest
+            .checkpoints
+            .last()
             .ok_or_else(|| anyhow::anyhow!("No checkpoints to rollback to"))?;
 
         let mut restored = 0;
@@ -150,7 +156,9 @@ impl CheckpointManager {
             return Ok(0);
         }
 
-        let to_remove: Vec<_> = self.manifest.checkpoints
+        let to_remove: Vec<_> = self
+            .manifest
+            .checkpoints
             .iter()
             .take(self.manifest.checkpoints.len() - keep)
             .map(|c| c.id)
@@ -165,7 +173,9 @@ impl CheckpointManager {
             removed += 1;
         }
 
-        self.manifest.checkpoints = self.manifest.checkpoints
+        self.manifest.checkpoints = self
+            .manifest
+            .checkpoints
             .iter()
             .skip(self.manifest.checkpoints.len().saturating_sub(keep))
             .cloned()
@@ -190,7 +200,6 @@ fn sanitize_filename(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[test]
     fn test_snapshot_and_rollback() {

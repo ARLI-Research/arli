@@ -11,12 +11,12 @@
 //! | > user input here...            |  <- input
 //! +---------------------------------+
 
+use arli_core::AgentMessage;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use arli_core::AgentMessage;
 use ratatui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout, Rect},
@@ -94,7 +94,8 @@ impl TuiApp {
                 return;
             }
             "/help" => {
-                self.add_message("system",
+                self.add_message(
+                    "system",
                     "ARLI Slash Commands:\n\
                      \n  /help      — This help\n\
                      \n  /stats     — Chat & system stats\n\
@@ -103,7 +104,8 @@ impl TuiApp {
                      \n  /config    — Config file path\n\
                      \n  /sessions  — Show session count\n\
                      \n  /clear     — Clear chat\n\
-                     \n  /quit, /q  — Exit".into()
+                     \n  /quit, /q  — Exit"
+                        .into(),
                 );
                 self.input.clear();
                 self.cursor_pos = 0;
@@ -133,7 +135,10 @@ impl TuiApp {
             }
             "/sessions" => {
                 let count = Self::count_sessions();
-                self.add_message("system", format!("Sessions: {} in database. List: arli sessions", count));
+                self.add_message(
+                    "system",
+                    format!("Sessions: {} in database. List: arli sessions", count),
+                );
                 self.input.clear();
                 self.cursor_pos = 0;
                 return;
@@ -187,7 +192,10 @@ impl TuiApp {
                 }
             }
         }
-        Err(std::io::Error::new(std::io::ErrorKind::NotFound, "model not found"))
+        Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "model not found",
+        ))
     }
 
     fn config_path() -> std::path::PathBuf {
@@ -203,9 +211,7 @@ impl TuiApp {
         let db = Self::config_path().join("sessions.db");
         if db.exists() {
             match arli_core::SessionStore::open(db) {
-                Ok(store) => {
-                    store.list_sessions(1).map(|s| s.len()).unwrap_or(0)
-                }
+                Ok(store) => store.list_sessions(1).map(|s| s.len()).unwrap_or(0),
                 Err(_) => 0,
             }
         } else {
@@ -336,7 +342,9 @@ fn draw_header(f: &mut Frame, area: Rect, app: &TuiApp) {
     let header_text = vec![Line::from(vec![
         Span::styled(
             format!("  ARLI v{}  ", env!("CARGO_PKG_VERSION")),
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             format!("| {} | {}", app.status, if app.running { "*" } else { "-" }),
@@ -345,7 +353,11 @@ fn draw_header(f: &mut Frame, area: Rect, app: &TuiApp) {
     ])];
 
     let header = Paragraph::new(header_text)
-        .block(Block::default().borders(Borders::ALL).style(Style::default().fg(Color::DarkGray)))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .style(Style::default().fg(Color::DarkGray)),
+        )
         .style(Style::default());
     f.render_widget(header, area);
 }
@@ -396,7 +408,11 @@ fn draw_body(f: &mut Frame, area: Rect, app: &TuiApp) {
     let shown: Vec<Line> = lines.into_iter().skip(start).take(visible_lines).collect();
 
     let paragraph = Paragraph::new(shown)
-        .block(Block::default().borders(Borders::ALL).style(Style::default()))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .style(Style::default()),
+        )
         .wrap(Wrap { trim: true });
 
     f.render_widget(paragraph, area);
@@ -408,11 +424,17 @@ fn draw_input(f: &mut Frame, area: Rect, app: &TuiApp) {
     let cursor_style = if app.running {
         Style::default().fg(Color::DarkGray)
     } else {
-        Style::default().fg(Color::White).add_modifier(Modifier::REVERSED)
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::REVERSED)
     };
 
     let input = Paragraph::new(input_text)
-        .block(Block::default().borders(Borders::ALL).title(" Input (Esc to quit) "))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Input (Esc to quit) "),
+        )
         .style(cursor_style);
 
     f.render_widget(input, area);

@@ -4,8 +4,8 @@
 //! in a file without rewriting the whole thing. Supports replace_all
 //! mode for bulk changes.
 
-use async_trait::async_trait;
 use super::{Tool, ToolOutput};
+use async_trait::async_trait;
 
 pub struct PatchTool;
 
@@ -147,7 +147,8 @@ impl Tool for PatchTool {
                 };
             }
             if count > 1 {
-                let positions: Vec<_> = content.match_indices(old_string)
+                let positions: Vec<_> = content
+                    .match_indices(old_string)
                     .map(|(pos, _)| {
                         let line = content[..pos].lines().count() + 1;
                         format!("  line {}", line)
@@ -162,7 +163,10 @@ impl Tool for PatchTool {
                         "Found {} matches in '{}'. Use more surrounding context \
                          to make the match unique, or set replace_all=true.\n\
                          First {} positions:\n{}",
-                        count, path, positions.len().min(5), positions.join("\n")
+                        count,
+                        path,
+                        positions.len().min(5),
+                        positions.join("\n")
                     )),
                 };
             }
@@ -210,8 +214,13 @@ fn generate_diff(old: &str, new: &str, path: &str) -> String {
                 hunk_start = Some(i.saturating_sub(2));
                 changed = true;
                 if let Some(start) = hunk_start {
-                    diff.push_str(&format!("@@ -{},{} +{},{} @@\n", 
-                        start + 1, max_len - start, start + 1, max_len - start));
+                    diff.push_str(&format!(
+                        "@@ -{},{} +{},{} @@\n",
+                        start + 1,
+                        max_len - start,
+                        start + 1,
+                        max_len - start
+                    ));
                 }
             }
             if let Some(line) = old_line {
@@ -249,11 +258,16 @@ mod tests {
         std::fs::write(path, "hello world\nfoo bar\n").unwrap();
 
         let tool = PatchTool;
-        let result = tool.execute(&serde_json::json!({
-            "path": path,
-            "old_string": "foo bar",
-            "new_string": "baz qux"
-        }).to_string()).await;
+        let result = tool
+            .execute(
+                &serde_json::json!({
+                    "path": path,
+                    "old_string": "foo bar",
+                    "new_string": "baz qux"
+                })
+                .to_string(),
+            )
+            .await;
 
         assert!(result.success);
         let content = std::fs::read_to_string(path).unwrap();
@@ -268,11 +282,16 @@ mod tests {
         std::fs::write(path, "hello world\n").unwrap();
 
         let tool = PatchTool;
-        let result = tool.execute(&serde_json::json!({
-            "path": path,
-            "old_string": "nonexistent",
-            "new_string": "replacement"
-        }).to_string()).await;
+        let result = tool
+            .execute(
+                &serde_json::json!({
+                    "path": path,
+                    "old_string": "nonexistent",
+                    "new_string": "replacement"
+                })
+                .to_string(),
+            )
+            .await;
 
         assert!(!result.success);
         std::fs::remove_file(path).ok();
@@ -284,12 +303,17 @@ mod tests {
         std::fs::write(path, "foo foo foo\nbar foo\n").unwrap();
 
         let tool = PatchTool;
-        let result = tool.execute(&serde_json::json!({
-            "path": path,
-            "old_string": "foo",
-            "new_string": "X",
-            "replace_all": true
-        }).to_string()).await;
+        let result = tool
+            .execute(
+                &serde_json::json!({
+                    "path": path,
+                    "old_string": "foo",
+                    "new_string": "X",
+                    "replace_all": true
+                })
+                .to_string(),
+            )
+            .await;
 
         assert!(result.success);
         let content = std::fs::read_to_string(path).unwrap();

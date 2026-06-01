@@ -8,18 +8,17 @@
 //! Note: BlueBubbles requires a macOS host with iMessage.
 //! Reference: https://bluebubbles.app/
 
-use arli_core::{
-    Agent, AgentConfig, AgentMessage, Config,
-    OpenAIProvider, SessionStore, ToolRegistry,
-    memory::MemoryStore,
-};
 use arli_core::tools::builtin::register_builtin_tools;
+use arli_core::{
+    memory::MemoryStore, Agent, AgentConfig, AgentMessage, Config, OpenAIProvider, SessionStore,
+    ToolRegistry,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 // ── BlueBubbles API types ──
 
@@ -197,14 +196,15 @@ impl BlueBubblesGateway {
         ));
 
         let mut tools = ToolRegistry::new();
-        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None);
+        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None, None);
 
         let agent_config = AgentConfig {
             name: format!("imessage-{}", safe_id),
             session_id: None,
             system_prompt: Some(
                 "You are ARLI, an AI agent communicating via iMessage. \
-                 Respond in the user's language. Be concise — iMessage messages are best short.".to_string()
+                 Respond in the user's language. Be concise — iMessage messages are best short."
+                    .to_string(),
             ),
             protect_last_n: 20,
             protect_first_n: 3,
@@ -304,7 +304,10 @@ impl BlueBubblesGateway {
         }
 
         let sender = last_msg.sender.as_deref().unwrap_or("unknown");
-        info!("BlueBubbles message from {} (chat {}): {}", sender, chat_guid, text);
+        info!(
+            "BlueBubbles message from {} (chat {}): {}",
+            sender, chat_guid, text
+        );
 
         // Mark as seen
         {
@@ -350,14 +353,12 @@ impl BlueBubblesGateway {
 }
 
 pub async fn run(data_dir: PathBuf) -> anyhow::Result<()> {
-    let server = std::env::var("BLUEBUBBLES_SERVER")
-        .unwrap_or_else(|_| "http://localhost:1234".to_string());
+    let server =
+        std::env::var("BLUEBUBBLES_SERVER").unwrap_or_else(|_| "http://localhost:1234".to_string());
 
-    let password = std::env::var("BLUEBUBBLES_PASSWORD")
-        .ok()
-        .ok_or_else(|| anyhow::anyhow!(
-            "BLUEBUBBLES_PASSWORD not set. Set BLUEBUBBLES_PASSWORD env var."
-        ))?;
+    let password = std::env::var("BLUEBUBBLES_PASSWORD").ok().ok_or_else(|| {
+        anyhow::anyhow!("BLUEBUBBLES_PASSWORD not set. Set BLUEBUBBLES_PASSWORD env var.")
+    })?;
 
     let gateway = Arc::new(BlueBubblesGateway::new(server, password, data_dir)?);
     gateway.run_forever().await;

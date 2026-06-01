@@ -9,24 +9,18 @@
 //!
 //! Reference: https://yuanbao.tencent.com/
 
-use arli_core::{
-    Agent, AgentConfig, AgentMessage, Config,
-    OpenAIProvider, SessionStore, ToolRegistry,
-    memory::MemoryStore,
-};
 use arli_core::tools::builtin::register_builtin_tools;
-use axum::{
-    extract::State,
-    response::IntoResponse,
-    routing::post,
-    Json, Router,
+use arli_core::{
+    memory::MemoryStore, Agent, AgentConfig, AgentMessage, Config, OpenAIProvider, SessionStore,
+    ToolRegistry,
 };
+use axum::{extract::State, response::IntoResponse, routing::post, Json, Router};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 // ── Yuanbao webhook types ──
 
@@ -106,14 +100,15 @@ impl YuanbaoState {
         ));
 
         let mut tools = ToolRegistry::new();
-        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None);
+        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None, None);
 
         let agent_config = AgentConfig {
             name: format!("yuanbao-{}", safe_id),
             session_id: None,
             system_prompt: Some(
                 "You are ARLI, an AI agent communicating via Yuanbao. \
-                 Respond in the user's language. Be concise.".to_string()
+                 Respond in the user's language. Be concise."
+                    .to_string(),
             ),
             protect_last_n: 20,
             protect_first_n: 3,
@@ -147,7 +142,8 @@ impl YuanbaoState {
                             &chat_owned,
                             &response,
                             None,
-                        ).await
+                        )
+                        .await
                         {
                             error!("Failed to send Yuanbao reply: {}", e);
                         }
@@ -179,13 +175,14 @@ async fn send_yuanbao_reply(
         text.to_string()
     };
 
-    let url = format!("https://open.yuanbao.tencent.com/api/v1/chat/{}/messages", chat_id);
+    let url = format!(
+        "https://open.yuanbao.tencent.com/api/v1/chat/{}/messages",
+        chat_id
+    );
 
     let body = YuanbaoReply {
         msg_type: "text".to_string(),
-        content: YuanbaoTextContent {
-            text: truncated,
-        },
+        content: YuanbaoTextContent { text: truncated },
         reply_to: reply_to.map(|s| s.to_string()),
     };
 
@@ -200,7 +197,11 @@ async fn send_yuanbao_reply(
 
     let status = resp.status();
     if !status.is_success() {
-        warn!("Yuanbao send error ({}): {}", status, resp.text().await.unwrap_or_default());
+        warn!(
+            "Yuanbao send error ({}): {}",
+            status,
+            resp.text().await.unwrap_or_default()
+        );
     }
 
     Ok(())
@@ -229,7 +230,10 @@ async fn yuanbao_webhook(
     let chat_id = payload.group_id.as_deref().unwrap_or(user_id);
     let _reply_to = payload.msg_id.as_deref();
 
-    info!("Yuanbao message from {} (chat {}): {}", user_id, chat_id, text);
+    info!(
+        "Yuanbao message from {} (chat {}): {}",
+        user_id, chat_id, text
+    );
 
     match YuanbaoState::get_or_create_agent(
         &state.agents,
@@ -240,7 +244,8 @@ async fn yuanbao_webhook(
         chat_id,
         &state.app_id,
         &state.app_secret,
-    ).await
+    )
+    .await
     {
         Ok(sender) => {
             if let Err(e) = sender.send(AgentMessage::UserMessage(text)).await {

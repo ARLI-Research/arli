@@ -11,8 +11,8 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
-use crate::swarm::{Swarm, SwarmAgentConfig, SwarmEvent};
 use super::{Tool, ToolOutput};
+use crate::swarm::{Swarm, SwarmAgentConfig, SwarmEvent};
 
 /// Tool for spawning child agents.
 pub struct DelegateTaskTool {
@@ -179,8 +179,7 @@ impl DelegateTaskTool {
 
     async fn wait_for_child(&self, child_id: &str, timeout_secs: u64) -> ToolOutput {
         let mut events = self.swarm.subscribe();
-        let deadline = tokio::time::Instant::now()
-            + tokio::time::Duration::from_secs(timeout_secs);
+        let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(timeout_secs);
 
         loop {
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());

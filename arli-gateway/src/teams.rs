@@ -10,24 +10,18 @@
 //!
 //! Reference: https://learn.microsoft.com/en-us/microsoftteams/platform/bots/
 
-use arli_core::{
-    Agent, AgentConfig, AgentMessage, Config,
-    OpenAIProvider, SessionStore, ToolRegistry,
-    memory::MemoryStore,
-};
 use arli_core::tools::builtin::register_builtin_tools;
-use axum::{
-    extract::State,
-    response::IntoResponse,
-    routing::post,
-    Json, Router,
+use arli_core::{
+    memory::MemoryStore, Agent, AgentConfig, AgentMessage, Config, OpenAIProvider, SessionStore,
+    ToolRegistry,
 };
+use axum::{extract::State, response::IntoResponse, routing::post, Json, Router};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 // ── Bot Framework types ──
 
@@ -127,8 +121,7 @@ impl TeamsState {
         let mut agents = agents.lock().await;
 
         // Sanitize conversation ID for filesystem use.
-        let safe_id = conversation_id
-            .replace([':', '/', '\\', ' ', '@'], "_");
+        let safe_id = conversation_id.replace([':', '/', '\\', ' ', '@'], "_");
 
         if let Some(sender) = agents.get(conversation_id) {
             return Ok(sender.clone());
@@ -148,7 +141,7 @@ impl TeamsState {
         ));
 
         let mut tools = ToolRegistry::new();
-        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None);
+        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None, None);
 
         let agent_config = AgentConfig {
             name: format!("teams-{}", safe_id),
@@ -156,7 +149,8 @@ impl TeamsState {
             system_prompt: Some(
                 "You are ARLI, an AI agent communicating via Microsoft Teams. \
                  Respond in the user's language. Be concise and use plain text \
-                 or basic markdown formatting.".to_string()
+                 or basic markdown formatting."
+                    .to_string(),
             ),
             protect_last_n: 20,
             protect_first_n: 3,
@@ -305,7 +299,10 @@ async fn teams_webhook(
                 .and_then(|f| f.name.as_deref())
                 .unwrap_or("unknown");
 
-            info!("Teams message from {} (conv {}): {}", user, conversation_id, text);
+            info!(
+                "Teams message from {} (conv {}): {}",
+                user, conversation_id, text
+            );
 
             // Route to agent.
             match TeamsState::get_or_create_agent(
@@ -320,18 +317,12 @@ async fn teams_webhook(
             {
                 Ok(sender) => {
                     if let Err(e) = sender.send(AgentMessage::UserMessage(text)).await {
-                        error!(
-                            "Failed to send to Teams agent {}: {}",
-                            conversation_id, e
-                        );
+                        error!("Failed to send to Teams agent {}: {}", conversation_id, e);
                         state.agents.lock().await.remove(&conversation_id);
                     }
                 }
                 Err(e) => {
-                    error!(
-                        "Cannot create Teams agent for {}: {}",
-                        conversation_id, e
-                    );
+                    error!("Cannot create Teams agent for {}: {}", conversation_id, e);
                 }
             }
         }
@@ -441,17 +432,20 @@ fn resolve_teams_value(env_var: &str, config_key: &str) -> Option<String> {
 /// Convenience wrapper that reads MS_TEAMS_APP_ID/MS_TEAMS_APP_PASSWORD
 /// and starts the gateway.
 pub async fn run_from_env(data_dir: PathBuf) -> anyhow::Result<()> {
-    let app_id = resolve_teams_value("MS_TEAMS_APP_ID", "teams_app_id")
-        .ok_or_else(|| anyhow::anyhow!(
+    let app_id = resolve_teams_value("MS_TEAMS_APP_ID", "teams_app_id").ok_or_else(|| {
+        anyhow::anyhow!(
             "MS_TEAMS_APP_ID not set. Set MS_TEAMS_APP_ID env var or \
              gateway.teams_app_id in config.toml"
-        ))?;
+        )
+    })?;
 
     let app_password = resolve_teams_value("MS_TEAMS_APP_PASSWORD", "teams_app_password")
-        .ok_or_else(|| anyhow::anyhow!(
-            "MS_TEAMS_APP_PASSWORD not set. Set MS_TEAMS_APP_PASSWORD env var or \
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "MS_TEAMS_APP_PASSWORD not set. Set MS_TEAMS_APP_PASSWORD env var or \
              gateway.teams_app_password in config.toml"
-        ))?;
+            )
+        })?;
 
     let port: u16 = std::env::var("MS_TEAMS_PORT")
         .ok()

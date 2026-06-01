@@ -117,8 +117,14 @@ impl SkillContract {
 
         for (name, param) in &self.parameters {
             let mut prop = serde_json::Map::new();
-            prop.insert("type".to_string(), serde_json::Value::String(param.param_type.clone()));
-            prop.insert("description".to_string(), serde_json::Value::String(param.description.clone()));
+            prop.insert(
+                "type".to_string(),
+                serde_json::Value::String(param.param_type.clone()),
+            );
+            prop.insert(
+                "description".to_string(),
+                serde_json::Value::String(param.description.clone()),
+            );
 
             if let Some(ref default) = param.default {
                 prop.insert("default".to_string(), default.clone());
@@ -152,7 +158,12 @@ impl SkillContract {
         let mut errors = Vec::new();
 
         for (name, param) in &self.parameters {
-            if param.required && !args.as_object().map(|o| o.contains_key(name)).unwrap_or(false) {
+            if param.required
+                && !args
+                    .as_object()
+                    .map(|o| o.contains_key(name))
+                    .unwrap_or(false)
+            {
                 errors.push(format!("Missing required parameter: {}", name));
                 continue;
             }
@@ -192,10 +203,9 @@ impl SkillContract {
                             }
                         }
                     }
-                    "boolean"
-                        if !value.is_boolean() => {
-                            errors.push(format!("{}: expected boolean, got {}", name, value));
-                        }
+                    "boolean" if !value.is_boolean() => {
+                        errors.push(format!("{}: expected boolean, got {}", name, value));
+                    }
                     _ => {} // object, array — defer to JSON Schema
                 }
             }
@@ -340,6 +350,9 @@ mod tests {
 
         let schema = contract.to_function_schema();
         assert_eq!(schema["type"], "object");
-        assert!(schema["required"].as_array().unwrap().contains(&serde_json::json!("x")));
+        assert!(schema["required"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("x")));
     }
 }

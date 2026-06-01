@@ -202,7 +202,9 @@ pub struct LoggingHook;
 
 #[async_trait]
 impl Hook for LoggingHook {
-    fn name(&self) -> &str { "logging" }
+    fn name(&self) -> &str {
+        "logging"
+    }
 
     async fn pre_tool_call(&self, ctx: &PreToolCallContext) -> HookDecision {
         tracing::info!(
@@ -255,14 +257,22 @@ impl MetricsHook {
         }
     }
 
-    pub async fn tool_call_count(&self) -> u64 { *self.tool_calls.lock().await }
-    pub async fn error_count(&self) -> u64 { *self.errors.lock().await }
-    pub async fn compaction_count(&self) -> u64 { *self.compactions.lock().await }
+    pub async fn tool_call_count(&self) -> u64 {
+        *self.tool_calls.lock().await
+    }
+    pub async fn error_count(&self) -> u64 {
+        *self.errors.lock().await
+    }
+    pub async fn compaction_count(&self) -> u64 {
+        *self.compactions.lock().await
+    }
 }
 
 #[async_trait]
 impl Hook for MetricsHook {
-    fn name(&self) -> &str { "metrics" }
+    fn name(&self) -> &str {
+        "metrics"
+    }
 
     async fn post_tool_call(&self, _ctx: &PostToolCallContext) {
         *self.tool_calls.lock().await += 1;
@@ -284,7 +294,9 @@ mod tests {
     struct DenyShellHook;
     #[async_trait]
     impl Hook for DenyShellHook {
-        fn name(&self) -> &str { "deny-shell" }
+        fn name(&self) -> &str {
+            "deny-shell"
+        }
         async fn pre_tool_call(&self, ctx: &PreToolCallContext) -> HookDecision {
             if ctx.tool_name == "shell" {
                 HookDecision::Deny("Blocked by test hook".into())
@@ -299,12 +311,14 @@ mod tests {
         let registry = HookRegistry::new();
         registry.register(Box::new(DenyShellHook)).await;
 
-        let decision = registry.run_pre_tool_call(&PreToolCallContext {
-            tool_name: "shell".into(),
-            tool_args: serde_json::json!({"cmd": "rm -rf /"}),
-            agent_name: "test".into(),
-            session_id: None,
-        }).await;
+        let decision = registry
+            .run_pre_tool_call(&PreToolCallContext {
+                tool_name: "shell".into(),
+                tool_args: serde_json::json!({"cmd": "rm -rf /"}),
+                agent_name: "test".into(),
+                session_id: None,
+            })
+            .await;
 
         assert_eq!(decision, HookDecision::Deny("Blocked by test hook".into()));
     }
@@ -314,12 +328,14 @@ mod tests {
         let registry = HookRegistry::new();
         registry.register(Box::new(DenyShellHook)).await;
 
-        let decision = registry.run_pre_tool_call(&PreToolCallContext {
-            tool_name: "read_file".into(),
-            tool_args: serde_json::json!({"path": "/tmp/test"}),
-            agent_name: "test".into(),
-            session_id: None,
-        }).await;
+        let decision = registry
+            .run_pre_tool_call(&PreToolCallContext {
+                tool_name: "read_file".into(),
+                tool_args: serde_json::json!({"path": "/tmp/test"}),
+                agent_name: "test".into(),
+                session_id: None,
+            })
+            .await;
 
         assert_eq!(decision, HookDecision::Allow);
     }
@@ -328,22 +344,34 @@ mod tests {
     async fn test_metrics_hook_counts() {
         let metrics = MetricsHook::new();
 
-        metrics.post_tool_call(&PostToolCallContext {
-            tool_name: "read_file".into(),
-            tool_args: serde_json::json!({}),
-            result: ToolOutput { success: true, content: "ok".into(), error: None },
-            elapsed_ms: 5,
-            agent_name: "test".into(),
-            session_id: None,
-        }).await;
-        metrics.post_tool_call(&PostToolCallContext {
-            tool_name: "shell".into(),
-            tool_args: serde_json::json!({}),
-            result: ToolOutput { success: false, content: "".into(), error: Some("fail".into()) },
-            elapsed_ms: 10,
-            agent_name: "test".into(),
-            session_id: None,
-        }).await;
+        metrics
+            .post_tool_call(&PostToolCallContext {
+                tool_name: "read_file".into(),
+                tool_args: serde_json::json!({}),
+                result: ToolOutput {
+                    success: true,
+                    content: "ok".into(),
+                    error: None,
+                },
+                elapsed_ms: 5,
+                agent_name: "test".into(),
+                session_id: None,
+            })
+            .await;
+        metrics
+            .post_tool_call(&PostToolCallContext {
+                tool_name: "shell".into(),
+                tool_args: serde_json::json!({}),
+                result: ToolOutput {
+                    success: false,
+                    content: "".into(),
+                    error: Some("fail".into()),
+                },
+                elapsed_ms: 10,
+                agent_name: "test".into(),
+                session_id: None,
+            })
+            .await;
 
         assert_eq!(metrics.tool_call_count().await, 2);
     }
@@ -351,12 +379,14 @@ mod tests {
     #[tokio::test]
     async fn test_empty_registry_allows_all() {
         let registry = HookRegistry::new();
-        let decision = registry.run_pre_tool_call(&PreToolCallContext {
-            tool_name: "any_tool".into(),
-            tool_args: serde_json::json!({}),
-            agent_name: "test".into(),
-            session_id: None,
-        }).await;
+        let decision = registry
+            .run_pre_tool_call(&PreToolCallContext {
+                tool_name: "any_tool".into(),
+                tool_args: serde_json::json!({}),
+                agent_name: "test".into(),
+                session_id: None,
+            })
+            .await;
         assert_eq!(decision, HookDecision::Allow);
     }
 }

@@ -65,12 +65,18 @@ struct PluginProcess {
 
 impl PluginProcess {
     fn send_request(&mut self, request: &str) -> anyhow::Result<String> {
-        let stdin = self.child.stdin.as_mut()
+        let stdin = self
+            .child
+            .stdin
+            .as_mut()
             .ok_or_else(|| anyhow::anyhow!("Plugin stdin not available"))?;
         writeln!(stdin, "{}", request)?;
         stdin.flush()?;
 
-        let stdout = self.child.stdout.as_mut()
+        let stdout = self
+            .child
+            .stdout
+            .as_mut()
             .ok_or_else(|| anyhow::anyhow!("Plugin stdout not available"))?;
         let mut reader = BufReader::new(stdout);
         let mut line = String::new();
@@ -98,9 +104,15 @@ struct PluginToolWrapper {
 
 #[async_trait]
 impl Tool for PluginToolWrapper {
-    fn name(&self) -> &str { &self.name }
-    fn description(&self) -> &str { &self.description }
-    fn parameters_schema(&self) -> Value { self.parameters.clone() }
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn description(&self) -> &str {
+        &self.description
+    }
+    fn parameters_schema(&self) -> Value {
+        self.parameters.clone()
+    }
 
     async fn execute(&self, arguments: &str) -> ToolOutput {
         let request = serde_json::json!({
@@ -119,39 +131,38 @@ impl Tool for PluginToolWrapper {
         };
 
         match proc.send_request(&request.to_string()) {
-            Ok(response) => {
-                match serde_json::from_str::<Value>(&response) {
-                    Ok(v) => {
-                        if let Some(err) = v.get("error") {
-                            ToolOutput {
-                                success: false,
-                                content: String::new(),
-                                error: Some(err.to_string()),
-                            }
-                        } else if let Some(result) = v.get("result") {
-                            let text = result.get("content")
-                                .and_then(|c| c.as_array())
-                                .and_then(|arr| arr.first())
-                                .and_then(|c| c.get("text"))
-                                .and_then(|t| t.as_str())
-                                .unwrap_or(&response)
-                                .to_string();
-                            ToolOutput {
-                                success: true,
-                                content: text,
-                                error: None,
-                            }
-                        } else {
-                            ToolOutput {
-                                success: true,
-                                content: response,
-                                error: None,
-                            }
+            Ok(response) => match serde_json::from_str::<Value>(&response) {
+                Ok(v) => {
+                    if let Some(err) = v.get("error") {
+                        ToolOutput {
+                            success: false,
+                            content: String::new(),
+                            error: Some(err.to_string()),
+                        }
+                    } else if let Some(result) = v.get("result") {
+                        let text = result
+                            .get("content")
+                            .and_then(|c| c.as_array())
+                            .and_then(|arr| arr.first())
+                            .and_then(|c| c.get("text"))
+                            .and_then(|t| t.as_str())
+                            .unwrap_or(&response)
+                            .to_string();
+                        ToolOutput {
+                            success: true,
+                            content: text,
+                            error: None,
+                        }
+                    } else {
+                        ToolOutput {
+                            success: true,
+                            content: response,
+                            error: None,
                         }
                     }
-                    Err(e) => ToolOutput::error(&format!("Plugin JSON parse error: {}", e)),
                 }
-            }
+                Err(e) => ToolOutput::error(&format!("Plugin JSON parse error: {}", e)),
+            },
             Err(e) => ToolOutput::error(&format!("Plugin communication error: {}", e)),
         }
     }
@@ -198,19 +209,28 @@ impl PluginManager {
             }
 
             match std::fs::read_to_string(&manifest_path) {
-                Ok(content) => {
-                    match toml::from_str::<PluginManifest>(&content) {
-                        Ok(manifest) => {
-                            info!("Discovered plugin: {} v{}", manifest.plugin.name, manifest.plugin.version);
-                            plugins.push(manifest);
-                        }
-                        Err(e) => {
-                            warn!("Failed to parse plugin manifest {}: {}", manifest_path.display(), e);
-                        }
+                Ok(content) => match toml::from_str::<PluginManifest>(&content) {
+                    Ok(manifest) => {
+                        info!(
+                            "Discovered plugin: {} v{}",
+                            manifest.plugin.name, manifest.plugin.version
+                        );
+                        plugins.push(manifest);
                     }
-                }
+                    Err(e) => {
+                        warn!(
+                            "Failed to parse plugin manifest {}: {}",
+                            manifest_path.display(),
+                            e
+                        );
+                    }
+                },
                 Err(e) => {
-                    warn!("Failed to read plugin manifest {}: {}", manifest_path.display(), e);
+                    warn!(
+                        "Failed to read plugin manifest {}: {}",
+                        manifest_path.display(),
+                        e
+                    );
                 }
             }
         }
@@ -227,14 +247,20 @@ impl PluginManager {
             anyhow::bail!("Plugin executable not found: {}", exec_path.display());
         }
 
-        info!("Loading plugin: {} ({})", manifest.plugin.name, exec_path.display());
+        info!(
+            "Loading plugin: {} ({})",
+            manifest.plugin.name,
+            exec_path.display()
+        );
 
         let child = Command::new(&exec_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
-            .map_err(|e| anyhow::anyhow!("Failed to spawn plugin {}: {}", manifest.plugin.name, e))?;
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to spawn plugin {}: {}", manifest.plugin.name, e)
+            })?;
 
         let mut process = PluginProcess {
             plugin_name: manifest.plugin.name.clone(),
@@ -255,7 +281,11 @@ impl PluginManager {
                     if v.get("error").is_some() {
                         let _ = process.child.kill();
                         let _ = process.child.wait();
-                        anyhow::bail!("Plugin {} handshake failed: {}", manifest.plugin.name, response);
+                        anyhow::bail!(
+                            "Plugin {} handshake failed: {}",
+                            manifest.plugin.name,
+                            response
+                        );
                     }
                     info!("Plugin {} handshake OK", manifest.plugin.name);
                 }
@@ -270,10 +300,7 @@ impl PluginManager {
         let process = Arc::new(Mutex::new(process));
         let name = manifest.plugin.name.clone();
 
-        self.loaded.insert(name, PluginInfo {
-            manifest,
-            process,
-        });
+        self.loaded.insert(name, PluginInfo { manifest, process });
 
         Ok(())
     }
@@ -289,7 +316,10 @@ impl PluginManager {
                     process: info.process.clone(),
                 };
                 registry.register(Box::new(wrapper));
-                info!("Registered plugin tool: {} (from {})", tool_def.name, info.manifest.plugin.name);
+                info!(
+                    "Registered plugin tool: {} (from {})",
+                    tool_def.name, info.manifest.plugin.name
+                );
             }
         }
     }
@@ -309,7 +339,6 @@ impl PluginManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[test]
     fn test_parse_manifest() {

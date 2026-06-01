@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+pub use crate::x402::X402Config;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub model: String,
@@ -18,9 +20,13 @@ pub struct Config {
     #[serde(default)]
     pub memory: MemoryConfig,
     #[serde(default)]
+    pub feedback: FeedbackConfig,
+    #[serde(default)]
     pub terminal: TerminalConfig,
     #[serde(default)]
     pub browser: BrowserConfig,
+    #[serde(default)]
+    pub x402: X402Config,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -137,6 +143,46 @@ impl Default for MemoryConfig {
     }
 }
 
+/// Feedback loop configuration for user corrections.
+///
+/// When the user corrects the agent (e.g., "no, do X instead"),
+/// the correction is stored in memory with target="correction"
+/// for future learning.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeedbackConfig {
+    /// Whether the feedback loop is enabled
+    #[serde(default = "default_feedback_enabled")]
+    pub enabled: bool,
+    /// Whether to auto-save corrections to memory
+    #[serde(default = "default_auto_learn")]
+    pub auto_learn: bool,
+    /// Maximum number of corrections to store
+    #[serde(default = "default_max_corrections")]
+    pub max_corrections: usize,
+}
+
+fn default_feedback_enabled() -> bool {
+    true
+}
+
+fn default_auto_learn() -> bool {
+    true
+}
+
+fn default_max_corrections() -> usize {
+    100
+}
+
+impl Default for FeedbackConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            auto_learn: true,
+            max_corrections: 100,
+        }
+    }
+}
+
 /// Terminal backend configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TerminalConfig {
@@ -227,8 +273,10 @@ impl Default for Config {
             compression_threshold: 0.5,
             search: SearchConfig::default(),
             memory: MemoryConfig::default(),
+            feedback: FeedbackConfig::default(),
             terminal: TerminalConfig::default(),
             browser: BrowserConfig::default(),
+            x402: X402Config::default(),
         }
     }
 }
@@ -280,7 +328,9 @@ impl Config {
                         config.browser.base_url = file_config.browser.base_url;
                     }
                     // Memory provider
-                    if !file_config.memory.provider.is_empty() && file_config.memory.provider != "builtin" {
+                    if !file_config.memory.provider.is_empty()
+                        && file_config.memory.provider != "builtin"
+                    {
                         config.memory.provider = file_config.memory.provider;
                     }
                     if !file_config.memory.api_key.is_empty() {
@@ -290,7 +340,9 @@ impl Config {
                         config.memory.base_url = file_config.memory.base_url;
                     }
                     // Terminal backend
-                    if !file_config.terminal.backend.is_empty() && file_config.terminal.backend != "local" {
+                    if !file_config.terminal.backend.is_empty()
+                        && file_config.terminal.backend != "local"
+                    {
                         config.terminal.backend = file_config.terminal.backend;
                     }
                     if !file_config.terminal.docker_image.is_empty() {
@@ -301,6 +353,20 @@ impl Config {
                     }
                     if !file_config.terminal.ssh_user.is_empty() {
                         config.terminal.ssh_user = file_config.terminal.ssh_user;
+                    }
+                    // x402 agentic wallet
+                    if file_config.x402.enabled {
+                        config.x402 = file_config.x402;
+                    }
+                    // Feedback loop
+                    if !file_config.feedback.enabled {
+                        config.feedback.enabled = false;
+                    }
+                    if !file_config.feedback.auto_learn {
+                        config.feedback.auto_learn = false;
+                    }
+                    if file_config.feedback.max_corrections != 100 {
+                        config.feedback.max_corrections = file_config.feedback.max_corrections;
                     }
                 }
             }
@@ -338,16 +404,20 @@ impl Config {
             }
         }
 
-        if let Ok(key) = std::env::var("GOOGLE_API_KEY").or_else(|_| std::env::var("GOOGLE_OAUTH_TOKEN")) {
+        if let Ok(key) =
+            std::env::var("GOOGLE_API_KEY").or_else(|_| std::env::var("GOOGLE_OAUTH_TOKEN"))
+        {
             config.provider.api_key = key;
             config.provider.name = "google".to_string();
-            config.provider.base_url = Some("https://generativelanguage.googleapis.com/v1beta/openai/".to_string());
+            config.provider.base_url =
+                Some("https://generativelanguage.googleapis.com/v1beta/openai/".to_string());
             if config.model == "gpt-4o" {
                 config.model = "gemini-2.5-flash".to_string();
             }
         }
 
-        if let Ok(key) = std::env::var("XAI_API_KEY").or_else(|_| std::env::var("XAI_OAUTH_TOKEN")) {
+        if let Ok(key) = std::env::var("XAI_API_KEY").or_else(|_| std::env::var("XAI_OAUTH_TOKEN"))
+        {
             config.provider.api_key = key;
             config.provider.name = "xai".to_string();
             config.provider.base_url = Some("https://api.x.ai/v1".to_string());
@@ -358,9 +428,7 @@ impl Config {
 
         if let Ok(key) = std::env::var("GITHUB_TOKEN") {
             // Only use GitHub token if no other provider is explicitly set
-            if config.provider.api_key.is_empty()
-                || config.provider.name == "openai"
-            {
+            if config.provider.api_key.is_empty() || config.provider.name == "openai" {
                 config.provider.api_key = key;
                 config.provider.name = "copilot".to_string();
                 config.provider.base_url = Some("https://api.githubcopilot.com".to_string());
@@ -372,9 +440,7 @@ impl Config {
 
         // LM Studio (local desktop app, OpenAI-compatible)
         if let Ok(key) = std::env::var("LM_STUDIO_API_KEY") {
-            if config.provider.api_key.is_empty()
-                || config.provider.name == "openai"
-            {
+            if config.provider.api_key.is_empty() || config.provider.name == "openai" {
                 config.provider.api_key = key;
                 config.provider.name = "lmstudio".to_string();
                 config.provider.base_url = Some("http://localhost:1234/v1".to_string());
@@ -386,9 +452,7 @@ impl Config {
 
         // Ollama (local, OpenAI-compatible)
         if let Ok(key) = std::env::var("OLLAMA_API_KEY") {
-            if config.provider.api_key.is_empty()
-                || config.provider.name == "openai"
-            {
+            if config.provider.api_key.is_empty() || config.provider.name == "openai" {
                 config.provider.api_key = key;
                 config.provider.name = "ollama".to_string();
                 config.provider.base_url = Some("http://localhost:11434/v1".to_string());
@@ -410,9 +474,7 @@ impl Config {
 
         // AWS Bedrock (requires a proxy like LiteLLM — user must provide base_url)
         if let Ok(key) = std::env::var("AWS_ACCESS_KEY_ID") {
-            if config.provider.api_key.is_empty()
-                || config.provider.name == "openai"
-            {
+            if config.provider.api_key.is_empty() || config.provider.name == "openai" {
                 config.provider.api_key = key;
                 config.provider.name = "bedrock".to_string();
                 if config.model == "gpt-4o" {
@@ -429,7 +491,8 @@ impl Config {
                 config.provider.base_url = Some(endpoint);
             }
             if config.model == "gpt-4o" {
-                config.model = std::env::var("AZURE_MODEL").unwrap_or_else(|_| "gpt-4o".to_string());
+                config.model =
+                    std::env::var("AZURE_MODEL").unwrap_or_else(|_| "gpt-4o".to_string());
             }
         }
 
@@ -441,18 +504,19 @@ impl Config {
                     .map(|h| std::path::PathBuf::from(h).join(".codex/auth.json"))
                     .ok()?;
                 if auth_path.exists() {
-                    std::fs::read_to_string(&auth_path).ok().and_then(|contents| {
-                        serde_json::from_str::<serde_json::Value>(&contents).ok()
-                            .and_then(|v| v.get("token")?.as_str().map(|s| s.to_string()))
-                    })
+                    std::fs::read_to_string(&auth_path)
+                        .ok()
+                        .and_then(|contents| {
+                            serde_json::from_str::<serde_json::Value>(&contents)
+                                .ok()
+                                .and_then(|v| v.get("token")?.as_str().map(|s| s.to_string()))
+                        })
                 } else {
                     None
                 }
             });
             if let Some(key) = codex_key {
-                if config.provider.api_key.is_empty()
-                    || config.provider.name == "openai"
-                {
+                if config.provider.api_key.is_empty() || config.provider.name == "openai" {
                     config.provider.api_key = key;
                     config.provider.name = "codex".to_string();
                     config.provider.base_url = Some("https://api.openai.com/v1".to_string());
@@ -484,10 +548,13 @@ impl Config {
         }
 
         // Qwen Cloud / DashScope (OpenAI-compatible, also accepts QWEN_OAUTH_TOKEN)
-        if let Ok(key) = std::env::var("DASHSCOPE_API_KEY").or_else(|_| std::env::var("QWEN_OAUTH_TOKEN")) {
+        if let Ok(key) =
+            std::env::var("DASHSCOPE_API_KEY").or_else(|_| std::env::var("QWEN_OAUTH_TOKEN"))
+        {
             config.provider.api_key = key;
             config.provider.name = "qwen".to_string();
-            config.provider.base_url = Some("https://dashscope-intl.aliyuncs.com/compatible-mode/v1".to_string());
+            config.provider.base_url =
+                Some("https://dashscope-intl.aliyuncs.com/compatible-mode/v1".to_string());
             if config.model == "gpt-4o" {
                 config.model = "qwen-max".to_string();
             }
@@ -495,9 +562,7 @@ impl Config {
 
         // Xiaomi MiMo (OpenAI-compatible, guarded)
         if let Ok(key) = std::env::var("MIMO_API_KEY") {
-            if config.provider.api_key.is_empty()
-                || config.provider.name == "openai"
-            {
+            if config.provider.api_key.is_empty() || config.provider.name == "openai" {
                 config.provider.api_key = key;
                 config.provider.name = "mimo".to_string();
                 config.provider.base_url = Some("https://api.mimo.xiaomi.com/v1".to_string());
@@ -509,9 +574,7 @@ impl Config {
 
         // Tencent TokenHub (OpenAI-compatible, guarded)
         if let Ok(key) = std::env::var("TENCENT_API_KEY") {
-            if config.provider.api_key.is_empty()
-                || config.provider.name == "openai"
-            {
+            if config.provider.api_key.is_empty() || config.provider.name == "openai" {
                 config.provider.api_key = key;
                 config.provider.name = "tencent".to_string();
                 config.provider.base_url = Some("https://tokenhub.tencentmaas.com/v1".to_string());
@@ -543,9 +606,7 @@ impl Config {
 
         // Kimi Coding Plan / Moonshot (OpenAI-compatible, guarded)
         if let Ok(key) = std::env::var("MOONSHOT_API_KEY") {
-            if config.provider.api_key.is_empty()
-                || config.provider.name == "openai"
-            {
+            if config.provider.api_key.is_empty() || config.provider.name == "openai" {
                 config.provider.api_key = key;
                 config.provider.name = "moonshot".to_string();
                 config.provider.base_url = Some("https://api.moonshot.cn/v1".to_string());
@@ -557,9 +618,7 @@ impl Config {
 
         // Kimi / Moonshot China (OpenAI-compatible, guarded)
         if let Ok(key) = std::env::var("MOONSHOT_CN_API_KEY") {
-            if config.provider.api_key.is_empty()
-                || config.provider.name == "openai"
-            {
+            if config.provider.api_key.is_empty() || config.provider.name == "openai" {
                 config.provider.api_key = key;
                 config.provider.name = "moonshot_cn".to_string();
                 config.provider.base_url = Some("https://api.moonshot.cn/v1".to_string());
@@ -571,9 +630,7 @@ impl Config {
 
         // StepFun Step Plan (OpenAI-compatible, guarded)
         if let Ok(key) = std::env::var("STEPFUN_API_KEY") {
-            if config.provider.api_key.is_empty()
-                || config.provider.name == "openai"
-            {
+            if config.provider.api_key.is_empty() || config.provider.name == "openai" {
                 config.provider.api_key = key;
                 config.provider.name = "stepfun".to_string();
                 config.provider.base_url = Some("https://api.stepfun.com/v1".to_string());
@@ -584,7 +641,9 @@ impl Config {
         }
 
         // MiniMax (global, OpenAI-compatible, also accepts MINIMAX_OAUTH_TOKEN)
-        if let Ok(key) = std::env::var("MINIMAX_API_KEY").or_else(|_| std::env::var("MINIMAX_OAUTH_TOKEN")) {
+        if let Ok(key) =
+            std::env::var("MINIMAX_API_KEY").or_else(|_| std::env::var("MINIMAX_OAUTH_TOKEN"))
+        {
             config.provider.api_key = key;
             config.provider.name = "minimax".to_string();
             config.provider.base_url = Some("https://api.minimax.chat/v1".to_string());
@@ -595,9 +654,7 @@ impl Config {
 
         // MiniMax China (OpenAI-compatible, guarded)
         if let Ok(key) = std::env::var("MINIMAX_CN_API_KEY") {
-            if config.provider.api_key.is_empty()
-                || config.provider.name == "openai"
-            {
+            if config.provider.api_key.is_empty() || config.provider.name == "openai" {
                 config.provider.api_key = key;
                 config.provider.name = "minimax_cn".to_string();
                 config.provider.base_url = Some("https://api.minimaxi.com/v1".to_string());
@@ -609,9 +666,7 @@ impl Config {
 
         // Arcee AI (OpenAI-compatible, guarded)
         if let Ok(key) = std::env::var("ARCEE_API_KEY") {
-            if config.provider.api_key.is_empty()
-                || config.provider.name == "openai"
-            {
+            if config.provider.api_key.is_empty() || config.provider.name == "openai" {
                 config.provider.api_key = key;
                 config.provider.name = "arcee".to_string();
                 config.provider.base_url = Some("https://api.arcee.ai/v1".to_string());
@@ -623,9 +678,7 @@ impl Config {
 
         // GMI Cloud (OpenAI-compatible, guarded)
         if let Ok(key) = std::env::var("GMI_API_KEY") {
-            if config.provider.api_key.is_empty()
-                || config.provider.name == "openai"
-            {
+            if config.provider.api_key.is_empty() || config.provider.name == "openai" {
                 config.provider.api_key = key;
                 config.provider.name = "gmi".to_string();
                 config.provider.base_url = Some("https://api.gmicloud.ai/v1".to_string());
@@ -637,9 +690,7 @@ impl Config {
 
         // Kilo Code (OpenAI-compatible, guarded)
         if let Ok(key) = std::env::var("KILO_API_KEY") {
-            if config.provider.api_key.is_empty()
-                || config.provider.name == "openai"
-            {
+            if config.provider.api_key.is_empty() || config.provider.name == "openai" {
                 config.provider.api_key = key;
                 config.provider.name = "kilo".to_string();
                 config.provider.base_url = Some("https://api.kilocode.ai/v1".to_string());
@@ -651,9 +702,7 @@ impl Config {
 
         // OpenCode Zen (OpenAI-compatible, guarded)
         if let Ok(key) = std::env::var("OPENCODE_API_KEY") {
-            if config.provider.api_key.is_empty()
-                || config.provider.name == "openai"
-            {
+            if config.provider.api_key.is_empty() || config.provider.name == "openai" {
                 config.provider.api_key = key;
                 config.provider.name = "opencode".to_string();
                 config.provider.base_url = Some("https://api.opencode.ai/zen/v1".to_string());
@@ -665,9 +714,7 @@ impl Config {
 
         // OpenCode Go (OpenAI-compatible, guarded)
         if let Ok(key) = std::env::var("OPENCODE_GO_API_KEY") {
-            if config.provider.api_key.is_empty()
-                || config.provider.name == "openai"
-            {
+            if config.provider.api_key.is_empty() || config.provider.name == "openai" {
                 config.provider.api_key = key;
                 config.provider.name = "opencode_go".to_string();
                 config.provider.base_url = Some("https://api.opencode.ai/go/v1".to_string());
@@ -679,12 +726,11 @@ impl Config {
 
         // Alibaba Cloud Coding Plan (OpenAI-compatible, guarded)
         if let Ok(key) = std::env::var("ALIBABA_CLOUD_API_KEY") {
-            if config.provider.api_key.is_empty()
-                || config.provider.name == "openai"
-            {
+            if config.provider.api_key.is_empty() || config.provider.name == "openai" {
                 config.provider.api_key = key;
                 config.provider.name = "alibaba_cloud".to_string();
-                config.provider.base_url = Some("https://dashscope.aliyuncs.com/compatible-mode/v1".to_string());
+                config.provider.base_url =
+                    Some("https://dashscope.aliyuncs.com/compatible-mode/v1".to_string());
                 if config.model == "gpt-4o" {
                     config.model = "qwen-coder".to_string();
                 }
@@ -767,6 +813,24 @@ impl Config {
             config.terminal.ssh_user = su;
         }
 
+        // x402 agentic wallet overrides
+        if let Ok(xa) = std::env::var("X402_WALLET_ADDRESS") {
+            config.x402.wallet_address = xa;
+            config.x402.enabled = true;
+        }
+        if let Ok(xp) = std::env::var("X402_PRIVATE_KEY") {
+            config.x402.private_key = xp;
+            config.x402.enabled = true;
+        }
+        if let Ok(xr) = std::env::var("X402_RPC_URL") {
+            config.x402.rpc_url = xr;
+        }
+        if let Ok(xb) = std::env::var("X402_BUDGET_CENTS") {
+            if let Ok(b) = xb.parse::<u64>() {
+                config.x402.total_budget_cents = b;
+            }
+        }
+
         if config.provider.api_key.is_empty() {
             return Err(crate::error::Error::Config(
                 "No API key found. Run 'arli setup' or set DEEPSEEK_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_API_KEY / XAI_API_KEY / GITHUB_TOKEN / LM_STUDIO_API_KEY / OLLAMA_API_KEY / HF_API_KEY / AWS_ACCESS_KEY_ID / AZURE_API_KEY / OPENAI_CODEX_API_KEY / NOUS_API_KEY / NOVITA_API_KEY / DASHSCOPE_API_KEY / MIMO_API_KEY / TENCENT_API_KEY / NVIDIA_API_KEY / ZHIPU_API_KEY / MOONSHOT_API_KEY / MOONSHOT_CN_API_KEY / STEPFUN_API_KEY / MINIMAX_API_KEY / MINIMAX_CN_API_KEY / ARCEE_API_KEY / GMI_API_KEY / KILO_API_KEY / OPENCODE_API_KEY / OPENCODE_GO_API_KEY / ALIBABA_CLOUD_API_KEY".into(),
@@ -779,18 +843,22 @@ impl Config {
                 "openai" => Some("https://api.openai.com/v1".to_string()),
                 "deepseek" => Some("https://api.deepseek.com/v1".to_string()),
                 "anthropic" => Some("https://api.anthropic.com/v1".to_string()),
-                "google" => Some("https://generativelanguage.googleapis.com/v1beta/openai/".to_string()),
+                "google" => {
+                    Some("https://generativelanguage.googleapis.com/v1beta/openai/".to_string())
+                }
                 "xai" => Some("https://api.x.ai/v1".to_string()),
                 "copilot" => Some("https://api.githubcopilot.com".to_string()),
                 "lmstudio" => Some("http://localhost:1234/v1".to_string()),
                 "ollama" => Some("http://localhost:11434/v1".to_string()),
                 "huggingface" => Some("https://api-inference.huggingface.co/v1".to_string()),
                 "bedrock" => None, // user must provide base_url via proxy like LiteLLM
-                "azure" => None, // user must provide AZURE_ENDPOINT
+                "azure" => None,   // user must provide AZURE_ENDPOINT
                 "codex" => Some("https://api.openai.com/v1".to_string()),
                 "nous" => Some("https://portal.nousresearch.com/api/v1".to_string()),
                 "novita" => Some("https://api.novita.ai/v3/openai/v1".to_string()),
-                "qwen" => Some("https://dashscope-intl.aliyuncs.com/compatible-mode/v1".to_string()),
+                "qwen" => {
+                    Some("https://dashscope-intl.aliyuncs.com/compatible-mode/v1".to_string())
+                }
                 "mimo" => Some("https://api.mimo.xiaomi.com/v1".to_string()),
                 "tencent" => Some("https://tokenhub.tencentmaas.com/v1".to_string()),
                 "nvidia" => Some("https://integrate.api.nvidia.com/v1".to_string()),
@@ -805,7 +873,9 @@ impl Config {
                 "kilo" => Some("https://api.kilocode.ai/v1".to_string()),
                 "opencode" => Some("https://api.opencode.ai/zen/v1".to_string()),
                 "opencode_go" => Some("https://api.opencode.ai/go/v1".to_string()),
-                "alibaba_cloud" => Some("https://dashscope.aliyuncs.com/compatible-mode/v1".to_string()),
+                "alibaba_cloud" => {
+                    Some("https://dashscope.aliyuncs.com/compatible-mode/v1".to_string())
+                }
                 _ => None,
             };
         }
@@ -834,7 +904,11 @@ struct ConfigFile {
     #[serde(default)]
     pub memory: MemoryConfig,
     #[serde(default)]
+    pub feedback: FeedbackConfig,
+    #[serde(default)]
     pub terminal: TerminalConfig,
+    #[serde(default)]
+    pub x402: X402Config,
 }
 
 #[derive(Debug, Deserialize)]

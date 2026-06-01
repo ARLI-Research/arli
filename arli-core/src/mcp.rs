@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
 use std::sync::Arc;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 // ── JSON-RPC 2.0 message types ──
 
@@ -172,7 +172,9 @@ impl McpServer {
                 Some(JsonRpcResponse {
                     jsonrpc: "2.0".to_string(),
                     id: req.id.clone(),
-                    result: Some(serde_json::to_value(ToolsListResult { tools }).unwrap_or_default()),
+                    result: Some(
+                        serde_json::to_value(ToolsListResult { tools }).unwrap_or_default(),
+                    ),
                     error: None,
                 })
             }
@@ -193,14 +195,12 @@ impl McpServer {
                 })
             }
 
-            "ping" => {
-                Some(JsonRpcResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: req.id.clone(),
-                    result: Some(Value::Object(serde_json::Map::new())),
-                    error: None,
-                })
-            }
+            "ping" => Some(JsonRpcResponse {
+                jsonrpc: "2.0".to_string(),
+                id: req.id.clone(),
+                result: Some(Value::Object(serde_json::Map::new())),
+                error: None,
+            }),
 
             _ => {
                 warn!("Unknown MCP method: {}", method);
@@ -263,9 +263,11 @@ impl McpServer {
 
             // Check for tools/call — needs async execution
             if req.method == "tools/call" {
-                let params: ToolCallParams = match req.params.as_ref().and_then(|p| {
-                    serde_json::from_value(p.clone()).ok()
-                }) {
+                let params: ToolCallParams = match req
+                    .params
+                    .as_ref()
+                    .and_then(|p| serde_json::from_value(p.clone()).ok())
+                {
                     Some(p) => p,
                     None => {
                         let err_resp = JsonRpcResponse {
@@ -295,18 +297,20 @@ impl McpServer {
                 let resp = JsonRpcResponse {
                     jsonrpc: "2.0".to_string(),
                     id: req_id,
-                    result: Some(serde_json::to_value(ToolCallResult {
-                        content: vec![ToolContent {
-                            content_type: "text".to_string(),
-                            text: if output.success {
-                                output.content
-                            } else {
-                                output.error.unwrap_or_else(|| "Unknown error".to_string())
-                            },
-                        }],
-                        is_error: !output.success,
-                    })
-                    .unwrap_or_default()),
+                    result: Some(
+                        serde_json::to_value(ToolCallResult {
+                            content: vec![ToolContent {
+                                content_type: "text".to_string(),
+                                text: if output.success {
+                                    output.content
+                                } else {
+                                    output.error.unwrap_or_else(|| "Unknown error".to_string())
+                                },
+                            }],
+                            is_error: !output.success,
+                        })
+                        .unwrap_or_default(),
+                    ),
                     error: None,
                 };
 
@@ -336,8 +340,12 @@ mod tests {
     struct TestTool;
     #[async_trait]
     impl Tool for TestTool {
-        fn name(&self) -> &str { "test.echo" }
-        fn description(&self) -> &str { "Echo test tool" }
+        fn name(&self) -> &str {
+            "test.echo"
+        }
+        fn description(&self) -> &str {
+            "Echo test tool"
+        }
         fn parameters_schema(&self) -> Value {
             serde_json::json!({
                 "type": "object",

@@ -10,26 +10,24 @@
 //!   MATRIX_PASSWORD     — Bot password
 //!   MATRIX_ACCESS_TOKEN — Pre-obtained access token (alternative to password)
 
-use arli_core::{
-    Agent, AgentConfig, AgentMessage, Config,
-    OpenAIProvider, SessionStore, ToolRegistry,
-    memory::MemoryStore,
-};
 use arli_core::tools::builtin::register_builtin_tools;
+use arli_core::{
+    memory::MemoryStore, Agent, AgentConfig, AgentMessage, Config, OpenAIProvider, SessionStore,
+    ToolRegistry,
+};
 use matrix_sdk::{
-    Client,
     config::SyncSettings,
     event_handler::Ctx,
     ruma::events::room::message::{
         MessageType, OriginalSyncRoomMessageEvent, RoomMessageEventContent,
     },
-    Room, RoomState,
+    Client, Room, RoomState,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{info, error};
+use tracing::{error, info};
 
 /// Per-room agent state.
 struct AgentRoomState {
@@ -91,7 +89,7 @@ impl MatrixBot {
         ));
 
         let mut tools = ToolRegistry::new();
-        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None);
+        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None, None);
 
         let system_prompt = format!(
             "You are ARLI, an AI agent communicating via Matrix in room '{}'. \
@@ -148,9 +146,8 @@ impl MatrixBot {
                     }
                     Err(e) => {
                         error!("Matrix agent {} error: {}", room_id_owned, e);
-                        let content = RoomMessageEventContent::text_plain(
-                            format!("⚠️ Agent error: {}", e),
-                        );
+                        let content =
+                            RoomMessageEventContent::text_plain(format!("⚠️ Agent error: {}", e));
                         let _ = room.send(content).await;
                         break;
                     }
@@ -171,13 +168,7 @@ impl MatrixBot {
     }
 
     /// Process an incoming room message.
-    async fn handle_message(
-        &self,
-        room: Room,
-        room_id: &str,
-        sender: &str,
-        body: &str,
-    ) {
+    async fn handle_message(&self, room: Room, room_id: &str, sender: &str, body: &str) {
         // Ignore our own messages
         if let Some(own_user) = room.client().user_id() {
             if sender == own_user.as_str() {
@@ -200,7 +191,9 @@ impl MatrixBot {
 
         // Commands
         if content == "!arli start" || content == "!start" {
-            let _ = room.send(RoomMessageEventContent::text_plain("ARLI agent is ready.")).await;
+            let _ = room
+                .send(RoomMessageEventContent::text_plain("ARLI agent is ready."))
+                .await;
             return;
         }
 
@@ -215,7 +208,9 @@ impl MatrixBot {
 
         if content == "!arli reset" || content == "!reset" {
             self.remove(room_id).await;
-            let _ = room.send(RoomMessageEventContent::text_plain("Conversation reset.")).await;
+            let _ = room
+                .send(RoomMessageEventContent::text_plain("Conversation reset."))
+                .await;
             return;
         }
 
@@ -241,8 +236,8 @@ impl MatrixBot {
 
 /// Read Matrix configuration from environment variables.
 fn resolve_matrix_config() -> Option<(String, String, String)> {
-    let homeserver = std::env::var("MATRIX_HOMESERVER")
-        .unwrap_or_else(|_| "https://matrix.org".to_string());
+    let homeserver =
+        std::env::var("MATRIX_HOMESERVER").unwrap_or_else(|_| "https://matrix.org".to_string());
     let user = std::env::var("MATRIX_USER").ok()?;
     let password = std::env::var("MATRIX_PASSWORD").ok();
     let access_token = std::env::var("MATRIX_ACCESS_TOKEN").ok();

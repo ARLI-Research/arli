@@ -3,14 +3,16 @@
 //! Downloads images from URLs, extracts metadata (dimensions, format, size),
 //! and provides the image data for further processing by vision-capable LLMs.
 
-use async_trait::async_trait;
 use super::{Tool, ToolOutput};
+use async_trait::async_trait;
 
 pub struct VisionTool;
 
 #[async_trait]
 impl Tool for VisionTool {
-    fn name(&self) -> &str { "vision" }
+    fn name(&self) -> &str {
+        "vision"
+    }
 
     fn description(&self) -> &str {
         "Download and analyze an image from a URL. Returns dimensions, format, \
@@ -60,10 +62,14 @@ impl Tool for VisionTool {
         };
 
         if !response.status().is_success() {
-            return ToolOutput::error(&format!("HTTP {} downloading image", response.status().as_u16()));
+            return ToolOutput::error(&format!(
+                "HTTP {} downloading image",
+                response.status().as_u16()
+            ));
         }
 
-        let content_type = response.headers()
+        let content_type = response
+            .headers()
             .get("content-type")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("unknown")
@@ -95,10 +101,12 @@ impl Tool for VisionTool {
                     .and_then(|r| r.decode().ok())
                 {
                     Some(img) => img,
-                    None => return ToolOutput::error(&format!(
-                        "Cannot decode image: {}. Content-Type was '{}', {} bytes",
-                        e, content_type, file_size
-                    )),
+                    None => {
+                        return ToolOutput::error(&format!(
+                            "Cannot decode image: {}. Content-Type was '{}', {} bytes",
+                            e, content_type, file_size
+                        ))
+                    }
                 }
             }
         };

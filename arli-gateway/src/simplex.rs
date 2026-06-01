@@ -6,12 +6,11 @@
 //!
 //! Reference: https://github.com/simplex-chat/simplex-chat/blob/stable/docs/CLI.md
 
-use arli_core::{
-    Agent, AgentConfig, AgentMessage, Config,
-    OpenAIProvider, SessionStore, ToolRegistry,
-    memory::MemoryStore,
-};
 use arli_core::tools::builtin::register_builtin_tools;
+use arli_core::{
+    memory::MemoryStore, Agent, AgentConfig, AgentMessage, Config, OpenAIProvider, SessionStore,
+    ToolRegistry,
+};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -19,7 +18,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{ChildStdin, Command};
 use tokio::sync::Mutex;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 // ── SimpleX JSON output types ──
 
@@ -116,14 +115,15 @@ impl SimplexGateway {
         ));
 
         let mut tools = ToolRegistry::new();
-        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None);
+        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None, None);
 
         let agent_config = AgentConfig {
             name: format!("simplex-{}", safe_id),
             session_id: None,
             system_prompt: Some(
                 "You are ARLI, an AI agent communicating via SimpleX Chat. \
-                 Respond in the user's language. Be concise.".to_string()
+                 Respond in the user's language. Be concise."
+                    .to_string(),
             ),
             protect_last_n: 20,
             protect_first_n: 3,
@@ -155,11 +155,8 @@ impl SimplexGateway {
                         } else {
                             response
                         };
-                        if let Err(e) = Self::send_message(
-                            &cli_owned,
-                            &contact_owned,
-                            &truncated,
-                        ).await
+                        if let Err(e) =
+                            Self::send_message(&cli_owned, &contact_owned, &truncated).await
                         {
                             error!("Failed to send SimpleX response: {}", e);
                         }
@@ -185,11 +182,15 @@ impl SimplexGateway {
             .stderr(std::process::Stdio::piped())
             .spawn()?;
 
-        let stdin: ChildStdin = child.stdin.take()
+        let stdin: ChildStdin = child
+            .stdin
+            .take()
             .ok_or_else(|| anyhow::anyhow!("Failed to capture simplex-chat stdin"))?;
         let stdin_writer = Arc::new(Mutex::new(stdin));
 
-        let stdout = child.stdout.take()
+        let stdout = child
+            .stdout
+            .take()
             .ok_or_else(|| anyhow::anyhow!("Failed to capture simplex-chat stdout"))?;
         let reader = BufReader::new(stdout);
 
@@ -211,7 +212,8 @@ impl SimplexGateway {
 
             // Only process incoming messages
             let chat_event = event.chat_msg_event.as_deref().unwrap_or("");
-            if !(chat_event == "rcv message" || chat_event == "rcv group message"
+            if !(chat_event == "rcv message"
+                || chat_event == "rcv group message"
                 || event.event_type.as_deref() == Some("rcvMessage"))
             {
                 continue;
@@ -242,7 +244,8 @@ impl SimplexGateway {
                 &self.model,
                 &contact_id,
                 &self.cli_path,
-            ).await
+            )
+            .await
             {
                 Ok(sender) => {
                     if let Err(e) = sender.send(AgentMessage::UserMessage(text)).await {
@@ -265,8 +268,7 @@ impl SimplexGateway {
 }
 
 pub async fn run(data_dir: PathBuf) -> anyhow::Result<()> {
-    let cli_path = std::env::var("SIMPLEX_CLI_PATH")
-        .unwrap_or_else(|_| "simplex-chat".to_string());
+    let cli_path = std::env::var("SIMPLEX_CLI_PATH").unwrap_or_else(|_| "simplex-chat".to_string());
 
     let gateway = Arc::new(SimplexGateway::new(cli_path, data_dir)?);
     gateway.run_forever().await

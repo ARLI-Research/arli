@@ -45,7 +45,10 @@ impl Compactor {
             plan_compaction(messages, self.protect_last_n, self.protect_first_n);
 
         if middle_indices.is_empty() {
-            debug!("Compaction skipped: nothing to compact (only {} messages)", messages.len());
+            debug!(
+                "Compaction skipped: nothing to compact (only {} messages)",
+                messages.len()
+            );
             return Ok(None);
         }
 
@@ -147,7 +150,7 @@ impl Compactor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     use crate::providers::Role;
 
     #[test]

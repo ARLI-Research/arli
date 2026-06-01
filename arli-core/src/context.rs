@@ -38,7 +38,10 @@ impl TokenCounter {
             model, context_window
         );
 
-        Self { bpe, context_window }
+        Self {
+            bpe,
+            context_window,
+        }
     }
 
     /// Count tokens in a string.
@@ -154,7 +157,8 @@ pub fn plan_compaction(
     let _keep_tail: Vec<usize> = (total.saturating_sub(protect_last_n)..total).collect();
 
     // Messages to summarize: everything between keep_head and keep_tail
-    let to_summarize: Vec<usize> = (protect_first_n..total.saturating_sub(protect_last_n)).collect();
+    let to_summarize: Vec<usize> =
+        (protect_first_n..total.saturating_sub(protect_last_n)).collect();
 
     (keep_head, to_summarize)
 }

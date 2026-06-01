@@ -153,42 +153,43 @@ impl Sandbox {
         let start = std::time::Instant::now();
 
         // Try sandboxed execution first, fall back to direct if namespaces unavailable
-        let output = if Sandbox::is_available() && (config.mount_ns || config.net_ns || config.pid_ns) {
-            let mut cmd = Command::new("unshare");
-            for arg in config.unshare_args() {
-                cmd.arg(arg);
-            }
-            cmd.arg("--");
-            cmd.arg("sh");
-            cmd.arg("-c");
-            cmd.arg(Self::wrap_command(command, config));
-
-            for var in &config.env_passthrough {
-                if let Ok(val) = std::env::var(var) {
-                    cmd.env(var, val);
+        let output =
+            if Sandbox::is_available() && (config.mount_ns || config.net_ns || config.pid_ns) {
+                let mut cmd = Command::new("unshare");
+                for arg in config.unshare_args() {
+                    cmd.arg(arg);
                 }
-            }
-            if let Some(ref dir) = config.workdir {
-                cmd.current_dir(dir);
-            }
+                cmd.arg("--");
+                cmd.arg("sh");
+                cmd.arg("-c");
+                cmd.arg(Self::wrap_command(command, config));
 
-            let result = if config.timeout_secs > 0 {
-                Self::execute_with_timeout(&mut cmd, Duration::from_secs(config.timeout_secs))
+                for var in &config.env_passthrough {
+                    if let Ok(val) = std::env::var(var) {
+                        cmd.env(var, val);
+                    }
+                }
+                if let Some(ref dir) = config.workdir {
+                    cmd.current_dir(dir);
+                }
+
+                let result = if config.timeout_secs > 0 {
+                    Self::execute_with_timeout(&mut cmd, Duration::from_secs(config.timeout_secs))
+                } else {
+                    cmd.output().ok()
+                };
+
+                // If unshare failed (no permissions), fall back to direct execution
+                match result {
+                    Some(ref out) if out.status.success() => result,
+                    _ => {
+                        // Fallback: run directly
+                        Self::execute_direct(command, config)
+                    }
+                }
             } else {
-                cmd.output().ok()
+                Self::execute_direct(command, config)
             };
-
-            // If unshare failed (no permissions), fall back to direct execution
-            match result {
-                Some(ref out) if out.status.success() => result,
-                _ => {
-                    // Fallback: run directly
-                    Self::execute_direct(command, config)
-                }
-            }
-        } else {
-            Self::execute_direct(command, config)
-        };
 
         let wall_time_ms = start.elapsed().as_millis() as u64;
 
@@ -255,7 +256,10 @@ impl Sandbox {
 
         // CPU time limit
         if config.cpu_time_limit_secs > 0 {
-            preamble.push_str(&format!("ulimit -t {} 2>/dev/null; ", config.cpu_time_limit_secs));
+            preamble.push_str(&format!(
+                "ulimit -t {} 2>/dev/null; ",
+                config.cpu_time_limit_secs
+            ));
         }
 
         // Network isolation — if in net namespace and no network allowed,
@@ -263,7 +267,9 @@ impl Sandbox {
         if config.net_ns && !config.allow_network {
             // In a net namespace, only lo exists by default — safe
             // But we can also block outgoing via iptables if available
-            preamble.push_str("iptables -P OUTPUT DROP 2>/dev/null; iptables -P INPUT DROP 2>/dev/null; ");
+            preamble.push_str(
+                "iptables -P OUTPUT DROP 2>/dev/null; iptables -P INPUT DROP 2>/dev/null; ",
+            );
         }
 
         // Mount namespace — create private /tmp
@@ -278,7 +284,8 @@ impl Sandbox {
     fn execute_with_timeout(cmd: &mut Command, timeout: Duration) -> Option<Output> {
         // Use the `timeout` command wrapper for reliable timeout handling
         let program = cmd.get_program().to_string_lossy().to_string();
-        let args: Vec<String> = cmd.get_args()
+        let args: Vec<String> = cmd
+            .get_args()
             .map(|a| a.to_string_lossy().to_string())
             .collect();
 
@@ -344,7 +351,11 @@ mod tests {
         eprintln!("DEBUG exit_code: {}", output.exit_code);
         eprintln!("DEBUG success: {}", output.success);
         assert!(output.success, "Sandbox failed: {}", output.stderr);
-        assert!(output.stdout.contains("hello"), "stdout was: '{}'", output.stdout);
+        assert!(
+            output.stdout.contains("hello"),
+            "stdout was: '{}'",
+            output.stdout
+        );
     }
 
     #[test]

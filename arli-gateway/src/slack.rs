@@ -3,12 +3,11 @@
 //! Uses Slack's Socket Mode (WebSocket) — no public URL needed.
 //! Reference: https://api.slack.com/apis/socket-mode
 
-use arli_core::{
-    Agent, AgentConfig, AgentMessage, Config,
-    OpenAIProvider, SessionStore, ToolRegistry,
-    memory::MemoryStore,
-};
 use arli_core::tools::builtin::register_builtin_tools;
+use arli_core::{
+    memory::MemoryStore, Agent, AgentConfig, AgentMessage, Config, OpenAIProvider, SessionStore,
+    ToolRegistry,
+};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -16,7 +15,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 // ── Slack API types ──
 
@@ -95,7 +94,8 @@ impl SlackBot {
 
     /// Call `apps.connections.open` to get a WebSocket URL.
     async fn open_socket(&self, app_token: &str) -> anyhow::Result<String> {
-        let resp: SocketModeResponse = self.http
+        let resp: SocketModeResponse = self
+            .http
             .post("https://slack.com/api/apps.connections.open")
             .header("Authorization", format!("Bearer {}", app_token))
             .header("Content-Type", "application/x-www-form-urlencoded")
@@ -108,18 +108,25 @@ impl SlackBot {
             anyhow::bail!("Slack apps.connections.open failed: {:?}", resp.error);
         }
 
-        resp.url.ok_or_else(|| anyhow::anyhow!("No WebSocket URL returned"))
+        resp.url
+            .ok_or_else(|| anyhow::anyhow!("No WebSocket URL returned"))
     }
 
     /// Post a message to a Slack channel.
-    async fn post_message(&self, channel: &str, text: &str, thread_ts: Option<&str>) -> anyhow::Result<()> {
+    async fn post_message(
+        &self,
+        channel: &str,
+        text: &str,
+        thread_ts: Option<&str>,
+    ) -> anyhow::Result<()> {
         let req = ChatPostMessageRequest {
             channel: channel.to_string(),
             text: text.to_string(),
             thread_ts: thread_ts.map(|t| t.to_string()),
         };
 
-        let resp: serde_json::Value = self.http
+        let resp: serde_json::Value = self
+            .http
             .post("https://slack.com/api/chat.postMessage")
             .header("Authorization", format!("Bearer {}", self.bot_token))
             .json(&req)
@@ -160,7 +167,7 @@ impl SlackBot {
         ));
 
         let mut tools = ToolRegistry::new();
-        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None);
+        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None, None);
 
         let system_prompt = format!(
             "You are ARLI, an AI agent communicating via Slack in channel '{}'. \
@@ -244,7 +251,12 @@ impl SlackBot {
             }
         });
 
-        channels.insert(channel_id.to_string(), SlackChannel { sender: sender.clone() });
+        channels.insert(
+            channel_id.to_string(),
+            SlackChannel {
+                sender: sender.clone(),
+            },
+        );
         Ok(sender)
     }
 
@@ -258,7 +270,7 @@ impl SlackBot {
 async fn ack_envelope(
     ws_tx: &mut futures_util::stream::SplitSink<
         tokio_tungstenite::WebSocketStream<
-            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
         >,
         WsMessage,
     >,
@@ -335,10 +347,11 @@ pub async fn run(bot_token: String, app_token: String, data_dir: PathBuf) -> any
 
                         // Process the inner event
                         if let Some(payload) = &event.payload {
-                            let msg_event: SlackMessageEvent = match serde_json::from_value(payload.clone()) {
-                                Ok(e) => e,
-                                Err(_) => continue,
-                            };
+                            let msg_event: SlackMessageEvent =
+                                match serde_json::from_value(payload.clone()) {
+                                    Ok(e) => e,
+                                    Err(_) => continue,
+                                };
 
                             if msg_event.event_type != "message" {
                                 continue;
@@ -370,13 +383,25 @@ pub async fn run(bot_token: String, app_token: String, data_dir: PathBuf) -> any
 
                             // Handle commands
                             if text == "!arli start" || text == "!start" {
-                                let _ = bot.post_message(&channel, "ARLI agent is ready.", thread_ts.as_deref()).await;
+                                let _ = bot
+                                    .post_message(
+                                        &channel,
+                                        "ARLI agent is ready.",
+                                        thread_ts.as_deref(),
+                                    )
+                                    .await;
                                 continue;
                             }
 
                             if text == "!arli reset" || text == "!reset" {
                                 bot.remove_agent(&channel).await;
-                                let _ = bot.post_message(&channel, "Conversation reset.", thread_ts.as_deref()).await;
+                                let _ = bot
+                                    .post_message(
+                                        &channel,
+                                        "Conversation reset.",
+                                        thread_ts.as_deref(),
+                                    )
+                                    .await;
                                 continue;
                             }
 
@@ -384,14 +409,22 @@ pub async fn run(bot_token: String, app_token: String, data_dir: PathBuf) -> any
                             let channel_name = format!("#{}", channel);
                             match bot.get_or_create_agent(&channel, &channel_name).await {
                                 Ok(sender) => {
-                                    if let Err(e) = sender.send(AgentMessage::UserMessage(text)).await {
+                                    if let Err(e) =
+                                        sender.send(AgentMessage::UserMessage(text)).await
+                                    {
                                         error!("Failed to send to Slack agent {}: {}", channel, e);
                                         bot.remove_agent(&channel).await;
                                     }
                                 }
                                 Err(e) => {
                                     error!("Cannot create Slack agent for {}: {}", channel, e);
-                                    let _ = bot.post_message(&channel, "Agent init failed.", thread_ts.as_deref()).await;
+                                    let _ = bot
+                                        .post_message(
+                                            &channel,
+                                            "Agent init failed.",
+                                            thread_ts.as_deref(),
+                                        )
+                                        .await;
                                 }
                             }
                         }

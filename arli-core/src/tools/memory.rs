@@ -1,14 +1,19 @@
 //! Memory tool — provides the agent with persistent cross-session memory.
 //!
-//! Actions: add, replace, remove, get, search, count.
-//! Targets: "user" (user preferences/profile) or "memory" (agent notes).
+//! Actions: add, replace, remove, get, search, recall, reflect, count.
+//! Targets: "user" (user preferences/profile), "memory" (agent notes),
+//!          or "correction" (feedback loop).
+//!
+//! Two query modes:
+//! - "recall" / "search" — fast FTS5 keyword lookup
+//! - "reflect" — deep LLM-powered synthesis across all memories for a target
 
 use async_trait::async_trait;
 use std::sync::Arc;
 
+use super::{Tool, ToolOutput};
 use crate::error::Result;
 use crate::memory::MemoryStore;
-use super::{Tool, ToolOutput};
 
 /// Tool for managing persistent memories.
 pub struct MemoryTool {
@@ -29,10 +34,11 @@ impl Tool for MemoryTool {
 
     fn description(&self) -> &str {
         "Save/retrieve durable information to persistent memory that survives across sessions. \
-         Actions: add, replace, remove, get, search, count. \
-         Targets: 'user' (user profile/preferences) or 'memory' (agent notes). \
+         Actions: add, replace, remove, get, search, recall, reflect, count. \
+         Targets: 'user' (user profile/preferences), 'memory' (agent notes), 'correction' (feedback). \
          Use add to save new facts. Use replace when updating: provide old_text substring. \
-         Use remove to delete. Get returns all memories for a target. Search does FTS5 lookup."
+         Use remove to delete. Get returns all memories for a target. \
+         Search/recall do FTS5 lookup. Reflect returns a synthesis prompt for LLM analysis."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
@@ -41,13 +47,13 @@ impl Tool for MemoryTool {
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["add", "replace", "remove", "get", "search", "count"],
-                    "description": "The action to perform"
+                    "enum": ["add", "replace", "remove", "get", "search", "recall", "reflect", "count"],
+                    "description": "The action to perform. 'search' and 'recall' both do fast FTS5 lookup. 'reflect' returns a synthesis prompt for LLM analysis."
                 },
                 "target": {
                     "type": "string",
-                    "enum": ["user", "memory"],
-                    "description": "Which memory store: 'user' for profile/preferences, 'memory' for agent notes"
+                    "enum": ["user", "memory", "correction"],
+                    "description": "Which memory store: 'user' for profile/preferences, 'memory' for agent notes, 'correction' for feedback"
                 },
                 "content": {
                     "type": "string",
@@ -59,11 +65,11 @@ impl Tool for MemoryTool {
                 },
                 "query": {
                     "type": "string",
-                    "description": "FTS5 search query for 'search' action"
+                    "description": "FTS5 search query for 'search'/'recall' actions, or the question for 'reflect'"
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Max results for 'search' action",
+                    "description": "Max results for 'search'/'recall' actions",
                     "default": 10
                 }
             },
@@ -99,13 +105,17 @@ impl Tool for MemoryTool {
             "replace" => self.handle_replace(&args),
             "remove" => self.handle_remove(&args),
             "get" => self.handle_get(&args),
-            "search" => self.handle_search(&args),
+            "search" | "recall" => self.handle_search(&args),
+            "reflect" => self.handle_reflect(&args),
             "count" => self.handle_count(),
             other => {
                 return ToolOutput {
                     success: false,
                     content: String::new(),
-                    error: Some(format!("Unknown action: {}. Valid: add, replace, remove, get, search, count", other)),
+                    error: Some(format!(
+                        "Unknown action: {}. Valid: add, replace, remove, get, search, recall, reflect, count",
+                        other
+                    )),
                 }
             }
         };
@@ -131,7 +141,10 @@ impl MemoryTool {
         let content = require_str(args, "content")?;
 
         let id = self.store.add(target, content)?;
-        Ok(format!("Memory saved: [{target}] #{id} ({:.100}...)", &content[..content.len().min(100)]))
+        Ok(format!(
+            "Memory saved: [{target}] #{id} ({:.100}...)",
+            &content[..content.len().min(100)]
+        ))
     }
 
     fn handle_replace(&self, args: &serde_json::Value) -> Result<String> {
@@ -141,9 +154,16 @@ impl MemoryTool {
 
         let updated = self.store.replace(target, old_text, content)?;
         if updated > 0 {
-            Ok(format!("Replaced {} memory entr{} in [{target}]", updated, if updated == 1 { "y" } else { "ies" }))
+            Ok(format!(
+                "Replaced {} memory entr{} in [{target}]",
+                updated,
+                if updated == 1 { "y" } else { "ies" }
+            ))
         } else {
-            Ok(format!("No memory matching '{}' found in [{target}]", old_text))
+            Ok(format!(
+                "No memory matching '{}' found in [{target}]",
+                old_text
+            ))
         }
     }
 
@@ -152,7 +172,11 @@ impl MemoryTool {
         let old_text = require_str(args, "old_text")?;
 
         let removed = self.store.remove(target, old_text)?;
-        Ok(format!("Removed {} memory entr{} from [{target}]", removed, if removed == 1 { "y" } else { "ies" }))
+        Ok(format!(
+            "Removed {} memory entr{} from [{target}]",
+            removed,
+            if removed == 1 { "y" } else { "ies" }
+        ))
     }
 
     fn handle_get(&self, args: &serde_json::Value) -> Result<String> {
@@ -194,7 +218,12 @@ impl MemoryTool {
             ));
         }
 
-        Ok(format!("{} results for '{}':\n{}", entries.len(), query, out))
+        Ok(format!(
+            "{} results for '{}':\n{}",
+            entries.len(),
+            query,
+            out
+        ))
     }
 
     fn handle_count(&self) -> Result<String> {
@@ -204,6 +233,19 @@ impl MemoryTool {
             user_count,
             mem_count,
             user_count + mem_count
+        ))
+    }
+
+    fn handle_reflect(&self, args: &serde_json::Value) -> Result<String> {
+        let target = require_str(args, "target")?;
+        let query = require_str(args, "query")?;
+
+        let prompt = self.store.reflect(target, query)?;
+        Ok(format!(
+            "REFLECT PROMPT for [{target}]:\n\n{prompt}\n\n\
+             (Send this prompt to the LLM for deep synthesis. \
+             The LLM should find connections, identify patterns, \
+             and answer the query using ONLY the memories listed above.)"
         ))
     }
 }

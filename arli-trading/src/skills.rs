@@ -103,7 +103,9 @@ impl TradingSkillRegistry {
         SkillContract {
             name: "execute_trade".into(),
             version: "1.0.0".into(),
-            description: "Execute a trade on Hyperliquid. Supports market and limit orders with leverage.".into(),
+            description:
+                "Execute a trade on Hyperliquid. Supports market and limit orders with leverage."
+                    .into(),
             parameters: params,
             returns: Some(serde_json::json!({
                 "order_id": "string",
@@ -113,10 +115,19 @@ impl TradingSkillRegistry {
             })),
             errors: {
                 let mut e = HashMap::new();
-                e.insert("INSUFFICIENT_MARGIN".into(), "Not enough margin for this trade".into());
+                e.insert(
+                    "INSUFFICIENT_MARGIN".into(),
+                    "Not enough margin for this trade".into(),
+                );
                 e.insert("MARKET_CLOSED".into(), "Market is currently closed".into());
-                e.insert("INVALID_SIZE".into(), "Position size outside allowed range".into());
-                e.insert("RATE_LIMITED".into(), "Too many orders — rate limited".into());
+                e.insert(
+                    "INVALID_SIZE".into(),
+                    "Position size outside allowed range".into(),
+                );
+                e.insert(
+                    "RATE_LIMITED".into(),
+                    "Too many orders — rate limited".into(),
+                );
                 e
             },
             safety: SafetyConfig {

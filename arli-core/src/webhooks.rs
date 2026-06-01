@@ -52,7 +52,10 @@ impl WebhookState {
 
     /// Add a subscription.
     pub async fn subscribe(&self, sub: WebhookSubscription) {
-        self.subscriptions.lock().await.insert(sub.name.clone(), sub);
+        self.subscriptions
+            .lock()
+            .await
+            .insert(sub.name.clone(), sub);
     }
 
     /// Remove a subscription.
@@ -68,19 +71,24 @@ impl WebhookState {
     /// Handle an incoming webhook POST.
     pub async fn handle(&self, name: &str, body: String) -> anyhow::Result<String> {
         let subs = self.subscriptions.lock().await;
-        let sub = subs.get(name)
+        let sub = subs
+            .get(name)
             .ok_or_else(|| anyhow::anyhow!("Webhook '{}' not found", name))?;
 
         let message = sub.prompt_template.replace("{{payload}}", &body);
 
         if let Some(tx) = &self.agent_tx {
-            tx.send((name.to_string(), message)).await
+            tx.send((name.to_string(), message))
+                .await
                 .map_err(|e| anyhow::anyhow!("Agent channel closed: {}", e))?;
             Ok("Queued for agent processing".to_string())
         } else {
             // No agent channel — just return what would have been sent
             info!("Webhook '{}' received (no agent channel configured)", name);
-            Ok(format!("Webhook received. Payload size: {} bytes", body.len()))
+            Ok(format!(
+                "Webhook received. Payload size: {} bytes",
+                body.len()
+            ))
         }
     }
 }
@@ -131,13 +139,17 @@ mod tests {
     async fn test_subscribe_and_handle() {
         let state = WebhookState::new();
 
-        state.subscribe(WebhookSubscription {
-            name: "test-hook".to_string(),
-            prompt_template: "Process this: {{payload}}".to_string(),
-            target_channel: None,
-        }).await;
+        state
+            .subscribe(WebhookSubscription {
+                name: "test-hook".to_string(),
+                prompt_template: "Process this: {{payload}}".to_string(),
+                target_channel: None,
+            })
+            .await;
 
-        let result = state.handle("test-hook", r#"{"key":"value"}"#.to_string()).await;
+        let result = state
+            .handle("test-hook", r#"{"key":"value"}"#.to_string())
+            .await;
         assert!(result.is_ok());
     }
 
@@ -151,11 +163,13 @@ mod tests {
     #[tokio::test]
     async fn test_unsubscribe() {
         let state = WebhookState::new();
-        state.subscribe(WebhookSubscription {
-            name: "temp".to_string(),
-            prompt_template: "test".to_string(),
-            target_channel: None,
-        }).await;
+        state
+            .subscribe(WebhookSubscription {
+                name: "temp".to_string(),
+                prompt_template: "test".to_string(),
+                target_channel: None,
+            })
+            .await;
 
         assert!(state.unsubscribe("temp").await);
         assert!(!state.unsubscribe("temp").await);

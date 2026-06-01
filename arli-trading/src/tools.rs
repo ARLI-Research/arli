@@ -4,8 +4,8 @@
 //! and account management. Each tool validates inputs against skill contracts
 //! and enforces safety policies before execution.
 
-use async_trait::async_trait;
 use arli_core::tools::{Tool, ToolOutput};
+use async_trait::async_trait;
 
 use crate::skills::TradingSkillRegistry;
 
@@ -62,7 +62,12 @@ impl Tool for ExecuteTradeTool {
 
         tracing::info!(
             "TRADE: {} {} ${:.2} on {} (lev {}x) → {}",
-            side, coin, size, order_type, leverage, order_id
+            side,
+            coin,
+            size,
+            order_type,
+            leverage,
+            order_id
         );
 
         let result = serde_json::json!({
@@ -125,7 +130,8 @@ impl Tool for CancelOrderTool {
                 "order_id": order_id,
                 "coin": coin,
                 "status": "simulated"
-            })).unwrap_or_default(),
+            }))
+            .unwrap_or_default(),
             error: None,
         }
     }
@@ -156,7 +162,8 @@ impl Tool for GetPositionsTool {
                 "positions": [],
                 "status": "simulated",
                 "note": "hypersdk integration pending"
-            })).unwrap_or_default(),
+            }))
+            .unwrap_or_default(),
             error: None,
         }
     }
@@ -205,7 +212,8 @@ impl Tool for GetMarketDataTool {
                 "24h_volume": 0.0,
                 "status": "simulated",
                 "note": "hypersdk integration pending — connect to live data"
-            })).unwrap_or_default(),
+            }))
+            .unwrap_or_default(),
             error: None,
         }
     }
@@ -241,7 +249,8 @@ impl Tool for GetAccountInfoTool {
                 "drawdown_pct": 0.0,
                 "status": "simulated",
                 "note": "hypersdk integration pending"
-            })).unwrap_or_default(),
+            }))
+            .unwrap_or_default(),
             error: None,
         }
     }

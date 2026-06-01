@@ -85,11 +85,8 @@ impl Tool for SessionSearchTool {
                         };
                     }
 
-                    let mut output = format!(
-                        "Found {} result(s) for '{}':\n\n",
-                        results.len(),
-                        query
-                    );
+                    let mut output =
+                        format!("Found {} result(s) for '{}':\n\n", results.len(), query);
 
                     for (i, r) in results.iter().enumerate() {
                         output.push_str(&format!(

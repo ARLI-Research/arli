@@ -13,14 +13,16 @@
 //!   BROWSER_PROVIDER (default "local")
 //!   BROWSERBASE_API_KEY / FIRECRAWL_API_KEY
 
-use async_trait::async_trait;
 use super::{Tool, ToolOutput};
+use async_trait::async_trait;
 
 pub struct BrowserTool;
 
 #[async_trait]
 impl Tool for BrowserTool {
-    fn name(&self) -> &str { "browser" }
+    fn name(&self) -> &str {
+        "browser"
+    }
 
     fn description(&self) -> &str {
         "Fetch a URL and extract structured content from web pages. \
@@ -71,8 +73,7 @@ impl Tool for BrowserTool {
         };
 
         // ── Browser provider selection ──
-        let provider = std::env::var("BROWSER_PROVIDER")
-            .unwrap_or_else(|_| "local".to_string());
+        let provider = std::env::var("BROWSER_PROVIDER").unwrap_or_else(|_| "local".to_string());
 
         match provider.as_str() {
             "local" => {
@@ -87,7 +88,9 @@ impl Tool for BrowserTool {
             "browserbase" => {
                 let has_key = std::env::var("BROWSERBASE_API_KEY").is_ok();
                 if has_key {
-                    tracing::info!("Browser: Browserbase cloud browser would be used. API key found.");
+                    tracing::info!(
+                        "Browser: Browserbase cloud browser would be used. API key found."
+                    );
                 } else {
                     tracing::warn!(
                         "Browser: Browserbase cloud browser would be used, but no BROWSERBASE_API_KEY set. \
@@ -98,7 +101,9 @@ impl Tool for BrowserTool {
             "firecrawl" => {
                 let has_key = std::env::var("FIRECRAWL_API_KEY").is_ok();
                 if has_key {
-                    tracing::info!("Browser: Firecrawl cloud browser would be used. API key found.");
+                    tracing::info!(
+                        "Browser: Firecrawl cloud browser would be used. API key found."
+                    );
                 } else {
                     tracing::warn!(
                         "Browser: Firecrawl cloud browser would be used, but no FIRECRAWL_API_KEY set. \
@@ -132,7 +137,8 @@ impl Tool for BrowserTool {
         };
 
         let status = response.status();
-        let content_type = response.headers()
+        let content_type = response
+            .headers()
             .get("content-type")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("unknown")
@@ -148,8 +154,17 @@ impl Tool for BrowserTool {
             let truncated = truncate(&body, 10000);
             return ToolOutput {
                 success: status.is_success(),
-                content: format!("[Content-Type: {}] HTTP {}\n\n{}", content_type, status.as_u16(), truncated),
-                error: if status.is_success() { None } else { Some(format!("HTTP {}", status.as_u16())) },
+                content: format!(
+                    "[Content-Type: {}] HTTP {}\n\n{}",
+                    content_type,
+                    status.as_u16(),
+                    truncated
+                ),
+                error: if status.is_success() {
+                    None
+                } else {
+                    Some(format!("HTTP {}", status.as_u16()))
+                },
             };
         }
 
@@ -161,26 +176,42 @@ impl Tool for BrowserTool {
                 // Full page: extract all readable text with structure awareness
                 let text = extract_structured_text(&document);
                 let truncated = truncate(&text, 15000);
-                let header = format!("Page: {}\nURL: {}\n", 
-                    extract_title(&document), url);
+                let header = format!("Page: {}\nURL: {}\n", extract_title(&document), url);
                 ToolOutput {
                     success: status.is_success(),
-                    content: format!("{}{}\n\n[HTTP {}, {} total chars]",
-                        header, truncated, status.as_u16(), text.len()),
-                    error: if status.is_success() { None } else { Some(format!("HTTP {}", status.as_u16())) },
+                    content: format!(
+                        "{}{}\n\n[HTTP {}, {} total chars]",
+                        header,
+                        truncated,
+                        status.as_u16(),
+                        text.len()
+                    ),
+                    error: if status.is_success() {
+                        None
+                    } else {
+                        Some(format!("HTTP {}", status.as_u16()))
+                    },
                 }
             }
             "extract" => {
                 let sel_str = match selector {
                     Some(s) => s,
-                    None => return ToolOutput::error("Missing 'selector' parameter for extract action"),
+                    None => {
+                        return ToolOutput::error("Missing 'selector' parameter for extract action")
+                    }
                 };
                 let sel = match scraper::Selector::parse(sel_str) {
                     Ok(s) => s,
-                    Err(e) => return ToolOutput::error(&format!("Invalid CSS selector '{}': {:?}", sel_str, e)),
+                    Err(e) => {
+                        return ToolOutput::error(&format!(
+                            "Invalid CSS selector '{}': {:?}",
+                            sel_str, e
+                        ))
+                    }
                 };
 
-                let elements: Vec<String> = document.select(&sel)
+                let elements: Vec<String> = document
+                    .select(&sel)
                     .take(max_items)
                     .map(|el| el.text().collect::<Vec<_>>().join(" "))
                     .filter(|t| !t.trim().is_empty())
@@ -189,12 +220,16 @@ impl Tool for BrowserTool {
                 if elements.is_empty() {
                     ToolOutput {
                         success: true,
-                        content: format!("No elements matched CSS selector '{}' on {}", sel_str, url),
+                        content: format!(
+                            "No elements matched CSS selector '{}' on {}",
+                            sel_str, url
+                        ),
                         error: None,
                     }
                 } else {
                     let count = elements.len();
-                    let output = elements.iter()
+                    let output = elements
+                        .iter()
                         .enumerate()
                         .map(|(i, t)| format!("{}. {}", i + 1, t))
                         .collect::<Vec<_>>()
@@ -202,10 +237,17 @@ impl Tool for BrowserTool {
                     let truncated = truncate(&output, 15000);
                     ToolOutput {
                         success: true,
-                        content: format!("Extracted {} elements matching '{}' from {}:\n\n{}{}",
-                            count, sel_str, url,
+                        content: format!(
+                            "Extracted {} elements matching '{}' from {}:\n\n{}{}",
+                            count,
+                            sel_str,
+                            url,
                             truncated,
-                            if count > max_items { format!("\n\n[Showing {}/{} results]", max_items, count) } else { String::new() }
+                            if count > max_items {
+                                format!("\n\n[Showing {}/{} results]", max_items, count)
+                            } else {
+                                String::new()
+                            }
                         ),
                         error: None,
                     }
@@ -233,7 +275,8 @@ impl Tool for BrowserTool {
                         error: None,
                     }
                 } else {
-                    let output = links.iter()
+                    let output = links
+                        .iter()
                         .enumerate()
                         .map(|(i, (text, href))| {
                             // Resolve relative URLs
@@ -252,7 +295,12 @@ impl Tool for BrowserTool {
                         .join("\n\n");
                     ToolOutput {
                         success: true,
-                        content: format!("Links from {} ({} total):\n\n{}", url, links.len(), truncate(&output, 15000)),
+                        content: format!(
+                            "Links from {} ({} total):\n\n{}",
+                            url,
+                            links.len(),
+                            truncate(&output, 15000)
+                        ),
                         error: None,
                     }
                 }
@@ -275,13 +323,22 @@ impl Tool for BrowserTool {
                 let truncated = truncate(&text, 15000);
                 ToolOutput {
                     success: true,
-                    content: format!("{}{}", truncated,
-                        if text.len() > 15000 { format!("\n\n[Truncated from {} chars]", text.len()) } else { String::new() }
+                    content: format!(
+                        "{}{}",
+                        truncated,
+                        if text.len() > 15000 {
+                            format!("\n\n[Truncated from {} chars]", text.len())
+                        } else {
+                            String::new()
+                        }
                     ),
                     error: None,
                 }
             }
-            unknown => ToolOutput::error(&format!("Unknown action '{}'. Use: navigate, extract, links, title, text", unknown)),
+            unknown => ToolOutput::error(&format!(
+                "Unknown action '{}'. Use: navigate, extract, links, title, text",
+                unknown
+            )),
         }
     }
 }
@@ -299,7 +356,9 @@ fn extract_title(document: &scraper::Html) -> String {
 /// Extract a meta tag value.
 fn extract_meta(document: &scraper::Html, name: &str) -> Option<String> {
     let sel = scraper::Selector::parse(&format!("meta[name=\"{}\"]", name)).ok()?;
-    document.select(&sel).next()
+    document
+        .select(&sel)
+        .next()
         .and_then(|el| el.value().attr("content"))
         .map(|s| s.to_string())
 }
@@ -391,7 +450,12 @@ fn truncate(s: &str, max_chars: usize) -> String {
     if s.len() <= max_chars {
         s.to_string()
     } else {
-        format!("{}...\n[truncated at {} chars, {} total]", &s[..max_chars], max_chars, s.len())
+        format!(
+            "{}...\n[truncated at {} chars, {} total]",
+            &s[..max_chars],
+            max_chars,
+            s.len()
+        )
     }
 }
 
@@ -408,7 +472,10 @@ mod tests {
 
     #[test]
     fn test_get_base_url() {
-        assert_eq!(get_base_url("https://example.com/path/to/page"), "https://example.com");
+        assert_eq!(
+            get_base_url("https://example.com/path/to/page"),
+            "https://example.com"
+        );
         assert_eq!(get_base_url("https://example.com"), "https://example.com");
         assert_eq!(get_base_url("https://example.com/"), "https://example.com");
     }

@@ -9,24 +9,18 @@
 //!
 //! Reference: https://developers.line.biz/en/reference/messaging-api/
 
-use arli_core::{
-    Agent, AgentConfig, AgentMessage, Config,
-    OpenAIProvider, SessionStore, ToolRegistry,
-    memory::MemoryStore,
-};
 use arli_core::tools::builtin::register_builtin_tools;
-use axum::{
-    extract::State,
-    response::IntoResponse,
-    routing::post,
-    Json, Router,
+use arli_core::{
+    memory::MemoryStore, Agent, AgentConfig, AgentMessage, Config, OpenAIProvider, SessionStore,
+    ToolRegistry,
 };
+use axum::{extract::State, response::IntoResponse, routing::post, Json, Router};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 // ── LINE Messaging API types ──
 
@@ -131,7 +125,7 @@ impl LineState {
         ));
 
         let mut tools = ToolRegistry::new();
-        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None);
+        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None, None);
 
         let agent_config = AgentConfig {
             name: format!("line-{}", safe_id),
@@ -139,7 +133,8 @@ impl LineState {
             system_prompt: Some(
                 "You are ARLI, an AI agent communicating via LINE. \
                  Respond in the user's language. Be concise — LINE messages \
-                 work best when kept short and friendly.".to_string()
+                 work best when kept short and friendly."
+                    .to_string(),
             ),
             protect_last_n: 20,
             protect_first_n: 3,
@@ -297,7 +292,10 @@ async fn line_webhook(
         }
 
         // Push reply token to response sender
-        let _ = state.response_tx.send((reply_token, user_id, String::new())).await;
+        let _ = state
+            .response_tx
+            .send((reply_token, user_id, String::new()))
+            .await;
     }
 
     "ok"
@@ -334,7 +332,9 @@ pub async fn run(
         while let Some((reply_token, _user_id, _text)) = response_rx.recv().await {
             // Response text will be populated from agent output
             // For now, send placeholder
-            if let Err(e) = send_line_reply(&cat, &reply_token, "I'll get back to you shortly!").await {
+            if let Err(e) =
+                send_line_reply(&cat, &reply_token, "I'll get back to you shortly!").await
+            {
                 error!("Failed to send LINE reply: {}", e);
             }
         }

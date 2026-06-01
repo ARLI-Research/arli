@@ -7,14 +7,16 @@
 //!
 //! STT: Whisper local or OpenAI Whisper API.
 
-use async_trait::async_trait;
 use super::{Tool, ToolOutput};
+use async_trait::async_trait;
 
 pub struct VoiceTool;
 
 #[async_trait]
 impl Tool for VoiceTool {
-    fn name(&self) -> &str { "text_to_speech" }
+    fn name(&self) -> &str {
+        "text_to_speech"
+    }
 
     fn description(&self) -> &str {
         "Convert text to speech (TTS). Generates an audio file (MP3) from text. \
@@ -67,7 +69,9 @@ impl Tool for VoiceTool {
         let voice = args["voice"].as_str().unwrap_or("");
         let speed: f32 = args["speed"].as_f64().map(|v| v as f32).unwrap_or(1.0);
 
-        let output_path = args["output_path"].as_str().map(|s| s.to_string())
+        let output_path = args["output_path"]
+            .as_str()
+            .map(|s| s.to_string())
             .unwrap_or_else(|| default_output_path());
 
         // Ensure output directory exists
@@ -113,7 +117,11 @@ fn default_output_path() -> String {
 // ── Edge TTS (Microsoft, free, cloud) ──
 
 async fn tts_edge(text: &str, output_path: &str, voice: &str, speed: f32) -> ToolOutput {
-    let voice_name = if voice.is_empty() { "en-US-JennyNeural" } else { voice };
+    let voice_name = if voice.is_empty() {
+        "en-US-JennyNeural"
+    } else {
+        voice
+    };
 
     let rate = if (speed - 1.0).abs() > 0.01 {
         let pct = ((speed - 1.0) * 100.0) as i32;
@@ -130,14 +138,19 @@ async fn tts_edge(text: &str, output_path: &str, voice: &str, speed: f32) -> Too
          </prosody>\
          </voice>\
          </speak>",
-        voice_name, rate, escape_xml(text)
+        voice_name,
+        rate,
+        escape_xml(text)
     );
 
     let client = reqwest::Client::new();
     let resp = match client
         .post("https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1")
         .header("Content-Type", "application/ssml+xml")
-        .header("X-Microsoft-OutputFormat", "audio-16khz-128kbitrate-mono-mp3")
+        .header(
+            "X-Microsoft-OutputFormat",
+            "audio-16khz-128kbitrate-mono-mp3",
+        )
         .header("User-Agent", "Mozilla/5.0")
         .body(ssml)
         .timeout(std::time::Duration::from_secs(60))
@@ -188,7 +201,9 @@ async fn tts_edge(text: &str, output_path: &str, voice: &str, speed: f32) -> Too
             success: true,
             content: format!(
                 "TTS generated (Edge: {})\nOutput: {}\nSize: {} bytes",
-                voice_name, output_path, bytes.len()
+                voice_name,
+                output_path,
+                bytes.len()
             ),
             error: None,
         },
@@ -278,7 +293,9 @@ async fn tts_openai(text: &str, output_path: &str, voice: &str, speed: f32) -> T
             success: true,
             content: format!(
                 "TTS generated (OpenAI: {})\nOutput: {}\nSize: {} bytes",
-                voice_name, output_path, bytes.len()
+                voice_name,
+                output_path,
+                bytes.len()
             ),
             error: None,
         },
@@ -305,24 +322,33 @@ async fn tts_local(text: &str, output_path: &str, voice: &str) -> ToolOutput {
             };
             let result = tokio::process::Command::new("espeak-ng")
                 .args(["-v", voice, "-w", &wav, "--", text])
-                .output().await;
+                .output()
+                .await;
             match result {
                 Ok(o) if o.status.success() => {
                     let size = std::fs::metadata(&wav).map(|m| m.len()).unwrap_or(0);
                     ToolOutput {
                         success: true,
-                        content: format!("TTS (espeak-ng, {})\nOutput: {}\nSize: {} bytes", voice, wav, size),
+                        content: format!(
+                            "TTS (espeak-ng, {})\nOutput: {}\nSize: {} bytes",
+                            voice, wav, size
+                        ),
                         error: None,
                     }
                 }
-                Ok(o) => ToolOutput::error(&format!("espeak-ng failed: {}", String::from_utf8_lossy(&o.stderr))),
+                Ok(o) => ToolOutput::error(&format!(
+                    "espeak-ng failed: {}",
+                    String::from_utf8_lossy(&o.stderr)
+                )),
                 Err(e) => ToolOutput::error(&format!("espeak-ng error: {}", e)),
             }
         }
         TtsEngine::Flite => {
             let wav = format!("{}.wav", output_path.trim_end_matches(".mp3"));
             let result = tokio::process::Command::new("flite")
-                .args(["-t", text, "-o", &wav]).output().await;
+                .args(["-t", text, "-o", &wav])
+                .output()
+                .await;
             match result {
                 Ok(o) if o.status.success() => {
                     let size = std::fs::metadata(&wav).map(|m| m.len()).unwrap_or(0);
@@ -332,24 +358,35 @@ async fn tts_local(text: &str, output_path: &str, voice: &str) -> ToolOutput {
                         error: None,
                     }
                 }
-                Ok(o) => ToolOutput::error(&format!("flite failed: {}", String::from_utf8_lossy(&o.stderr))),
+                Ok(o) => ToolOutput::error(&format!(
+                    "flite failed: {}",
+                    String::from_utf8_lossy(&o.stderr)
+                )),
                 Err(e) => ToolOutput::error(&format!("flite error: {}", e)),
             }
         }
         TtsEngine::MacSay => {
             let aiff = format!("{}.aiff", output_path.trim_end_matches(".mp3"));
             let result = tokio::process::Command::new("say")
-                .args(["-v", voice, "-o", &aiff, "--", text]).output().await;
+                .args(["-v", voice, "-o", &aiff, "--", text])
+                .output()
+                .await;
             match result {
                 Ok(o) if o.status.success() => {
                     let size = std::fs::metadata(&aiff).map(|m| m.len()).unwrap_or(0);
                     ToolOutput {
                         success: true,
-                        content: format!("TTS (macOS say, {})\nOutput: {}\nSize: {} bytes", voice, aiff, size),
+                        content: format!(
+                            "TTS (macOS say, {})\nOutput: {}\nSize: {} bytes",
+                            voice, aiff, size
+                        ),
                         error: None,
                     }
                 }
-                Ok(o) => ToolOutput::error(&format!("say failed: {}", String::from_utf8_lossy(&o.stderr))),
+                Ok(o) => ToolOutput::error(&format!(
+                    "say failed: {}",
+                    String::from_utf8_lossy(&o.stderr)
+                )),
                 Err(e) => ToolOutput::error(&format!("say error: {}", e)),
             }
         }
@@ -359,23 +396,44 @@ async fn tts_local(text: &str, output_path: &str, voice: &str) -> ToolOutput {
                       - Edge TTS (free, cloud): auto-enabled\n\
                       - OpenAI TTS: set OPENAI_API_KEY\n\
                       - Linux: sudo apt install espeak-ng\n\
-                      - macOS: built-in (say command)".into(),
+                      - macOS: built-in (say command)"
+                .into(),
             error: Some("No TTS engine available".into()),
         },
     }
 }
 
 #[derive(Debug)]
-enum TtsEngine { EspeakNg, Flite, MacSay, None }
+enum TtsEngine {
+    EspeakNg,
+    Flite,
+    MacSay,
+    None,
+}
 
 fn detect_tts_engine() -> TtsEngine {
-    if std::process::Command::new("which").arg("espeak-ng").output().map(|o| o.status.success()).unwrap_or(false) {
+    if std::process::Command::new("which")
+        .arg("espeak-ng")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
         return TtsEngine::EspeakNg;
     }
-    if std::process::Command::new("which").arg("flite").output().map(|o| o.status.success()).unwrap_or(false) {
+    if std::process::Command::new("which")
+        .arg("flite")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
         return TtsEngine::Flite;
     }
-    if std::process::Command::new("which").arg("say").output().map(|o| o.status.success()).unwrap_or(false) {
+    if std::process::Command::new("which")
+        .arg("say")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
         return TtsEngine::MacSay;
     }
     TtsEngine::None

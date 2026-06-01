@@ -11,12 +11,11 @@
 //!
 //! Reference: https://developer.work.weixin.qq.com/document/
 
-use arli_core::{
-    Agent, AgentConfig, AgentMessage, Config,
-    OpenAIProvider, SessionStore, ToolRegistry,
-    memory::MemoryStore,
-};
 use arli_core::tools::builtin::register_builtin_tools;
+use arli_core::{
+    memory::MemoryStore, Agent, AgentConfig, AgentMessage, Config, OpenAIProvider, SessionStore,
+    ToolRegistry,
+};
 use axum::{
     extract::{Query, State},
     response::IntoResponse,
@@ -28,7 +27,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 // ── WeCom API types ──
 
@@ -134,7 +133,7 @@ impl WeComState {
         ));
 
         let mut tools = ToolRegistry::new();
-        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None);
+        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None, None);
 
         let agent_config = AgentConfig {
             name: format!("wecom-{}", safe_id),
@@ -142,7 +141,8 @@ impl WeComState {
             system_prompt: Some(
                 "You are ARLI, an AI agent communicating via WeCom (Enterprise WeChat). \
                  Respond in the user's language. Be concise and use plain text \
-                 or basic formatting.".to_string()
+                 or basic formatting."
+                    .to_string(),
             ),
             protect_last_n: 20,
             protect_first_n: 3,
@@ -193,12 +193,7 @@ async fn get_access_token(corp_id: &str, agent_secret: &str) -> anyhow::Result<S
         corp_id, agent_secret
     );
 
-    let resp: TokenResponse = client
-        .get(&url)
-        .send()
-        .await?
-        .json()
-        .await?;
+    let resp: TokenResponse = client.get(&url).send().await?.json().await?;
 
     resp.access_token
         .ok_or_else(|| anyhow::anyhow!("WeCom token response missing access_token"))
@@ -223,9 +218,7 @@ async fn send_wecom_message(
         touser: to_user.to_string(),
         msgtype: "text".to_string(),
         agentid: None, // Will use default agent
-        text: WeComTextBody {
-            content: truncated,
-        },
+        text: WeComTextBody { content: truncated },
     };
 
     let client = reqwest::Client::new();
@@ -233,11 +226,7 @@ async fn send_wecom_message(
         "https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token={}",
         token
     );
-    let resp = client
-        .post(&url)
-        .json(&req)
-        .send()
-        .await?;
+    let resp = client.post(&url).json(&req).send().await?;
 
     let status = resp.status();
     if !status.is_success() {
@@ -265,10 +254,7 @@ async fn wecom_verify(
 }
 
 /// Receive messages (POST).
-async fn wecom_webhook(
-    State(state): State<Arc<WeComState>>,
-    body: String,
-) -> impl IntoResponse {
+async fn wecom_webhook(State(state): State<Arc<WeComState>>, body: String) -> impl IntoResponse {
     // WeCom sends XML payloads. Parse as XML via serde.
     // Strip any leading BOM or whitespace.
     let body = body.trim();
@@ -341,8 +327,7 @@ pub async fn run(
 ) -> anyhow::Result<()> {
     info!("WeCom gateway starting on port {}...", webhook_port);
 
-    let (response_tx, mut response_rx) =
-        tokio::sync::mpsc::channel::<(String, String)>(128);
+    let (response_tx, mut response_rx) = tokio::sync::mpsc::channel::<(String, String)>(128);
 
     let config = Config::from_env()?;
     let state = Arc::new(WeComState {

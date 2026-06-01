@@ -107,12 +107,16 @@ impl Tool for SearchFilesTool {
                         if shown.is_empty() {
                             return ToolOutput {
                                 success: true,
-                                content: format!("No files matching '{}' found in {}", pattern, search_path),
+                                content: format!(
+                                    "No files matching '{}' found in {}",
+                                    pattern, search_path
+                                ),
                                 error: None,
                             };
                         }
 
-                        let mut result = format!("Found {} file(s) matching '{}':\n", total, pattern);
+                        let mut result =
+                            format!("Found {} file(s) matching '{}':\n", total, pattern);
                         for f in shown {
                             result.push_str(&format!("  {}\n", f));
                         }
@@ -211,7 +215,10 @@ impl Tool for SearchFilesTool {
                     Err(e) => {
                         // ripgrep not installed — fall back to grep
                         let mut cmd = std::process::Command::new("grep");
-                        cmd.arg("-rn").arg("--color=never").arg(pattern).arg(search_path);
+                        cmd.arg("-rn")
+                            .arg("--color=never")
+                            .arg(pattern)
+                            .arg(search_path);
 
                         if let Some(glob) = file_glob {
                             cmd.arg("--include").arg(glob);
@@ -223,7 +230,10 @@ impl Tool for SearchFilesTool {
                                 if stdout.trim().is_empty() {
                                     return ToolOutput {
                                         success: true,
-                                        content: format!("No matches for '{}' (rg not available, used grep)", pattern),
+                                        content: format!(
+                                            "No matches for '{}' (rg not available, used grep)",
+                                            pattern
+                                        ),
                                         error: None,
                                     };
                                 }
@@ -231,7 +241,10 @@ impl Tool for SearchFilesTool {
                                 ToolOutput {
                                     success: true,
                                     content: lines.join("\n"),
-                                    error: Some(format!("ripgrep unavailable ({}), fell back to grep", e)),
+                                    error: Some(format!(
+                                        "ripgrep unavailable ({}), fell back to grep",
+                                        e
+                                    )),
                                 }
                             }
                             Err(e2) => ToolOutput {

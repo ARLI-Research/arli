@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 use crate::agent::{Agent, AgentConfig, AgentMessage};
 use crate::error::Result;
@@ -40,16 +40,32 @@ pub enum SwarmAgentStatus {
 #[derive(Debug, Clone)]
 pub enum SwarmEvent {
     /// An agent started running
-    AgentStarted { id: AgentId, name: String },
+    AgentStarted {
+        id: AgentId,
+        name: String,
+    },
     /// An agent completed successfully
-    AgentCompleted { id: AgentId, result: String },
+    AgentCompleted {
+        id: AgentId,
+        result: String,
+    },
     /// An agent failed
-    AgentFailed { id: AgentId, error: String },
+    AgentFailed {
+        id: AgentId,
+        error: String,
+    },
     /// Periodic heartbeat from an agent
-    AgentHeartbeat { id: AgentId, iteration: usize },
+    AgentHeartbeat {
+        id: AgentId,
+        iteration: usize,
+    },
     /// Agent status changed
-    AgentPaused { id: AgentId },
-    AgentResumed { id: AgentId },
+    AgentPaused {
+        id: AgentId,
+    },
+    AgentResumed {
+        id: AgentId,
+    },
 }
 
 /// Handle to a running agent — allows steering.
@@ -64,7 +80,10 @@ pub struct AgentHandle {
 impl AgentHandle {
     /// Send a steering command to the agent.
     #[allow(dead_code)]
-    async fn send(&self, msg: AgentMessage) -> std::result::Result<(), mpsc::error::SendError<AgentMessage>> {
+    async fn send(
+        &self,
+        msg: AgentMessage,
+    ) -> std::result::Result<(), mpsc::error::SendError<AgentMessage>> {
         self.sender.send(msg).await
     }
 
@@ -84,7 +103,10 @@ impl AgentHandle {
     }
 
     /// Send a user message to the agent.
-    pub async fn send_message(&self, text: String) -> std::result::Result<(), mpsc::error::SendError<AgentMessage>> {
+    pub async fn send_message(
+        &self,
+        text: String,
+    ) -> std::result::Result<(), mpsc::error::SendError<AgentMessage>> {
         self.sender.send(AgentMessage::UserMessage(text)).await
     }
 }
@@ -171,7 +193,9 @@ impl Swarm {
         // Create session store from path if configured
         let session = {
             let guard = self.session_store.read().await;
-            guard.as_ref().and_then(|path| SessionStore::open(std::path::PathBuf::from(path)).ok())
+            guard
+                .as_ref()
+                .and_then(|path| SessionStore::open(std::path::PathBuf::from(path)).ok())
         };
 
         let mut agent = Agent::new(
@@ -219,7 +243,10 @@ impl Swarm {
                 }
                 Err(e) => {
                     let err_msg = e.to_string();
-                    error!("Swarm: agent '{}' ({}) failed: {}", name_clone, id_clone, err_msg);
+                    error!(
+                        "Swarm: agent '{}' ({}) failed: {}",
+                        name_clone, id_clone, err_msg
+                    );
 
                     let should_restart = restart_policy.unwrap_or(0) > 0;
                     if should_restart {
@@ -333,16 +360,22 @@ mod tests {
             unimplemented!("mock token counter")
         }
 
-        fn name(&self) -> &str { "mock" }
-        fn model(&self) -> &str { "mock-model" }
+        fn name(&self) -> &str {
+            "mock"
+        }
+        fn model(&self) -> &str {
+            "mock-model"
+        }
     }
 
     #[tokio::test]
     async fn test_swarm_spawn_and_complete() {
         let swarm = Swarm::new(
-            || Box::new(MockProvider {
-                response: "done".into(),
-            }),
+            || {
+                Box::new(MockProvider {
+                    response: "done".into(),
+                })
+            },
             PolicyEngine::new(),
             ToolRegistry::new,
         );
@@ -368,7 +401,9 @@ mod tests {
 
         // Check event
         match events.try_recv() {
-            Ok(SwarmEvent::AgentCompleted { id: completed_id, .. }) => {
+            Ok(SwarmEvent::AgentCompleted {
+                id: completed_id, ..
+            }) => {
                 assert_eq!(completed_id, id);
             }
             Ok(SwarmEvent::AgentFailed { .. }) => {
@@ -382,9 +417,11 @@ mod tests {
     #[tokio::test]
     async fn test_swarm_list_agents() {
         let swarm = Swarm::new(
-            || Box::new(MockProvider {
-                response: "ok".into(),
-            }),
+            || {
+                Box::new(MockProvider {
+                    response: "ok".into(),
+                })
+            },
             PolicyEngine::new(),
             ToolRegistry::new,
         );
@@ -427,9 +464,11 @@ mod tests {
     #[tokio::test]
     async fn test_agent_steering_kill() {
         let swarm = Swarm::new(
-            || Box::new(MockProvider {
-                response: "working...".into(),
-            }),
+            || {
+                Box::new(MockProvider {
+                    response: "working...".into(),
+                })
+            },
             PolicyEngine::new(),
             ToolRegistry::new,
         );

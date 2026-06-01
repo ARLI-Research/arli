@@ -9,24 +9,18 @@
 //!
 //! Reference: https://open.dingtalk.com/document/
 
-use arli_core::{
-    Agent, AgentConfig, AgentMessage, Config,
-    OpenAIProvider, SessionStore, ToolRegistry,
-    memory::MemoryStore,
-};
 use arli_core::tools::builtin::register_builtin_tools;
-use axum::{
-    extract::State,
-    response::IntoResponse,
-    routing::post,
-    Json, Router,
+use arli_core::{
+    memory::MemoryStore, Agent, AgentConfig, AgentMessage, Config, OpenAIProvider, SessionStore,
+    ToolRegistry,
 };
+use axum::{extract::State, response::IntoResponse, routing::post, Json, Router};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 // ── DingTalk API types ──
 
@@ -119,7 +113,10 @@ impl DingTalkState {
             return Ok(sender.clone());
         }
 
-        info!("Creating DingTalk agent for conversation {}", conversation_id);
+        info!(
+            "Creating DingTalk agent for conversation {}",
+            conversation_id
+        );
 
         let db_path = data_dir.join(format!("dingtalk-{}.db", safe_id));
         let store = SessionStore::open(db_path.clone())?;
@@ -133,14 +130,15 @@ impl DingTalkState {
         ));
 
         let mut tools = ToolRegistry::new();
-        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None);
+        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None, None);
 
         let agent_config = AgentConfig {
             name: format!("dingtalk-{}", safe_id),
             session_id: None,
             system_prompt: Some(
                 "You are ARLI, an AI agent communicating via DingTalk. \
-                 Respond in the user's language. Be concise and use plain text.".to_string()
+                 Respond in the user's language. Be concise and use plain text."
+                    .to_string(),
             ),
             protect_last_n: 20,
             protect_first_n: 3,
@@ -191,12 +189,7 @@ async fn get_access_token(app_key: &str, app_secret: &str) -> anyhow::Result<Str
         app_key, app_secret
     );
 
-    let resp: TokenResponse = client
-        .get(&url)
-        .send()
-        .await?
-        .json()
-        .await?;
+    let resp: TokenResponse = client.get(&url).send().await?.json().await?;
 
     resp.access_token
         .ok_or_else(|| anyhow::anyhow!("DingTalk token response missing access_token"))
@@ -220,17 +213,11 @@ async fn send_dingtalk_message(
 
         let req = SendMessageRequest {
             msgtype: "text".to_string(),
-            text: DingTalkTextBody {
-                content: truncated,
-            },
+            text: DingTalkTextBody { content: truncated },
         };
 
         let client = reqwest::Client::new();
-        let resp = client
-            .post(session_webhook)
-            .json(&req)
-            .send()
-            .await?;
+        let resp = client.post(session_webhook).json(&req).send().await?;
 
         let status = resp.status();
         if !status.is_success() {
@@ -249,9 +236,7 @@ async fn send_dingtalk_message(
 
         let req = SendMessageRequest {
             msgtype: "text".to_string(),
-            text: DingTalkTextBody {
-                content: truncated,
-            },
+            text: DingTalkTextBody { content: truncated },
         };
 
         let client = reqwest::Client::new();
@@ -259,11 +244,7 @@ async fn send_dingtalk_message(
             "https://oapi.dingtalk.com/robot/send?access_token={}",
             token
         );
-        let resp = client
-            .post(&url)
-            .json(&req)
-            .send()
-            .await?;
+        let resp = client.post(&url).json(&req).send().await?;
 
         let status = resp.status();
         if !status.is_success() {
@@ -344,8 +325,7 @@ pub async fn run(
 ) -> anyhow::Result<()> {
     info!("DingTalk gateway starting on port {}...", webhook_port);
 
-    let (response_tx, mut response_rx) =
-        tokio::sync::mpsc::channel::<(String, String)>(128);
+    let (response_tx, mut response_rx) = tokio::sync::mpsc::channel::<(String, String)>(128);
 
     let config = Config::from_env()?;
     let state = Arc::new(DingTalkState {

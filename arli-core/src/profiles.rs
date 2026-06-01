@@ -172,7 +172,11 @@ pub fn set_default_profile(name: &str) -> anyhow::Result<()> {
         // Verify profile exists
         let profile_dir = profiles_dir().join(name);
         if !profile_dir.exists() {
-            anyhow::bail!("Profile '{}' does not exist. Create it first: arli profile create {}", name, name);
+            anyhow::bail!(
+                "Profile '{}' does not exist. Create it first: arli profile create {}",
+                name,
+                name
+            );
         }
         std::fs::write(&sticky_path, format!("{}\n", name))?;
     }
@@ -213,7 +217,6 @@ pub struct ProfileInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[test]
     fn test_list_empty_profiles() {

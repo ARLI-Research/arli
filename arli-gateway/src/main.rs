@@ -50,8 +50,8 @@ mod line;
 mod matrix;
 mod ntfy;
 mod qq;
-mod simplex;
 mod signal;
+mod simplex;
 mod slack;
 mod sms;
 mod teams;
@@ -100,7 +100,8 @@ fn resolve_token(env_var: &str, config_key: &str) -> Option<String> {
                 toml::from_str::<toml::Value>(&s).ok().and_then(|v| {
                     let gateway = v.get("gateway")?;
                     // Try the canonical key first, then legacy bot_token
-                    gateway.get(config_key)
+                    gateway
+                        .get(config_key)
                         .or_else(|| gateway.get("bot_token"))
                         .and_then(|val| val.as_str().map(String::from))
                 })
@@ -150,7 +151,9 @@ fn daemonize(pid_file: &str, log_file: &str) -> anyhow::Result<()> {
 
     // Change working directory to root
     #[allow(clippy::manual_c_str_literals)]
-    unsafe { libc::chdir(b"/\0".as_ptr() as *const _) };
+    unsafe {
+        libc::chdir(b"/\0".as_ptr() as *const _)
+    };
 
     // Set file creation mask
     unsafe { libc::umask(0o022) };
@@ -212,11 +215,9 @@ fn main() -> anyhow::Result<()> {
 }
 
 async fn async_main(cli: Cli) -> anyhow::Result<()> {
-
     tracing_subscriber::fmt()
         .with_env_filter(
-            std::env::var("ARLI_LOG")
-                .unwrap_or_else(|_| "info,arli_gateway=debug".to_string()),
+            std::env::var("ARLI_LOG").unwrap_or_else(|_| "info,arli_gateway=debug".to_string()),
         )
         .with_writer(std::io::stderr)
         .init();
@@ -348,7 +349,12 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
     }
 
     // ── Google Chat ──
-    if resolve_token("GOOGLE_CHAT_VERIFICATION_TOKEN", "google_chat_verification_token").is_some() {
+    if resolve_token(
+        "GOOGLE_CHAT_VERIFICATION_TOKEN",
+        "google_chat_verification_token",
+    )
+    .is_some()
+    {
         let port: u16 = std::env::var("GOOGLE_CHAT_PORT")
             .ok()
             .and_then(|p| p.parse().ok())
@@ -387,10 +393,9 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
     // ── SimpleX Chat ──
     // SimpleX is always available if simplex-chat is installed (uses default SIMPLEX_CLI_PATH)
     {
-        let simplex_path = std::env::var("SIMPLEX_CLI_PATH")
-            .unwrap_or_else(|_| "simplex-chat".to_string());
-        if std::path::Path::new(&simplex_path).exists()
-            || std::env::var("SIMPLEX_CLI_PATH").is_ok()
+        let simplex_path =
+            std::env::var("SIMPLEX_CLI_PATH").unwrap_or_else(|_| "simplex-chat".to_string());
+        if std::path::Path::new(&simplex_path).exists() || std::env::var("SIMPLEX_CLI_PATH").is_ok()
         {
             info!("Platform: SimpleX Chat");
             let dd = data_dir.clone();
@@ -434,7 +439,9 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
     let feishu_app_id = resolve_token("FEISHU_APP_ID", "feishu_app_id");
     let feishu_app_secret = resolve_token("FEISHU_APP_SECRET", "feishu_app_secret");
     let feishu_verify = resolve_token("FEISHU_VERIFICATION_TOKEN", "feishu_verification_token");
-    if let (Some(app_id), Some(app_secret), Some(verify)) = (feishu_app_id, feishu_app_secret, feishu_verify) {
+    if let (Some(app_id), Some(app_secret), Some(verify)) =
+        (feishu_app_id, feishu_app_secret, feishu_verify)
+    {
         let port: u16 = std::env::var("FEISHU_PORT")
             .ok()
             .and_then(|p| p.parse().ok())
@@ -498,9 +505,12 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
     let wecom_agent_secret = resolve_token("WECOM_AGENT_SECRET", "wecom_agent_secret");
     let wecom_token = resolve_token("WECOM_TOKEN", "wecom_token");
     let wecom_aes_key = resolve_token("WECOM_ENCODING_AES_KEY", "wecom_encoding_aes_key");
-    if let (Some(corp_id), Some(agent_secret), Some(token), Some(aes_key)) =
-        (wecom_corp_id, wecom_agent_secret, wecom_token, wecom_aes_key)
-    {
+    if let (Some(corp_id), Some(agent_secret), Some(token), Some(aes_key)) = (
+        wecom_corp_id,
+        wecom_agent_secret,
+        wecom_token,
+        wecom_aes_key,
+    ) {
         let port: u16 = std::env::var("WECOM_PORT")
             .ok()
             .and_then(|p| p.parse().ok())

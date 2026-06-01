@@ -9,8 +9,8 @@
 use async_trait::async_trait;
 use std::time::Instant;
 
-use crate::sandbox::{Sandbox, SandboxConfig};
 use super::{Tool, ToolOutput};
+use crate::sandbox::{Sandbox, SandboxConfig};
 
 pub struct ExecuteCodeTool;
 
@@ -85,10 +85,7 @@ impl Tool for ExecuteCodeTool {
                     stdout.push_str("\n\n[Output truncated at 50KB]");
                 }
 
-                let header = format!(
-                    "Code executed in {}ms. Output:\n\n",
-                    elapsed_ms
-                );
+                let header = format!("Code executed in {}ms. Output:\n\n", elapsed_ms);
 
                 ToolOutput {
                     success: true,
@@ -109,9 +106,7 @@ impl ExecuteCodeTool {
     /// Run Python code through the sandbox.
     fn run_python(code: &str, timeout_secs: u64) -> Result<String, String> {
         // Escape the code for safe shell embedding
-        let escaped = code
-            .replace('\\', "\\\\")
-            .replace('\'', "'\\''");
+        let escaped = code.replace('\\', "\\\\").replace('\'', "'\\''");
 
         let command = format!("python3 -c '{}'", escaped);
 
@@ -163,9 +158,9 @@ mod tests {
     #[tokio::test]
     async fn test_execute_simple_print() {
         let tool = ExecuteCodeTool;
-        let result = tool.execute(
-            &serde_json::json!({"code": "print('hello from sandbox')"}).to_string()
-        ).await;
+        let result = tool
+            .execute(&serde_json::json!({"code": "print('hello from sandbox')"}).to_string())
+            .await;
 
         assert!(result.success, "Error: {:?}", result.error);
         assert!(result.content.contains("hello from sandbox"));
@@ -174,9 +169,9 @@ mod tests {
     #[tokio::test]
     async fn test_execute_arithmetic() {
         let tool = ExecuteCodeTool;
-        let result = tool.execute(
-            &serde_json::json!({"code": "print(2 + 2)"}).to_string()
-        ).await;
+        let result = tool
+            .execute(&serde_json::json!({"code": "print(2 + 2)"}).to_string())
+            .await;
 
         assert!(result.success);
         assert!(result.content.contains('4'));
@@ -185,9 +180,9 @@ mod tests {
     #[tokio::test]
     async fn test_execute_syntax_error() {
         let tool = ExecuteCodeTool;
-        let result = tool.execute(
-            &serde_json::json!({"code": "print("}).to_string()
-        ).await;
+        let result = tool
+            .execute(&serde_json::json!({"code": "print("}).to_string())
+            .await;
 
         assert!(!result.success);
         assert!(result.error.unwrap().contains("SyntaxError"));
@@ -196,11 +191,14 @@ mod tests {
     #[tokio::test]
     async fn test_execute_multiline() {
         let tool = ExecuteCodeTool;
-        let result = tool.execute(
-            &serde_json::json!({
-                "code": "import json\ndata = {'key': 'value'}\nprint(json.dumps(data))"
-            }).to_string()
-        ).await;
+        let result = tool
+            .execute(
+                &serde_json::json!({
+                    "code": "import json\ndata = {'key': 'value'}\nprint(json.dumps(data))"
+                })
+                .to_string(),
+            )
+            .await;
 
         assert!(result.success);
         assert!(result.content.contains(r#""key""#));

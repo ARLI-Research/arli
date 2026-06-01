@@ -3,12 +3,11 @@
 //! Each Discord channel gets its own Agent with session persistence.
 //! Agent responses are forwarded back to the Discord channel.
 
-use arli_core::{
-    Agent, AgentConfig, AgentMessage, Config,
-    OpenAIProvider, SessionStore, ToolRegistry,
-    memory::MemoryStore,
-};
 use arli_core::tools::builtin::register_builtin_tools;
+use arli_core::{
+    memory::MemoryStore, Agent, AgentConfig, AgentMessage, Config, OpenAIProvider, SessionStore,
+    ToolRegistry,
+};
 use serenity::async_trait;
 use serenity::model::channel::Message;
 use serenity::model::gateway::{GatewayIntents, Ready};
@@ -18,7 +17,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{info, error};
+use tracing::{error, info};
 
 /// Per-channel agent state.
 struct ChannelState {
@@ -83,7 +82,7 @@ impl DiscordBot {
         ));
 
         let mut tools = ToolRegistry::new();
-        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None);
+        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None, None);
 
         let system_prompt = format!(
             "You are ARLI, an AI agent communicating via Discord in channel '{}'. \
@@ -129,10 +128,7 @@ impl DiscordBot {
                                 response
                             };
 
-                            if let Err(e) = ChannelId::from(channel_id)
-                                .say(&http, &text)
-                                .await
-                            {
+                            if let Err(e) = ChannelId::from(channel_id).say(&http, &text).await {
                                 error!("Failed to send Discord response to {}: {}", key_owned, e);
                             }
                         }
@@ -148,7 +144,9 @@ impl DiscordBot {
             }
         });
 
-        let state = ChannelState { user_tx: user_tx.clone() };
+        let state = ChannelState {
+            user_tx: user_tx.clone(),
+        };
         channels.insert(key.to_string(), state);
         Ok(user_tx)
     }
@@ -181,7 +179,10 @@ impl EventHandler for Handler {
         let key = DiscordBot::channel_key(guild_id, channel_id);
         let channel_name = format!("#{}", channel_id);
 
-        info!("Discord: {} in {}: {}", msg.author.name, channel_name, content);
+        info!(
+            "Discord: {} in {}: {}",
+            msg.author.name, channel_name, content
+        );
 
         // Commands
         if content == "!arli start" || content == "!start" {
@@ -205,7 +206,11 @@ impl EventHandler for Handler {
         }
 
         // Route to agent
-        match self.bot.get_or_create(&key, channel_id, ctx.http.clone(), &channel_name).await {
+        match self
+            .bot
+            .get_or_create(&key, channel_id, ctx.http.clone(), &channel_name)
+            .await
+        {
             Ok(tx) => {
                 let _ = msg.channel_id.broadcast_typing(&ctx.http).await;
                 if let Err(e) = tx.send(AgentMessage::UserMessage(content)).await {

@@ -10,24 +10,18 @@
 //! References:
 //!   https://developers.google.com/workspace/chat/overview
 
-use arli_core::{
-    Agent, AgentConfig, AgentMessage, Config,
-    OpenAIProvider, SessionStore, ToolRegistry,
-    memory::MemoryStore,
-};
 use arli_core::tools::builtin::register_builtin_tools;
-use axum::{
-    extract::State,
-    response::IntoResponse,
-    routing::post,
-    Json, Router,
+use arli_core::{
+    memory::MemoryStore, Agent, AgentConfig, AgentMessage, Config, OpenAIProvider, SessionStore,
+    ToolRegistry,
 };
+use axum::{extract::State, response::IntoResponse, routing::post, Json, Router};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 // ── Google Chat event types ──
 
@@ -129,9 +123,7 @@ impl GChatState {
     ) -> anyhow::Result<tokio::sync::mpsc::Sender<AgentMessage>> {
         let mut agents = agents.lock().await;
 
-        let safe_id = space_id
-            .replace(['/', ':', ' '], "_");
-
+        let safe_id = space_id.replace(['/', ':', ' '], "_");
 
         if let Some(sender) = agents.get(space_id) {
             return Ok(sender.clone());
@@ -151,7 +143,7 @@ impl GChatState {
         ));
 
         let mut tools = ToolRegistry::new();
-        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None);
+        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None, None);
 
         let agent_config = AgentConfig {
             name: format!("gchat-{}", safe_id),
@@ -159,7 +151,8 @@ impl GChatState {
             system_prompt: Some(
                 "You are ARLI, an AI agent communicating via Google Chat. \
                  Respond in the user's language. Be concise and helpful. \
-                 Google Chat supports basic formatting.".to_string()
+                 Google Chat supports basic formatting."
+                    .to_string(),
             ),
             protect_last_n: 20,
             protect_first_n: 3,
@@ -219,10 +212,7 @@ async fn send_chat_message(space_id: &str, text: &str) -> anyhow::Result<()> {
 
     // Google Chat API v1: spaces.messages.create
     // POST https://chat.googleapis.com/v1/{parent=spaces/*}/messages
-    let url = format!(
-        "https://chat.googleapis.com/v1/{}/messages",
-        space_id
-    );
+    let url = format!("https://chat.googleapis.com/v1/{}/messages", space_id);
 
     let body = ChatReply { text: truncated };
 
@@ -283,7 +273,10 @@ async fn chat_webhook(
                 .and_then(|u| u.display_name.as_deref())
                 .unwrap_or("unknown");
 
-            info!("Google Chat message from {} (space {}): {}", user_display, space_id, text);
+            info!(
+                "Google Chat message from {} (space {}): {}",
+                user_display, space_id, text
+            );
 
             // Route to agent
             match GChatState::get_or_create_agent(
@@ -311,13 +304,16 @@ async fn chat_webhook(
         "ADDED_TO_SPACE" => {
             info!("Google Chat bot added to space");
             let space = event.space.as_ref();
-            let space_name = space.and_then(|s| s.display_name.as_deref()).unwrap_or("unknown");
+            let space_name = space
+                .and_then(|s| s.display_name.as_deref())
+                .unwrap_or("unknown");
             info!("  Space: {}", space_name);
 
             // Send a welcome message
             if let Some(space) = space {
                 if let Some(space_id) = &space.name {
-                    let welcome = "Hello! I'm ARLI, an AI assistant. Send me a message to get started.";
+                    let welcome =
+                        "Hello! I'm ARLI, an AI assistant. Send me a message to get started.";
                     if let Err(e) = send_chat_message(space_id, welcome).await {
                         error!("Failed to send welcome message: {}", e);
                     }
@@ -341,8 +337,7 @@ async fn chat_webhook(
 pub async fn run(port: u16, data_dir: PathBuf) -> anyhow::Result<()> {
     info!("Google Chat gateway starting on port {}...", port);
 
-    let (response_tx, mut response_rx) =
-        tokio::sync::mpsc::channel::<(String, String)>(128);
+    let (response_tx, mut response_rx) = tokio::sync::mpsc::channel::<(String, String)>(128);
 
     let config = Config::from_env()?;
     let state = Arc::new(GChatState {

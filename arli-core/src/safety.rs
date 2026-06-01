@@ -180,33 +180,117 @@ impl ExecutionSetting {
     pub fn risk_categories(&self) -> Vec<(RiskSource, FailureMode, RealWorldHarm)> {
         match self {
             ExecutionSetting::General => vec![
-                (RiskSource::UserInput, FailureMode::OverPrivilegedAction, RealWorldHarm::SecurityHarm),
-                (RiskSource::EnvironmentObservation, FailureMode::MissingValidation, RealWorldHarm::FunctionalHarm),
-                (RiskSource::UnreliableInformation, FailureMode::UnverifiedInformation, RealWorldHarm::ReputationalHarm),
+                (
+                    RiskSource::UserInput,
+                    FailureMode::OverPrivilegedAction,
+                    RealWorldHarm::SecurityHarm,
+                ),
+                (
+                    RiskSource::EnvironmentObservation,
+                    FailureMode::MissingValidation,
+                    RealWorldHarm::FunctionalHarm,
+                ),
+                (
+                    RiskSource::UnreliableInformation,
+                    FailureMode::UnverifiedInformation,
+                    RealWorldHarm::ReputationalHarm,
+                ),
             ],
             ExecutionSetting::Trading => vec![
-                (RiskSource::UserInput, FailureMode::ActionScopeOverreach, RealWorldHarm::FinancialHarm),
-                (RiskSource::CorruptedToolOutput, FailureMode::MissingValidation, RealWorldHarm::FinancialHarm),
-                (RiskSource::EnvironmentObservation, FailureMode::IncorrectToolParams, RealWorldHarm::FinancialHarm),
-                (RiskSource::InherentAgentFailure, FailureMode::FlawedReasoning, RealWorldHarm::FinancialHarm),
-                (RiskSource::UserInput, FailureMode::ApprovalBypass, RealWorldHarm::ComplianceHarm),
-                (RiskSource::PlatformVulnerability, FailureMode::InsecureInteraction, RealWorldHarm::SecurityHarm),
+                (
+                    RiskSource::UserInput,
+                    FailureMode::ActionScopeOverreach,
+                    RealWorldHarm::FinancialHarm,
+                ),
+                (
+                    RiskSource::CorruptedToolOutput,
+                    FailureMode::MissingValidation,
+                    RealWorldHarm::FinancialHarm,
+                ),
+                (
+                    RiskSource::EnvironmentObservation,
+                    FailureMode::IncorrectToolParams,
+                    RealWorldHarm::FinancialHarm,
+                ),
+                (
+                    RiskSource::InherentAgentFailure,
+                    FailureMode::FlawedReasoning,
+                    RealWorldHarm::FinancialHarm,
+                ),
+                (
+                    RiskSource::UserInput,
+                    FailureMode::ApprovalBypass,
+                    RealWorldHarm::ComplianceHarm,
+                ),
+                (
+                    RiskSource::PlatformVulnerability,
+                    FailureMode::InsecureInteraction,
+                    RealWorldHarm::SecurityHarm,
+                ),
             ],
             ExecutionSetting::Coding => vec![
-                (RiskSource::RepositoryArtifactInjection, FailureMode::DestructiveWorkspaceMutation, RealWorldHarm::FunctionalHarm),
-                (RiskSource::McpSupplyChain, FailureMode::InsecureInteraction, RealWorldHarm::SecurityHarm),
-                (RiskSource::UserInput, FailureMode::UnsafeShellExecution, RealWorldHarm::SecurityHarm),
-                (RiskSource::SkillPluginCompromise, FailureMode::MaliciousExecutable, RealWorldHarm::SecurityHarm),
-                (RiskSource::EnvironmentObservation, FailureMode::MissingValidation, RealWorldHarm::FunctionalHarm),
-                (RiskSource::InherentAgentFailure, FailureMode::WastefulExecution, RealWorldHarm::FunctionalHarm),
+                (
+                    RiskSource::RepositoryArtifactInjection,
+                    FailureMode::DestructiveWorkspaceMutation,
+                    RealWorldHarm::FunctionalHarm,
+                ),
+                (
+                    RiskSource::McpSupplyChain,
+                    FailureMode::InsecureInteraction,
+                    RealWorldHarm::SecurityHarm,
+                ),
+                (
+                    RiskSource::UserInput,
+                    FailureMode::UnsafeShellExecution,
+                    RealWorldHarm::SecurityHarm,
+                ),
+                (
+                    RiskSource::SkillPluginCompromise,
+                    FailureMode::MaliciousExecutable,
+                    RealWorldHarm::SecurityHarm,
+                ),
+                (
+                    RiskSource::EnvironmentObservation,
+                    FailureMode::MissingValidation,
+                    RealWorldHarm::FunctionalHarm,
+                ),
+                (
+                    RiskSource::InherentAgentFailure,
+                    FailureMode::WastefulExecution,
+                    RealWorldHarm::FunctionalHarm,
+                ),
             ],
             ExecutionSetting::Gateway => vec![
-                (RiskSource::SenderSessionAmbiguity, FailureMode::CrossChannelMisrouting, RealWorldHarm::PrivacyHarm),
-                (RiskSource::IndirectPromptInjection, FailureMode::InformationDisclosure, RealWorldHarm::PrivacyHarm),
-                (RiskSource::SkillPluginCompromise, FailureMode::InsecureInteraction, RealWorldHarm::SecurityHarm),
-                (RiskSource::PersistentMemoryContamination, FailureMode::PolicyMisinterpretation, RealWorldHarm::ReputationalHarm),
-                (RiskSource::UserInput, FailureMode::UnattendedAutomation, RealWorldHarm::ComplianceHarm),
-                (RiskSource::UserInput, FailureMode::HarmfulContent, RealWorldHarm::PsychologicalHarm),
+                (
+                    RiskSource::SenderSessionAmbiguity,
+                    FailureMode::CrossChannelMisrouting,
+                    RealWorldHarm::PrivacyHarm,
+                ),
+                (
+                    RiskSource::IndirectPromptInjection,
+                    FailureMode::InformationDisclosure,
+                    RealWorldHarm::PrivacyHarm,
+                ),
+                (
+                    RiskSource::SkillPluginCompromise,
+                    FailureMode::InsecureInteraction,
+                    RealWorldHarm::SecurityHarm,
+                ),
+                (
+                    RiskSource::PersistentMemoryContamination,
+                    FailureMode::PolicyMisinterpretation,
+                    RealWorldHarm::ReputationalHarm,
+                ),
+                (
+                    RiskSource::UserInput,
+                    FailureMode::UnattendedAutomation,
+                    RealWorldHarm::ComplianceHarm,
+                ),
+                (
+                    RiskSource::UserInput,
+                    FailureMode::HarmfulContent,
+                    RealWorldHarm::PsychologicalHarm,
+                ),
             ],
             ExecutionSetting::Custom(_) => vec![],
         }
@@ -221,13 +305,17 @@ mod tests {
     fn test_trading_categories_exist() {
         let cats = ExecutionSetting::Trading.risk_categories();
         assert!(!cats.is_empty());
-        assert!(cats.iter().any(|(_, _, h)| *h == RealWorldHarm::FinancialHarm));
+        assert!(cats
+            .iter()
+            .any(|(_, _, h)| *h == RealWorldHarm::FinancialHarm));
     }
 
     #[test]
     fn test_coding_categories_exist() {
         let cats = ExecutionSetting::Coding.risk_categories();
-        assert!(cats.iter().any(|(s, _, _)| *s == RiskSource::RepositoryArtifactInjection));
+        assert!(cats
+            .iter()
+            .any(|(s, _, _)| *s == RiskSource::RepositoryArtifactInjection));
     }
 
     #[test]

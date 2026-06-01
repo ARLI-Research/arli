@@ -19,14 +19,10 @@ pub enum Decision {
     Allow,
 
     /// Block the tool call entirely.
-    Deny {
-        reason: String,
-    },
+    Deny { reason: String },
 
     /// Pause execution and wait for human confirmation.
-    NeedsApproval {
-        reason: String,
-    },
+    NeedsApproval { reason: String },
 
     /// Rate limit exceeded — try again later.
     RateLimited {
@@ -353,8 +349,7 @@ impl PolicyEngine {
             }
 
             // Check allowed pairs (empty = all allowed)
-            if !limits.allowed_pairs.is_empty()
-                && !limits.allowed_pairs.contains(&pair.to_string())
+            if !limits.allowed_pairs.is_empty() && !limits.allowed_pairs.contains(&pair.to_string())
             {
                 return Err(format!(
                     "Trading pair '{}' not in allowed list: {:?}",
@@ -364,7 +359,11 @@ impl PolicyEngine {
 
             // Check daily trade count
             if let Some(max_trades) = limits.max_daily_trades {
-                let count = self.daily_trade_counts.get(agent_profile).copied().unwrap_or(0);
+                let count = self
+                    .daily_trade_counts
+                    .get(agent_profile)
+                    .copied()
+                    .unwrap_or(0);
                 if count >= max_trades {
                     return Err(format!(
                         "Daily trade limit reached: {}/{}",
@@ -379,7 +378,8 @@ impl PolicyEngine {
 
     /// Record a trade execution (for daily count tracking).
     pub fn record_trade(&mut self, agent_profile: &str) {
-        *self.daily_trade_counts
+        *self
+            .daily_trade_counts
             .entry(agent_profile.to_string())
             .or_insert(0) += 1;
     }
@@ -394,7 +394,7 @@ impl PolicyEngine {
         // Find matching rate limit
         let limit = self.rate_limits.iter().find(|(pattern, _)| {
             if pattern.ends_with('*') {
-                tool_name.starts_with(&pattern[..pattern.len()-1])
+                tool_name.starts_with(&pattern[..pattern.len() - 1])
             } else {
                 pattern.as_str() == tool_name
             }
@@ -416,7 +416,9 @@ impl PolicyEngine {
                 return Decision::RateLimited {
                     reason: format!(
                         "Rate limit: {} calls per {}s. {} calls made.",
-                        limit.max_calls, limit.window_secs, history.len()
+                        limit.max_calls,
+                        limit.window_secs,
+                        history.len()
                     ),
                     retry_after_secs: retry_after.max(1),
                 };
@@ -466,14 +468,19 @@ mod tests {
     #[test]
     fn test_read_only_allowed() {
         let engine = PolicyEngine::with_defaults();
-        let decision = engine.evaluate("read_file", &serde_json::json!({"path": "/tmp/test"}), None);
+        let decision =
+            engine.evaluate("read_file", &serde_json::json!({"path": "/tmp/test"}), None);
         assert!(decision.is_allowed());
     }
 
     #[test]
     fn test_write_needs_approval() {
         let engine = PolicyEngine::with_defaults();
-        let decision = engine.evaluate("write_file", &serde_json::json!({"path": "/tmp/test"}), None);
+        let decision = engine.evaluate(
+            "write_file",
+            &serde_json::json!({"path": "/tmp/test"}),
+            None,
+        );
         assert!(decision.needs_approval());
     }
 
@@ -527,10 +534,16 @@ mod tests {
             description: "Block all trade execution".into(),
         });
 
-        assert!(engine.evaluate("execute_trade", &serde_json::json!({}), None).is_denied());
-        assert!(engine.evaluate("execute_limit_order", &serde_json::json!({}), None).is_denied());
+        assert!(engine
+            .evaluate("execute_trade", &serde_json::json!({}), None)
+            .is_denied());
+        assert!(engine
+            .evaluate("execute_limit_order", &serde_json::json!({}), None)
+            .is_denied());
         // Unrelated tool unaffected
-        assert!(engine.evaluate("read_file", &serde_json::json!({}), None).is_allowed());
+        assert!(engine
+            .evaluate("read_file", &serde_json::json!({}), None)
+            .is_allowed());
     }
 
     #[test]
@@ -547,19 +560,27 @@ mod tests {
         );
 
         // Within limits
-        assert!(engine.check_trading_limits("live", 500.0, "ETH-USDT").is_ok());
+        assert!(engine
+            .check_trading_limits("live", 500.0, "ETH-USDT")
+            .is_ok());
 
         // Exceeds position size
-        assert!(engine.check_trading_limits("live", 1500.0, "ETH-USDT").is_err());
+        assert!(engine
+            .check_trading_limits("live", 1500.0, "ETH-USDT")
+            .is_err());
 
         // Blocked pair
-        assert!(engine.check_trading_limits("live", 100.0, "BTC-USDT").is_err());
+        assert!(engine
+            .check_trading_limits("live", 100.0, "BTC-USDT")
+            .is_err());
 
         // Daily trade limit
         for _ in 0..5 {
             engine.record_trade("live");
         }
-        assert!(engine.check_trading_limits("live", 100.0, "ETH-USDT").is_err());
+        assert!(engine
+            .check_trading_limits("live", 100.0, "ETH-USDT")
+            .is_err());
     }
 
     #[test]
@@ -591,8 +612,12 @@ mod tests {
         });
 
         // Higher priority wins
-        assert!(engine.evaluate("shell", &serde_json::json!({}), None).is_denied());
+        assert!(engine
+            .evaluate("shell", &serde_json::json!({}), None)
+            .is_denied());
         // Catch-all applies when no specific rule
-        assert!(engine.evaluate("unknown_tool", &serde_json::json!({}), None).is_allowed());
+        assert!(engine
+            .evaluate("unknown_tool", &serde_json::json!({}), None)
+            .is_allowed());
     }
 }

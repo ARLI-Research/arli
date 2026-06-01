@@ -7,18 +7,17 @@
 //!
 //! Reference: https://docs.ntfy.sh/
 
-use arli_core::{
-    Agent, AgentConfig, AgentMessage, Config,
-    OpenAIProvider, SessionStore, ToolRegistry,
-    memory::MemoryStore,
-};
 use arli_core::tools::builtin::register_builtin_tools;
+use arli_core::{
+    memory::MemoryStore, Agent, AgentConfig, AgentMessage, Config, OpenAIProvider, SessionStore,
+    ToolRegistry,
+};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 // ── ntfy JSON types ──
 
@@ -73,7 +72,11 @@ impl NtfyGateway {
         let resp = req.send().await?;
         let status = resp.status();
         if !status.is_success() {
-            warn!("ntfy poll returned {}: {}", status, resp.text().await.unwrap_or_default());
+            warn!(
+                "ntfy poll returned {}: {}",
+                status,
+                resp.text().await.unwrap_or_default()
+            );
             return Ok(vec![]);
         }
 
@@ -107,9 +110,7 @@ impl NtfyGateway {
         Ok(())
     }
 
-    async fn get_or_create_agent(
-        &self,
-    ) -> anyhow::Result<tokio::sync::mpsc::Sender<AgentMessage>> {
+    async fn get_or_create_agent(&self) -> anyhow::Result<tokio::sync::mpsc::Sender<AgentMessage>> {
         let chat_key = &self.topic;
         let mut agents = self.agents.lock().await;
 
@@ -132,7 +133,7 @@ impl NtfyGateway {
         ));
 
         let mut tools = ToolRegistry::new();
-        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None);
+        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None, None);
 
         let agent_config = AgentConfig {
             name: format!("ntfy-{}", safe_id),
@@ -245,8 +246,7 @@ pub async fn run(data_dir: PathBuf) -> anyhow::Result<()> {
         .ok()
         .ok_or_else(|| anyhow::anyhow!("NTFY_TOPIC not set. Set NTFY_TOPIC env var."))?;
 
-    let server = std::env::var("NTFY_SERVER")
-        .unwrap_or_else(|_| "https://ntfy.sh".to_string());
+    let server = std::env::var("NTFY_SERVER").unwrap_or_else(|_| "https://ntfy.sh".to_string());
 
     let gateway = Arc::new(NtfyGateway::new(server, topic, data_dir)?);
     gateway.run_forever().await;

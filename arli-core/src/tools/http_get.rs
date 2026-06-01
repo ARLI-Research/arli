@@ -85,7 +85,11 @@ impl Tool for HttpGetTool {
                     Ok(body) => {
                         // Truncate to 50KB
                         let truncated = if body.len() > 50_000 {
-                            format!("{}... [truncated from {} bytes]", &body[..50_000], body.len())
+                            format!(
+                                "{}... [truncated from {} bytes]",
+                                &body[..50_000],
+                                body.len()
+                            )
                         } else {
                             body
                         };

@@ -81,7 +81,8 @@ impl Tool for WebSearchTool {
                     success: false,
                     content: "Web search requires TAVILY_API_KEY.\n\
                               Get a free key at https://tavily.com (1000 searches/month)\n\
-                              Then: export TAVILY_API_KEY='tvly-...'".into(),
+                              Then: export TAVILY_API_KEY='tvly-...'"
+                        .into(),
                     error: Some("TAVILY_API_KEY not set".into()),
                 };
             }

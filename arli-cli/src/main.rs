@@ -332,7 +332,7 @@ fn run_setup() -> anyhow::Result<()> {
 
     if !telegram_token.is_empty() {
         let gateway_config = format!(
-            "\n[gateway]\nbot_token = \"{}\"\n",
+            "\n[gateway]\ntelegram_token = \"{}\"\n",
             telegram_token
         );
         std::fs::write(&config_path,

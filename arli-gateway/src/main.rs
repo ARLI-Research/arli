@@ -60,7 +60,11 @@ fn resolve_token(env_var: &str, config_key: &str) -> Option<String> {
         if config_path.exists() {
             std::fs::read_to_string(&config_path).ok().and_then(|s| {
                 toml::from_str::<toml::Value>(&s).ok().and_then(|v| {
-                    v.get("gateway")?.get(config_key)?.as_str().map(String::from)
+                    let gateway = v.get("gateway")?;
+                    // Try the canonical key first, then legacy bot_token
+                    gateway.get(config_key)
+                        .or_else(|| gateway.get("bot_token"))
+                        .and_then(|val| val.as_str().map(String::from))
                 })
             })
         } else {

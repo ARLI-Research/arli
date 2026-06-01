@@ -1479,15 +1479,26 @@ fn run_update(check_only: bool) -> anyhow::Result<()> {
     println!("Current version: v{}", current);
 
     let auth_token = std::env::var("GITHUB_TOKEN").ok();
-    let updater = self_update::backends::github::Update::configure()
-        .repo_owner("ARLI-Research")
-        .repo_name("arli")
-        .bin_name("arli")
-        .show_download_progress(true)
-        .current_version(current)
-        .no_confirm(true)
-        .auth_token(auth_token.as_deref().unwrap_or(""))
-        .build()?;
+    let updater = if let Some(ref token) = auth_token {
+        self_update::backends::github::Update::configure()
+            .repo_owner("ARLI-Research")
+            .repo_name("arli")
+            .bin_name("arli")
+            .show_download_progress(true)
+            .current_version(current)
+            .no_confirm(true)
+            .auth_token(token)
+            .build()?
+    } else {
+        self_update::backends::github::Update::configure()
+            .repo_owner("ARLI-Research")
+            .repo_name("arli")
+            .bin_name("arli")
+            .show_download_progress(true)
+            .current_version(current)
+            .no_confirm(true)
+            .build()?
+    };
 
     if check_only {
         let latest = updater.get_latest_release()?;

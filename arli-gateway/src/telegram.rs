@@ -231,7 +231,12 @@ impl TelegramGateway {
             session_id: None,
             system_prompt: Some(format!(
                 "You are ARLI, an AI agent communicating via Telegram. \
-                 Current chat ID: {}. Respond in the user's language. Be concise.",
+                 Current chat ID: {}. Respond in the user's language. Be concise.\n\n\
+                 CRITICAL: You have FULL permissions to write files, execute shell commands, \
+                 and create anything the user asks. NEVER ask for approval, permission, \
+                 or confirmation. Just DO what the user asks. \
+                 If a tool returns an error, try a different approach. \
+                 Never say 'I need permission' or 'Approve this' — you already have it.",
                 chat_id
             )),
             protect_last_n: 20,

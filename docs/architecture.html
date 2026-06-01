@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ARLI Architecture</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      background: #020617;
+      min-height: 100vh; padding: 2rem; color: white;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .header { margin-bottom: 2rem; }
+    .header-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; }
+    .pulse-dot { width: 12px; height: 12px; background: #22d3ee; border-radius: 50%; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.025em; }
+    .subtitle { color: #94a3b8; font-size: 0.875rem; margin-left: 1.75rem; }
+    .diagram-container {
+      background: rgba(15, 23, 42, 0.5); border-radius: 1rem;
+      border: 1px solid #1e293b; padding: 1.5rem; overflow-x: auto;
+    }
+    svg { width: 100%; min-width: 1000px; display: block; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-top: 2rem; }
+    .card { background: rgba(15, 23, 42, 0.5); border-radius: 0.75rem; border: 1px solid #1e293b; padding: 1.25rem; }
+    .card-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
+    .card-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .card-dot.cyan { background: #22d3ee; } .card-dot.emerald { background: #34d399; } .card-dot.violet { background: #a78bfa; }
+    .card h3 { font-size: 0.875rem; font-weight: 600; }
+    .card ul { list-style: none; color: #94a3b8; font-size: 0.75rem; }
+    .card li { margin-bottom: 0.375rem; }
+    .footer { text-align: center; margin-top: 1.5rem; color: #475569; font-size: 0.75rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="header-row">
+        <div class="pulse-dot"></div>
+        <h1>ARLI Agent Harness Architecture</h1>
+      </div>
+      <p class="subtitle">Actor-based agent runtime · 36 LLM providers · 20 messaging platforms · 15 tools</p>
+    </div>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 1100 820">
+        <defs>
+          <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#64748b" />
+          </marker>
+          <marker id="arrow-cyan" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#22d3ee" />
+          </marker>
+          <marker id="arrow-emerald" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#34d399" />
+          </marker>
+          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#grid)" />
+
+        <!-- ── Row 0: External ── -->
+        <rect x="30" y="25" width="1040" height="75" rx="10" fill="transparent" stroke="#94a3b8" stroke-width="1" stroke-dasharray="6,3"/>
+        <text x="50" y="42" fill="#94a3b8" font-size="9" font-weight="600">EXTERNAL — 20 Messaging Platforms &amp; Webhooks</text>
+        <text x="70" y="58" fill="#64748b" font-size="8">Telegram</text>
+        <text x="160" y="58" fill="#64748b" font-size="8">Discord</text>
+        <text x="230" y="58" fill="#64748b" font-size="8">Slack</text>
+        <text x="290" y="58" fill="#64748b" font-size="8">WhatsApp</text>
+        <text x="390" y="58" fill="#64748b" font-size="8">Matrix</text>
+        <text x="460" y="58" fill="#64748b" font-size="8">Teams</text>
+        <text x="530" y="58" fill="#64748b" font-size="8">Email</text>
+        <text x="590" y="58" fill="#64748b" font-size="8">Signal</text>
+        <text x="660" y="58" fill="#64748b" font-size="8">LINE</text>
+        <text x="720" y="58" fill="#64748b" font-size="8">Feishu</text>
+        <text x="790" y="58" fill="#64748b" font-size="8">WeCom</text>
+        <text x="860" y="58" fill="#64748b" font-size="8">QQ</text>
+        <text x="910" y="58" fill="#64748b" font-size="8">+8 more</text>
+        <text x="70" y="73" fill="#64748b" font-size="8">SMS · Google Chat · DingTalk · IRC · ntfy · SimpleX · Yuanbao · BlueBubbles/iMessage</text>
+
+        <!-- ── Row 1: Gateway Layer ── -->
+        <rect x="30" y="115" width="1040" height="60" rx="8" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="550" y="140" fill="white" font-size="13" font-weight="600" text-anchor="middle">arli-gateway · Multi-Platform Daemon</text>
+        <text x="550" y="160" fill="#94a3b8" font-size="9" text-anchor="middle">systemd service · auto-restart · per-chat agent sessions · 20 adapters</text>
+
+        <!-- Arrows: External → Gateway -->
+        <line x1="200" y1="100" x2="200" y2="113" stroke="#22d3ee" stroke-width="1" marker-end="url(#arrow-cyan)"/>
+        <line x1="400" y1="100" x2="400" y2="113" stroke="#22d3ee" stroke-width="1" marker-end="url(#arrow-cyan)"/>
+        <line x1="600" y1="100" x2="600" y2="113" stroke="#22d3ee" stroke-width="1" marker-end="url(#arrow-cyan)"/>
+        <line x1="800" y1="100" x2="800" y2="113" stroke="#22d3ee" stroke-width="1" marker-end="url(#arrow-cyan)"/>
+
+        <!-- ── Row 2: Agent Core ── -->
+        <rect x="30" y="195" width="320" height="130" rx="8" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="190" y="220" fill="white" font-size="12" font-weight="600" text-anchor="middle">Agent Actor</text>
+        <text x="190" y="240" fill="#94a3b8" font-size="8" text-anchor="middle">Mailbox-driven loop</text>
+        <text x="190" y="255" fill="#94a3b8" font-size="8" text-anchor="middle">Context pressure detection</text>
+        <text x="190" y="270" fill="#94a3b8" font-size="8" text-anchor="middle">Auto-compaction (LLM summarization)</text>
+        <text x="190" y="285" fill="#94a3b8" font-size="8" text-anchor="middle">Streaming · Budget tracking</text>
+        <text x="190" y="305" fill="#94a3b8" font-size="8" text-anchor="middle">Policy engine · Hooks system</text>
+
+        <!-- Swarm -->
+        <rect x="375" y="195" width="200" height="60" rx="8" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="475" y="218" fill="white" font-size="11" font-weight="600" text-anchor="middle">Swarm Orchestrator</text>
+        <text x="475" y="238" fill="#94a3b8" font-size="8" text-anchor="middle">spawn · steer · kill · redirect</text>
+
+        <!-- Cron -->
+        <rect x="375" y="265" width="200" height="60" rx="8" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="475" y="288" fill="white" font-size="11" font-weight="600" text-anchor="middle">Cron Scheduler</text>
+        <text x="475" y="308" fill="#94a3b8" font-size="8" text-anchor="middle">cron expressions · skill attachments</text>
+
+        <!-- Skills -->
+        <rect x="600" y="195" width="200" height="130" rx="8" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="700" y="218" fill="white" font-size="11" font-weight="600" text-anchor="middle">Skills &amp; Plugins</text>
+        <text x="700" y="240" fill="#94a3b8" font-size="8" text-anchor="middle">SKILL.md from disk</text>
+        <text x="700" y="255" fill="#94a3b8" font-size="8" text-anchor="middle">YAML frontmatter</text>
+        <text x="700" y="270" fill="#94a3b8" font-size="8" text-anchor="middle">Plugin discovery</text>
+        <text x="700" y="285" fill="#94a3b8" font-size="8" text-anchor="middle">MCP server on stdio</text>
+        <text x="700" y="305" fill="#34d399" font-size="7" text-anchor="middle">Profile manager</text>
+
+        <!-- MCP / Profiles -->
+        <rect x="825" y="195" width="245" height="130" rx="8" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="947" y="218" fill="white" font-size="11" font-weight="600" text-anchor="middle">Checkpoints &amp; Webhooks</text>
+        <text x="947" y="240" fill="#94a3b8" font-size="8" text-anchor="middle">Session snapshots</text>
+        <text x="947" y="255" fill="#94a3b8" font-size="8" text-anchor="middle">Rollback support</text>
+        <text x="947" y="270" fill="#94a3b8" font-size="8" text-anchor="middle">Webhook subscriptions</text>
+        <text x="947" y="285" fill="#94a3b8" font-size="8" text-anchor="middle">HTTP trigger → Agent</text>
+        <text x="947" y="305" fill="#34d399" font-size="7" text-anchor="middle">Health check server :3001</text>
+
+        <!-- Gateway → Core arrows -->
+        <line x1="300" y1="175" x2="300" y2="193" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrow-emerald)"/>
+        <line x1="550" y1="175" x2="550" y2="193" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrow-emerald)"/>
+
+        <!-- ── Row 3: Tools ── -->
+        <rect x="30" y="345" width="1040" height="105" rx="8" fill="rgba(76, 29, 149, 0.25)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="50" y="365" fill="white" font-size="11" font-weight="600">TOOLS — 15 Built-in</text>
+
+        <rect x="50" y="378" width="130" height="40" rx="5" fill="rgba(76, 29, 149, 0.3)" stroke="#a78bfa" stroke-width="1"/>
+        <text x="115" y="400" fill="white" font-size="9" font-weight="600" text-anchor="middle">terminal</text>
+
+        <rect x="190" y="378" width="130" height="40" rx="5" fill="rgba(76, 29, 149, 0.3)" stroke="#a78bfa" stroke-width="1"/>
+        <text x="255" y="400" fill="white" font-size="9" font-weight="600" text-anchor="middle">read_file / write</text>
+
+        <rect x="330" y="378" width="100" height="40" rx="5" fill="rgba(76, 29, 149, 0.3)" stroke="#a78bfa" stroke-width="1"/>
+        <text x="380" y="400" fill="white" font-size="9" font-weight="600" text-anchor="middle">patch / search</text>
+
+        <rect x="440" y="378" width="100" height="40" rx="5" fill="rgba(76, 29, 149, 0.3)" stroke="#a78bfa" stroke-width="1"/>
+        <text x="490" y="400" fill="white" font-size="9" font-weight="600" text-anchor="middle">browser / web</text>
+
+        <rect x="550" y="378" width="100" height="40" rx="5" fill="rgba(76, 29, 149, 0.3)" stroke="#a78bfa" stroke-width="1"/>
+        <text x="600" y="400" fill="white" font-size="9" font-weight="600" text-anchor="middle">vision / voice</text>
+
+        <rect x="660" y="378" width="120" height="40" rx="5" fill="rgba(76, 29, 149, 0.3)" stroke="#a78bfa" stroke-width="1"/>
+        <text x="720" y="400" fill="white" font-size="9" font-weight="600" text-anchor="middle">image_generate</text>
+
+        <rect x="790" y="378" width="120" height="40" rx="5" fill="rgba(76, 29, 149, 0.3)" stroke="#a78bfa" stroke-width="1"/>
+        <text x="850" y="400" fill="white" font-size="9" font-weight="600" text-anchor="middle">video_generate</text>
+
+        <rect x="920" y="378" width="135" height="40" rx="5" fill="rgba(76, 29, 149, 0.3)" stroke="#a78bfa" stroke-width="1"/>
+        <text x="987" y="392" fill="white" font-size="8" font-weight="600" text-anchor="middle">memory · delegate</text>
+        <text x="987" y="406" fill="white" font-size="8" font-weight="600" text-anchor="middle">execute_code · process</text>
+
+        <!-- Core → Tools arrows -->
+        <line x1="300" y1="325" x2="300" y2="343" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <line x1="550" y1="325" x2="550" y2="343" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <line x1="800" y1="325" x2="800" y2="343" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+        <!-- ── Row 4: Providers ── -->
+        <rect x="30" y="470" width="490" height="95" rx="8" fill="rgba(251, 191, 36, 0.12)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="50" y="490" fill="white" font-size="11" font-weight="600">PROVIDERS — 36 LLM Adapters</text>
+        <text x="50" y="510" fill="#94a3b8" font-size="8">OpenAI · DeepSeek · Anthropic · OpenRouter · Google · xAI · Copilot</text>
+        <text x="50" y="525" fill="#94a3b8" font-size="8">Nous · Novita · Qwen · MiMo · Tencent · NVIDIA · HuggingFace · GLM · Kimi · StepFun</text>
+        <text x="50" y="540" fill="#94a3b8" font-size="8">MiniMax · LM Studio · Ollama · Bedrock · Azure · Arcee · GMI · Kilo · OpenCode · Alibaba</text>
+        <text x="50" y="555" fill="#fbbf24" font-size="7">3 adapter traits: OpenAI-compatible · Anthropic (native prompt caching) · OpenRouter</text>
+
+        <!-- Tools → Providers arrows -->
+        <line x1="275" y1="450" x2="275" y2="468" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+        <!-- ── Row 4b: Storage ── -->
+        <rect x="545" y="470" width="230" height="95" rx="8" fill="rgba(76, 29, 149, 0.4)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="565" y="490" fill="white" font-size="11" font-weight="600">STORAGE</text>
+        <text x="565" y="510" fill="#94a3b8" font-size="8">SQLite + WAL + FTS5</text>
+        <text x="565" y="525" fill="#94a3b8" font-size="8">Session Store</text>
+        <text x="565" y="540" fill="#94a3b8" font-size="8">Memory Store (12 backends)</text>
+        <text x="565" y="555" fill="#a78bfa" font-size="7">builtin · mem0 · chroma · qdrant · +8</text>
+
+        <!-- ── Row 4c: Trading ── -->
+        <rect x="800" y="470" width="270" height="95" rx="8" fill="rgba(251, 146, 60, 0.15)" stroke="#fb923c" stroke-width="1.5"/>
+        <text x="820" y="490" fill="white" font-size="11" font-weight="600">TRADING (WIP)</text>
+        <text x="820" y="510" fill="#94a3b8" font-size="8">Hyperliquid SDK (hypersdk)</text>
+        <text x="820" y="525" fill="#94a3b8" font-size="8">Perpetual futures · Spot</text>
+        <text x="820" y="540" fill="#94a3b8" font-size="8">WebSocket live data</text>
+        <text x="820" y="555" fill="#fb923c" font-size="7">arli-trading crate</text>
+
+        <!-- Storage/Trading arrows -->
+        <line x1="660" y1="450" x2="660" y2="468" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <line x1="935" y1="450" x2="935" y2="468" stroke="#fb923c" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+        <!-- ── Row 5: Deployment ── -->
+        <rect x="30" y="590" width="1040" height="55" rx="8" fill="rgba(120, 53, 15, 0.15)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="550" y="612" fill="white" font-size="11" font-weight="600" text-anchor="middle">DEPLOYMENT — ~20MB binary · ~50ms cold start · Linux + macOS · Self-updating (arli update)</text>
+        <text x="550" y="632" fill="#94a3b8" font-size="8" text-anchor="middle">Terminal backends: local · Docker · SSH · Modal · Daytona · Singularity</text>
+
+        <!-- Providers/Storage → Deployment -->
+        <line x1="275" y1="565" x2="275" y2="588" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <line x1="660" y1="565" x2="660" y2="588" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <line x1="935" y1="565" x2="935" y2="588" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+        <!-- ── Legend ── -->
+        <text x="30" y="680" fill="white" font-size="9" font-weight="600">LEGEND</text>
+        <rect x="30" y="690" width="16" height="10" rx="2" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1"/><text x="52" y="699" fill="#94a3b8" font-size="7">Gateway</text>
+        <rect x="130" y="690" width="16" height="10" rx="2" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1"/><text x="152" y="699" fill="#94a3b8" font-size="7">Core / Agent</text>
+        <rect x="260" y="690" width="16" height="10" rx="2" fill="rgba(76, 29, 149, 0.25)" stroke="#a78bfa" stroke-width="1"/><text x="282" y="699" fill="#94a3b8" font-size="7">Tools / Storage</text>
+        <rect x="400" y="690" width="16" height="10" rx="2" fill="rgba(251, 191, 36, 0.12)" stroke="#fbbf24" stroke-width="1"/><text x="422" y="699" fill="#94a3b8" font-size="7">Providers / Deployment</text>
+        <rect x="560" y="690" width="16" height="10" rx="2" fill="rgba(251, 146, 60, 0.15)" stroke="#fb923c" stroke-width="1"/><text x="582" y="699" fill="#94a3b8" font-size="7">Trading</text>
+        <rect x="680" y="690" width="16" height="10" rx="2" fill="transparent" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,3"/><text x="702" y="699" fill="#94a3b8" font-size="7">External boundary</text>
+      </svg>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <div class="card-header"><div class="card-dot cyan"></div><h3>Runtime</h3></div>
+        <ul>
+          <li>• ~20MB binary, ~50ms cold start</li>
+          <li>• Zero runtime dependencies</li>
+          <li>• Actor-based agent loop</li>
+          <li>• Linux namespace sandbox</li>
+          <li>• Self-updating (arli update)</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-dot emerald"></div><h3>Connectivity</h3></div>
+        <ul>
+          <li>• 36 LLM providers, 3 adapter traits</li>
+          <li>• 20 messaging platforms</li>
+          <li>• 15 built-in tools</li>
+          <li>• MCP server on stdio</li>
+          <li>• Webhook subscriptions</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-dot violet"></div><h3>Operations</h3></div>
+        <ul>
+          <li>• Cron scheduler with skill attachments</li>
+          <li>• Session checkpoints &amp; rollback</li>
+          <li>• 12 memory backends</li>
+          <li>• 6 terminal backends</li>
+          <li>• Policy engine with rate limits</li>
+        </ul>
+      </div>
+    </div>
+
+    <p class="footer">ARLI · Rust-native agent harness · github.com/ARLI-Research/arli</p>
+  </div>
+</body>
+</html>

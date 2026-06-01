@@ -25,5 +25,5 @@ crossterm = "0.28"
 rpassword = "7"
 toml.workspace = true
 clap_complete.workspace = true
-self_update = "0.41"
+self_update = { version = "0.41", features = ["archive-tar", "archive-zip"] }
 libc.workspace = true

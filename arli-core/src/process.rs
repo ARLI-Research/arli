@@ -158,9 +158,8 @@ impl ProcessManager {
                     let guard = processes.lock().unwrap();
                     // Can't move out of Mutex — we'll poll instead
                     drop(guard);
-                    // Actually, we need to restructure. Let's use the stored child.
-                    return; // FIXME: proper wait
-                };
+                    // Actually, we need to restructure. Let's use the stored child.// FIXME: proper wait
+                }
             });
         }
 

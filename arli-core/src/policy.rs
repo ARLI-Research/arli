@@ -259,7 +259,7 @@ impl PolicyEngine {
     pub fn add_rule(&mut self, rule: PolicyRule) {
         self.rules.push(rule);
         // Sort by priority descending
-        self.rules.sort_by(|a, b| b.priority.cmp(&a.priority));
+        self.rules.sort_by_key(|b| std::cmp::Reverse(b.priority));
     }
 
     /// Set trading limits for a specific agent profile.

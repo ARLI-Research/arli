@@ -19,7 +19,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{info, warn, error};
@@ -106,7 +106,7 @@ struct WaState {
 impl WaState {
     async fn get_or_create_agent(
         agents: &Mutex<HashMap<String, tokio::sync::mpsc::Sender<AgentMessage>>>,
-        data_dir: &PathBuf,
+        data_dir: &Path,
         provider_api_key: &str,
         provider_base_url: &Option<String>,
         model: &str,

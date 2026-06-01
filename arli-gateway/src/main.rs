@@ -111,6 +111,7 @@ fn daemonize(pid_file: &str, log_file: &str) -> anyhow::Result<()> {
     }
 
     // Change working directory to root
+    #[allow(clippy::manual_c_str_literals)]
     unsafe { libc::chdir(b"/\0".as_ptr() as *const _) };
 
     // Set file creation mask

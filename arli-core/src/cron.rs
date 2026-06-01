@@ -66,6 +66,15 @@ impl CronScheduler {
             tx,
         }
     }
+}
+
+impl Default for CronScheduler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CronScheduler {
 
     /// Subscribe to cron events (JobRunning, JobCompleted, JobFailed).
     pub fn subscribe(&self) -> broadcast::Receiver<CronEvent> {
@@ -274,12 +283,12 @@ fn parse_schedule(spec: &str) -> Result<Schedule> {
 
 fn parse_interval(s: &str) -> Option<u64> {
     let s = s.trim();
-    if s.ends_with('s') {
-        s[..s.len() - 1].parse().ok()
-    } else if s.ends_with('m') {
-        s[..s.len() - 1].parse::<u64>().ok().map(|v| v * 60)
-    } else if s.ends_with('h') {
-        s[..s.len() - 1].parse::<u64>().ok().map(|v| v * 3600)
+    if let Some(secs) = s.strip_suffix('s') {
+        secs.parse().ok()
+    } else if let Some(mins) = s.strip_suffix('m') {
+        mins.parse::<u64>().ok().map(|v| v * 60)
+    } else if let Some(hrs) = s.strip_suffix('h') {
+        hrs.parse::<u64>().ok().map(|v| v * 3600)
     } else {
         s.parse().ok()
     }

@@ -119,8 +119,8 @@ impl Compactor {
         // Keep tail messages
         let total = messages.len();
         let tail_start = total.saturating_sub(self.protect_last_n);
-        for i in tail_start..total {
-            new_messages.push(messages[i].clone());
+        for msg in messages.iter().skip(tail_start) {
+            new_messages.push(msg.clone());
         }
 
         let tokens_after = provider.count_message_tokens(&new_messages);

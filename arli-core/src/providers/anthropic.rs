@@ -24,11 +24,7 @@ pub struct AnthropicProvider {
 
 impl AnthropicProvider {
     pub fn new(api_key: String, model: String) -> Self {
-        let context_window = if model.contains("sonnet") || model.contains("haiku") {
-            200_000
-        } else {
-            200_000 // Claude 3+ defaults
-        };
+        let context_window = 200_000; // all Claude 3+ models
 
         Self {
             api_key,

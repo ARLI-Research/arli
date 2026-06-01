@@ -278,6 +278,34 @@ fn run_setup() -> anyhow::Result<()> {
     println!("  6) xAI (Grok — direct API)");
     println!("  7) GitHub Copilot (uses GITHUB_TOKEN or gh auth)");
     println!("  8) Custom endpoint (enter URL manually)");
+    println!("  9) LM Studio (local — http://localhost:1234/v1)");
+    println!(" 10) Ollama (local — http://localhost:11434/v1)");
+    println!(" 11) HuggingFace (Inference API)");
+    println!(" 12) AWS Bedrock (requires LiteLLM proxy)");
+    println!(" 13) Azure Foundry (OpenAI-compatible)");
+    println!(" 14) OpenAI Codex (CLI agent)");
+    println!(" 15) Nous Portal (Hermes-3 — nousresearch.com)");
+    println!(" 16) NovitaAI (Llama 3.1 70B — novita.ai)");
+    println!(" 17) Qwen Cloud / DashScope (Qwen-Max)");
+    println!(" 18) xAI Grok OAuth (uses XAI_OAUTH_TOKEN)");
+    println!(" 19) Xiaomi MiMo (MiMo v2.5 Pro)");
+    println!(" 20) Tencent TokenHub (HY3 Preview)");
+    println!(" 21) NVIDIA NIM (Nemotron-4)");
+    println!(" 22) GitHub Copilot ACP (same as Copilot, ACP mode)");
+    println!(" 23) Google Gemini OAuth (uses GOOGLE_OAUTH_TOKEN)");
+    println!(" 24) Z.AI / GLM (GLM-4 — bigmodel.cn)");
+    println!(" 25) Kimi / Moonshot (moonshot-v1-128k)");
+    println!(" 26) StepFun (Step-2-16K)");
+    println!(" 27) MiniMax Global (abab7 — minimax.chat)");
+    println!(" 28) MiniMax via OAuth (uses MINIMAX_OAUTH_TOKEN)");
+    println!(" 29) MiniMax China (abab7 — minimaxi.com)");
+    println!(" 30) Arcee AI (Trinity)");
+    println!(" 31) GMI Cloud (gmi-model)");
+    println!(" 32) Kilo Code (kilo-model)");
+    println!(" 33) OpenCode Zen (opencode-model)");
+    println!(" 34) OpenCode Go (opencode-model)");
+    println!(" 35) Alibaba Cloud Coding Plan (Qwen-Coder)");
+    println!(" 36) Qwen OAuth (uses QWEN_OAUTH_TOKEN)");
     print!("> ");
     io::stdout().flush()?;
 
@@ -292,6 +320,34 @@ fn run_setup() -> anyhow::Result<()> {
         "5" => ("google", "GOOGLE_API_KEY", "gemini-2.5-flash", None),
         "6" => ("xai", "XAI_API_KEY", "grok-4", None),
         "7" => ("copilot", "GITHUB_TOKEN", "gpt-4o", None),
+        "9" => ("lmstudio", "LM_STUDIO_API_KEY", "local-model", Some("http://localhost:1234/v1")),
+        "10" => ("ollama", "OLLAMA_API_KEY", "llama3", Some("http://localhost:11434/v1")),
+        "11" => ("huggingface", "HF_API_KEY", "meta-llama/Meta-Llama-3-70B-Instruct", None),
+        "12" => ("bedrock", "AWS_ACCESS_KEY_ID", "us.anthropic.claude-sonnet-4-20250514-v1:0", None),
+        "13" => ("azure", "AZURE_API_KEY", "gpt-4o", None),
+        "14" => ("codex", "OPENAI_CODEX_API_KEY", "gpt-4o", None),
+        "15" => ("nous", "NOUS_API_KEY", "hermes-3", None),
+        "16" => ("novita", "NOVITA_API_KEY", "novita-llama-3.1-70b", None),
+        "17" => ("qwen", "DASHSCOPE_API_KEY", "qwen-max", None),
+        "18" => ("xai", "XAI_OAUTH_TOKEN", "grok-4", None),
+        "19" => ("mimo", "MIMO_API_KEY", "mimo-v2.5-pro", None),
+        "20" => ("tencent", "TENCENT_API_KEY", "hy3-preview", None),
+        "21" => ("nvidia", "NVIDIA_API_KEY", "nemotron-4-340b", None),
+        "22" => ("copilot", "GITHUB_TOKEN", "gpt-4o", None),
+        "23" => ("google", "GOOGLE_OAUTH_TOKEN", "gemini-2.5-flash", None),
+        "24" => ("zhipu", "ZHIPU_API_KEY", "glm-4", None),
+        "25" => ("moonshot", "MOONSHOT_API_KEY", "moonshot-v1-128k", None),
+        "26" => ("stepfun", "STEPFUN_API_KEY", "step-2-16k", None),
+        "27" => ("minimax", "MINIMAX_API_KEY", "abab7", None),
+        "28" => ("minimax", "MINIMAX_OAUTH_TOKEN", "abab7", None),
+        "29" => ("minimax_cn", "MINIMAX_CN_API_KEY", "abab7", None),
+        "30" => ("arcee", "ARCEE_API_KEY", "trinity", None),
+        "31" => ("gmi", "GMI_API_KEY", "gmi-model", None),
+        "32" => ("kilo", "KILO_API_KEY", "kilo-model", None),
+        "33" => ("opencode", "OPENCODE_API_KEY", "opencode-model", None),
+        "34" => ("opencode_go", "OPENCODE_GO_API_KEY", "opencode-model", None),
+        "35" => ("alibaba_cloud", "ALIBABA_CLOUD_API_KEY", "qwen-coder", None),
+        "36" => ("qwen", "QWEN_OAUTH_TOKEN", "qwen-max", None),
         "8" => {
             print!("\nProvider name (e.g. 'my-provider'): ");
             io::stdout().flush()?;
@@ -311,7 +367,7 @@ fn run_setup() -> anyhow::Result<()> {
             io::stdin().read_line(&mut model)?;
 
             let (name, url, model) = (name, url, model.trim().to_string());
-            // We need to return these — restructure
+
             print!("\nAPI key (input hidden): ");
             io::stdout().flush()?;
             let api_key = rpassword::read_password()?;
@@ -319,13 +375,38 @@ fn run_setup() -> anyhow::Result<()> {
                 anyhow::bail!("API key is required");
             }
 
+            // ── Max iterations, tool progress, compression ──
+            print!("Max tool-calling iterations [90]: ");
+            io::stdout().flush()?;
+            let mut iters = String::new();
+            io::stdin().read_line(&mut iters)?;
+            let max_iterations: usize = iters.trim().parse().unwrap_or(90);
+
+            println!("Tool progress mode:");
+            println!("  off     — Silent, just the final response");
+            println!("  new     — Show tool name only when it changes (less noise)");
+            println!("  all     — Show every tool call with a short preview");
+            println!("  verbose — Full args, results, and debug logs");
+            print!("Tool progress mode (off/new/all/verbose) [all]: ");
+            io::stdout().flush()?;
+            let mut tp = String::new();
+            io::stdin().read_line(&mut tp)?;
+            let tool_progress = if tp.trim().is_empty() { "all".to_string() } else { tp.trim().to_string() };
+
+            print!("Compression threshold (0.5-0.95) [0.5]: ");
+            io::stdout().flush()?;
+            let mut ct = String::new();
+            io::stdin().read_line(&mut ct)?;
+            let compression_threshold: f32 = ct.trim().parse().unwrap_or(0.5);
+
             let data_dir = get_data_dir();
             let config_path = data_dir.join("config.toml");
             let config_content = format!(
                 "# ARLI Configuration\n# Generated by `arli setup`\n\n\
-                 model = \"{}\"\nmax_iterations = {}\n\n\
-                 [provider]\nname = \"{}\"\napi_key = \"{}\"\nbase_url = \"{}\"\n",
-                model, 20, name, api_key, url
+                 model = \"{}\"\nmax_iterations = {}\ntool_progress = \"{}\"\ncompression_threshold = {}\n\n\
+                 [provider]\nname = \"{}\"\napi_key = \"{}\"\nbase_url = \"{}\"\n\
+                 \n[session_reset]\nmode = \"inactivity_daily\"\ninactivity_minutes = 1440\ndaily_reset_hour = 4\n",
+                model, max_iterations, tool_progress, compression_threshold, name, api_key, url
             );
             std::fs::write(&config_path, config_content)?;
             run_setup_finish(&name, &model, &api_key, None)?;
@@ -351,28 +432,224 @@ fn run_setup() -> anyhow::Result<()> {
     let model = if model.trim().is_empty() { default_model.to_string() } else { model.trim().to_string() };
 
     // ── 4. Max iterations ──
-    print!("Max tool-calling iterations [20]: ");
+    print!("Max tool-calling iterations [90]: ");
     io::stdout().flush()?;
     let mut iters = String::new();
     io::stdin().read_line(&mut iters)?;
-    let max_iterations: usize = iters.trim().parse().unwrap_or(20);
+    let max_iterations: usize = iters.trim().parse().unwrap_or(90);
 
-    // ── 5. Write config ──
+    // ── 5. Tool progress mode ──
+    println!("Tool progress mode:");
+    println!("  off     — Silent, just the final response");
+    println!("  new     — Show tool name only when it changes (less noise)");
+    println!("  all     — Show every tool call with a short preview");
+    println!("  verbose — Full args, results, and debug logs");
+    print!("Tool progress mode (off/new/all/verbose) [all]: ");
+    io::stdout().flush()?;
+    let mut tool_progress = String::new();
+    io::stdin().read_line(&mut tool_progress)?;
+    let tool_progress = if tool_progress.trim().is_empty() {
+        "all".to_string()
+    } else {
+        tool_progress.trim().to_string()
+    };
+
+    // ── 6. Compression threshold ──
+    print!("Compression threshold (0.5-0.95) [0.5]: ");
+    io::stdout().flush()?;
+    let mut comp_thresh = String::new();
+    io::stdin().read_line(&mut comp_thresh)?;
+    let compression_threshold: f32 = comp_thresh.trim().parse().unwrap_or(0.5);
+
+    // ── 7. Session reset policy ──
+    println!();
+    println!("Session reset policy (controls when agent auto-resets its session):");
+    println!("  1) inactivity_daily — reset on inactivity OR at daily hour (recommended)");
+    println!("  2) inactivity — reset after N minutes of no messages");
+    println!("  3) daily — reset at a fixed hour each day");
+    println!("  4) never — never auto-reset");
+    print!("Choose [1]: ");
+    io::stdout().flush()?;
+    let mut reset_choice = String::new();
+    io::stdin().read_line(&mut reset_choice)?;
+    let reset_mode = match reset_choice.trim() {
+        "2" => "inactivity",
+        "3" => "daily",
+        "4" => "never",
+        _ => "inactivity_daily",
+    };
+
+    let mut inactivity_minutes: u32 = 1440;
+    let mut daily_reset_hour: u8 = 4;
+
+    if reset_mode == "inactivity" || reset_mode == "inactivity_daily" {
+        print!("Inactivity timeout in minutes [1440]: ");
+        io::stdout().flush()?;
+        let mut mins = String::new();
+        io::stdin().read_line(&mut mins)?;
+        inactivity_minutes = mins.trim().parse().unwrap_or(1440);
+    }
+
+    if reset_mode == "daily" || reset_mode == "inactivity_daily" {
+        print!("Daily reset hour (0-23) [4]: ");
+        io::stdout().flush()?;
+        let mut hour = String::new();
+        io::stdin().read_line(&mut hour)?;
+        daily_reset_hour = hour.trim().parse().unwrap_or(4).min(23);
+    }
+
+    let session_reset_section = format!(
+        "\n[session_reset]\nmode = \"{}\"\ninactivity_minutes = {}\ndaily_reset_hour = {}\n",
+        reset_mode, inactivity_minutes, daily_reset_hour
+    );
+
+    // ── 8. Search provider ──
+    println!();
+    println!("Search provider:");
+    println!("  1) duckduckgo — Free, no API key needed (default)");
+    println!("  2) brave      — Free tier API key, 2k queries/mo");
+    println!("  3) searxng    — Self-hosted, privacy-respecting metasearch");
+    println!("  4) tavily     — Paid, search + extract in one");
+    println!("  5) firecrawl  — Paid, full search + content extraction");
+    println!("  6) exa        — Semantic + neural web search");
+    println!("  7) parallel   — Objective-tuned search + parallel extraction");
+    println!("  8) xai        — Agentic web search via Grok (needs XAI_API_KEY)");
+    print!("Search provider [duckduckgo]: ");
+    io::stdout().flush()?;
+    let mut sr_choice = String::new();
+    io::stdin().read_line(&mut sr_choice)?;
+    let search_provider = match sr_choice.trim() {
+        "2" => "brave",
+        "3" => "searxng",
+        "4" => "tavily",
+        "5" => "firecrawl",
+        "6" => "exa",
+        "7" => "parallel",
+        "8" => "xai",
+        _ => "duckduckgo",
+    };
+
+    let search_section = if search_provider == "duckduckgo" {
+        String::new()
+    } else {
+        format!("\n[search]\nprovider = \"{}\"\n", search_provider)
+    };
+
+    // ── 9. Memory provider ──
+    println!();
+    println!("Memory provider:");
+    println!("  1)  builtin     — SQLite local store (default, no config needed)");
+    println!("  2)  mem0        — Cloud-hosted memory API (mem0.ai)");
+    println!("  3)  chroma      — Local ChromaDB vector database");
+    println!("  4)  qdrant      — Local/cloud Qdrant vector database");
+    println!("  5)  byterover   — Cloud-hosted memory (bytabox.ai, needs API key)");
+    println!("  6)  hindsight   — Local/cloud memory store");
+    println!("  7)  holographic — Local holographic memory store");
+    println!("  8)  honcho      — Local/cloud memory for AI agents");
+    println!("  9)  openviking  — API key / local memory store");
+    println!("  10) retaindb    — API key / local vector memory");
+    println!("  11) supermemory — Cloud memory API (supermemory.ai, needs API key)");
+    println!("  12) agentmemory — API key / local memory for agents");
+    print!("Memory provider [builtin]: ");
+    io::stdout().flush()?;
+    let mut mem_choice = String::new();
+    io::stdin().read_line(&mut mem_choice)?;
+    let memory_provider = match mem_choice.trim() {
+        "2" => "mem0",
+        "3" => "chroma",
+        "4" => "qdrant",
+        "5" => "byterover",
+        "6" => "hindsight",
+        "7" => "holographic",
+        "8" => "honcho",
+        "9" => "openviking",
+        "10" => "retaindb",
+        "11" => "supermemory",
+        "12" => "agentmemory",
+        _ => "builtin",
+    };
+
+    let memory_section = if memory_provider == "builtin" {
+        String::new()
+    } else {
+        format!("\n[memory]\nprovider = \"{}\"\n", memory_provider)
+    };
+
+    // ── 9. Terminal backend ──
+    println!();
+    println!("Terminal backend (for tool execution):");
+    println!("  local       — Run commands directly on this machine (default)");
+    println!("  docker      — Run commands in a Docker container");
+    println!("  ssh         — Run commands on a remote host via SSH");
+    println!("  modal       — Run commands on Modal cloud GPUs");
+    println!("  daytona     — Persistent cloud development environment");
+    println!("  singularity — HPC-friendly container (Apptainer)");
+    print!("Terminal backend [local]: ");
+    io::stdout().flush()?;
+    let mut tb_choice = String::new();
+    io::stdin().read_line(&mut tb_choice)?;
+    let terminal_backend = match tb_choice.trim() {
+        "docker" => "docker",
+        "ssh" => "ssh",
+        "modal" => "modal",
+        "daytona" => "daytona",
+        "singularity" => "singularity",
+        _ => "local",
+    };
+
+    let terminal_section = if terminal_backend == "local" {
+        String::new()
+    } else {
+        format!("\n[terminal]\nbackend = \"{}\"\n", terminal_backend)
+    };
+
+    // ── 9b. Browser provider ──
+    println!();
+    println!("Browser provider:");
+    println!("  local       — Headless Chromium on this machine (default)");
+    println!("  camofox     — Firefox/Camoufox anti-detection browser");
+    println!("  browserbase — Browserbase cloud browser (needs API key)");
+    println!("  firecrawl   — Firecrawl cloud browser (needs API key)");
+    println!("  browseruse  — Browser Use cloud browser (needs API key)");
+    print!("Browser provider [local]: ");
+    io::stdout().flush()?;
+    let mut br_choice = String::new();
+    io::stdin().read_line(&mut br_choice)?;
+    let browser_provider = match br_choice.trim() {
+        "camofox" => "camofox",
+        "browserbase" => "browserbase",
+        "firecrawl" => "firecrawl",
+        "browseruse" => "browseruse",
+        _ => "local",
+    };
+
+    let browser_section = if browser_provider == "local" {
+        String::new()
+    } else {
+        format!("\n[browser]\nprovider = \"{}\"\n", browser_provider)
+    };
+
+    // ── 10. Write config ──
     let data_dir = get_data_dir();
     let config_path = data_dir.join("config.toml");
 
     let mut config_content = format!(
         "# ARLI Configuration\n# Generated by `arli setup`\n\n\
-         model = \"{}\"\nmax_iterations = {}\n\n\
+         model = \"{}\"\nmax_iterations = {}\ntool_progress = \"{}\"\ncompression_threshold = {}\n\n\
          [provider]\nname = \"{}\"\napi_key = \"{}\"\n",
-        model, max_iterations, provider_name, api_key
+        model, max_iterations, tool_progress, compression_threshold, provider_name, api_key
     );
     if let Some(url) = base_url_override {
         config_content.push_str(&format!("base_url = \"{}\"\n", url));
     }
+    config_content.push_str(&session_reset_section);
+    config_content.push_str(&search_section);
+    config_content.push_str(&memory_section);
+    config_content.push_str(&terminal_section);
+    config_content.push_str(&browser_section);
     std::fs::write(&config_path, config_content)?;
 
-    // ── 6. Telegram / Gateway ──
+    // ── 11. Telegram / Gateway ──
     run_setup_finish(provider_name, &model, &api_key, base_url_override)?;
 
     Ok(())
@@ -414,8 +691,32 @@ fn run_setup_finish(
     );
 
     if !telegram_token.is_empty() {
-        println!("\nTo start Telegram bot daemon: arli gateway start");
-        println!("To run in foreground:          arli-gateway");
+        println!("\nGateway supports multiple platforms:");
+        println!("  Telegram  — set with --token or env TELEGRAM_BOT_TOKEN");
+        println!("  Discord   — env DISCORD_BOT_TOKEN");
+        println!("  Slack     — env SLACK_BOT_TOKEN + SLACK_APP_TOKEN");
+        println!("  WhatsApp  — env WHATSAPP_PHONE_ID + WHATSAPP_TOKEN");
+        println!("  Matrix    — env MATRIX_USER + MATRIX_PASSWORD");
+        println!("  Microsoft Teams — env MS_TEAMS_APP_ID + MS_TEAMS_APP_PASSWORD");
+        println!("  Email     — env EMAIL_IMAP_SERVER + EMAIL_USER + EMAIL_PASSWORD");
+        println!("\nTo start daemon:  arli gateway start");
+        println!("To run foreground: arli-gateway");
+
+        // Check for ambiguous service state (both user + system installed)
+        let user_svc = dirs_next()
+            .map(|h| h.join(".config/systemd/user/arli-gateway.service"))
+            .map(|p| p.exists())
+            .unwrap_or(false);
+        let system_svc = std::path::Path::new("/etc/systemd/system/arli-gateway.service").exists();
+        if user_svc && system_svc {
+            println!();
+            println!("⚠ Both user and system gateway services are installed (user + system).");
+            println!("  This can make start/stop/status behavior ambiguous.");
+            println!("  Default gateway commands target the user service.");
+            println!("  Keep one:");
+            println!("    arli gateway uninstall");
+            println!("    sudo arli gateway uninstall --system");
+        }
 
         // Offer to install as systemd service
         println!();
@@ -503,6 +804,15 @@ fn install_gateway_user_service() -> anyhow::Result<()> {
     println!("User service installed: {}", service_path.display());
     println!("Enable with: systemctl --user enable --now arli-gateway");
 
+    // Check for ambiguity — system service also installed?
+    if std::path::Path::new("/etc/systemd/system/arli-gateway.service").exists() {
+        println!();
+        println!("⚠ System service also detected at /etc/systemd/system/arli-gateway.service");
+        println!("  Having both can cause confusion. Remove one:");
+        println!("    sudo rm /etc/systemd/system/arli-gateway.service && sudo systemctl daemon-reload");
+        println!("  Or: sudo arli gateway uninstall --system");
+    }
+
     Ok(())
 }
 
@@ -552,6 +862,17 @@ fn install_gateway_system_service() -> anyhow::Result<()> {
     println!("  sudo cp {} /etc/systemd/system/arli-gateway.service", tmp_path.display());
     println!("  sudo systemctl daemon-reload");
     println!("  sudo systemctl enable --now arli-gateway");
+
+    // Check for ambiguity — user service also installed?
+    if let Some(user_dir) = dirs_next() {
+        let user_svc = user_dir.join(".config/systemd/user/arli-gateway.service");
+        if user_svc.exists() {
+            println!();
+            println!("⚠ User service also detected at {}", user_svc.display());
+            println!("  Having both can cause confusion. Remove one:");
+            println!("    rm {}", user_svc.display());
+        }
+    }
 
     Ok(())
 }

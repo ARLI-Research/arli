@@ -41,12 +41,47 @@ pub fn create_provider(config: &Config) -> Result<Box<dyn Provider>> {
             config.provider.api_key.clone(),
             config.model.clone(),
         ))),
-        "google" | "xai" | "copilot" => {
+        "google" | "xai" | "copilot" | "nous" | "novita" | "qwen" | "nvidia" | "zhipu" | "minimax" => {
             let base_url = config.provider.base_url.clone()
                 .unwrap_or_else(|| match config.provider.name.as_str() {
                     "google" => "https://generativelanguage.googleapis.com/v1beta/openai/".to_string(),
                     "xai" => "https://api.x.ai/v1".to_string(),
                     "copilot" => "https://api.githubcopilot.com".to_string(),
+                    "nous" => "https://portal.nousresearch.com/api/v1".to_string(),
+                    "novita" => "https://api.novita.ai/v3/openai/v1".to_string(),
+                    "qwen" => "https://dashscope-intl.aliyuncs.com/compatible-mode/v1".to_string(),
+                    "nvidia" => "https://integrate.api.nvidia.com/v1".to_string(),
+                    "zhipu" => "https://open.bigmodel.cn/api/paas/v4".to_string(),
+                    "minimax" => "https://api.minimax.chat/v1".to_string(),
+                    _ => unreachable!(),
+                });
+            Ok(Box::new(OpenAIProvider::new(
+                config.provider.api_key.clone(),
+                config.model.clone(),
+                Some(base_url.to_string()),
+            )))
+        }
+        "lmstudio" | "ollama" | "huggingface" | "bedrock" | "azure" | "codex" | "mimo" | "tencent" | "moonshot" | "moonshot_cn" | "stepfun" | "minimax_cn" | "arcee" | "gmi" | "kilo" | "opencode" | "opencode_go" | "alibaba_cloud" => {
+            let base_url = config.provider.base_url.clone()
+                .unwrap_or_else(|| match config.provider.name.as_str() {
+                    "lmstudio" => "http://localhost:1234/v1".to_string(),
+                    "ollama" => "http://localhost:11434/v1".to_string(),
+                    "huggingface" => "https://api-inference.huggingface.co/v1".to_string(),
+                    "bedrock" => unreachable!("Bedrock requires a proxy base_url (e.g. LiteLLM). Set base_url in config or via env."),
+                    "azure" => unreachable!("Azure requires AZURE_ENDPOINT. Set base_url in config or via env."),
+                    "codex" => "https://api.openai.com/v1".to_string(),
+                    "mimo" => "https://api.mimo.xiaomi.com/v1".to_string(),
+                    "tencent" => "https://tokenhub.tencentmaas.com/v1".to_string(),
+                    "moonshot" => "https://api.moonshot.cn/v1".to_string(),
+                    "moonshot_cn" => "https://api.moonshot.cn/v1".to_string(),
+                    "stepfun" => "https://api.stepfun.com/v1".to_string(),
+                    "minimax_cn" => "https://api.minimaxi.com/v1".to_string(),
+                    "arcee" => "https://api.arcee.ai/v1".to_string(),
+                    "gmi" => "https://api.gmicloud.ai/v1".to_string(),
+                    "kilo" => "https://api.kilocode.ai/v1".to_string(),
+                    "opencode" => "https://api.opencode.ai/zen/v1".to_string(),
+                    "opencode_go" => "https://api.opencode.ai/go/v1".to_string(),
+                    "alibaba_cloud" => "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string(),
                     _ => unreachable!(),
                 });
             Ok(Box::new(OpenAIProvider::new(
@@ -56,7 +91,7 @@ pub fn create_provider(config: &Config) -> Result<Box<dyn Provider>> {
             )))
         }
         unknown => Err(crate::error::Error::Config(format!(
-            "Unknown provider '{}'. Supported: openai, deepseek, openrouter, anthropic, google, xai, copilot",
+            "Unknown provider '{}'. Supported: openai, deepseek, openrouter, anthropic, google, xai, copilot, lmstudio, ollama, huggingface, bedrock, azure, codex, nous, novita, qwen, nvidia, zhipu, minimax, mimo, tencent, moonshot, moonshot_cn, stepfun, minimax_cn, arcee, gmi, kilo, opencode, opencode_go, alibaba_cloud",
             unknown
         ))),
     }

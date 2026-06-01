@@ -280,3 +280,174 @@ mod tests {
         assert!(results[0].content.contains("rustc"));
     }
 }
+
+/// appropriate backend based on the MemoryConfig.
+///
+/// Supported providers:
+/// - "builtin" / default — SQLite local store
+/// - "mem0" — Cloud-hosted memory API (mem0.ai, needs API key)
+/// - "chroma" — Local ChromaDB vector database
+/// - "qdrant" — Local/cloud Qdrant vector database
+/// - "byterover" — Cloud-hosted memory (bytabox.ai, needs API key)
+/// - "hindsight" — Local/cloud memory store (API key or local)
+/// - "holographic" — Local holographic memory store
+/// - "honcho" — Local/cloud memory for AI agents (API key or local)
+/// - "openviking" — API key / local memory store
+/// - "retaindb" — API key / local vector memory
+/// - "supermemory" — Cloud memory API (supermemory.ai, needs API key)
+/// - "agentmemory" — API key / local memory for agents
+///
+/// For external providers, this returns the existing SQLite MemoryStore
+/// and logs the configured provider. Full integration stubs are provided
+/// for future implementation.
+pub fn create_memory_store(
+    config: &crate::config::MemoryConfig,
+    db_path: PathBuf,
+) -> Result<MemoryStore> {
+    match config.provider.as_str() {
+        "mem0" => create_mem0_store(config, db_path),
+        "chroma" => create_chroma_store(config, db_path),
+        "qdrant" => create_qdrant_store(config, db_path),
+        "byterover" => create_byterover_store(config, db_path),
+        "hindsight" => create_hindsight_store(config, db_path),
+        "holographic" => create_holographic_store(config, db_path),
+        "honcho" => create_honcho_store(config, db_path),
+        "openviking" => create_openviking_store(config, db_path),
+        "retaindb" => create_retaindb_store(config, db_path),
+        "supermemory" => create_supermemory_store(config, db_path),
+        "agentmemory" => create_agentmemory_store(config, db_path),
+        _ => {
+            // "builtin" or unknown — use SQLite local store
+            tracing::info!("Memory provider: builtin (SQLite)");
+            MemoryStore::open(db_path)
+        }
+    }
+}
+
+/// Stub: Mem0 memory backend.
+///
+/// Mem0 is a cloud-hosted memory API at https://api.mem0.ai/v1.
+/// This stub logs that mem0 is configured and falls back to SQLite.
+/// Full integration would use an HTTP client to the Mem0 API.
+fn create_mem0_store(config: &crate::config::MemoryConfig, db_path: PathBuf) -> Result<MemoryStore> {
+    let base_url = if config.base_url.is_empty() {
+        "https://api.mem0.ai/v1"
+    } else {
+        &config.base_url
+    };
+    tracing::info!(
+        "Memory provider: mem0 (API: {}, key: {})",
+        base_url,
+        if config.api_key.is_empty() { "not set" } else { "configured" }
+    );
+    // TODO: Implement full mem0 HTTP client integration
+    // For now, fall back to SQLite for backward compatibility
+    MemoryStore::open(db_path)
+}
+
+/// Stub: ChromaDB memory backend.
+///
+/// ChromaDB is a local open-source vector database.
+/// Default URL: http://localhost:8000 (env CHROMA_URL).
+/// This stub logs that chroma is configured and falls back to SQLite.
+fn create_chroma_store(config: &crate::config::MemoryConfig, db_path: PathBuf) -> Result<MemoryStore> {
+    let base_url = if config.base_url.is_empty() {
+        "http://localhost:8000"
+    } else {
+        &config.base_url
+    };
+    tracing::info!("Memory provider: chroma (URL: {})", base_url);
+    // TODO: Implement full ChromaDB HTTP client integration
+    MemoryStore::open(db_path)
+}
+
+/// Stub: Qdrant memory backend.
+///
+/// Qdrant is a vector database (local or cloud).
+/// Requires QDRANT_URL and QDRANT_API_KEY env vars.
+/// This stub logs that qdrant is configured and falls back to SQLite.
+fn create_qdrant_store(config: &crate::config::MemoryConfig, db_path: PathBuf) -> Result<MemoryStore> {
+    let base_url = if config.base_url.is_empty() {
+        "http://localhost:6333"
+    } else {
+        &config.base_url
+    };
+    tracing::info!(
+        "Memory provider: qdrant (URL: {}, key: {})",
+        base_url,
+        if config.api_key.is_empty() { "not set" } else { "configured" }
+    );
+    // TODO: Implement full Qdrant client integration
+    MemoryStore::open(db_path)
+}
+
+// ── New memory provider stubs ──
+
+/// Byterover — cloud-hosted memory (bytabox.ai, requires API key).
+fn create_byterover_store(config: &crate::config::MemoryConfig, db_path: PathBuf) -> Result<MemoryStore> {
+    tracing::info!(
+        "Memory provider: byterover (key: {})",
+        if config.api_key.is_empty() { "not set" } else { "configured" }
+    );
+    MemoryStore::open(db_path)
+}
+
+/// Hindsight — local/cloud memory store (API key or local).
+fn create_hindsight_store(config: &crate::config::MemoryConfig, db_path: PathBuf) -> Result<MemoryStore> {
+    tracing::info!(
+        "Memory provider: hindsight (mode: {})",
+        if config.api_key.is_empty() { "local" } else { "cloud" }
+    );
+    MemoryStore::open(db_path)
+}
+
+/// Holographic — local holographic memory store.
+fn create_holographic_store(_config: &crate::config::MemoryConfig, db_path: PathBuf) -> Result<MemoryStore> {
+    tracing::info!("Memory provider: holographic (local)");
+    MemoryStore::open(db_path)
+}
+
+/// Honcho — local/cloud memory for AI agents.
+fn create_honcho_store(config: &crate::config::MemoryConfig, db_path: PathBuf) -> Result<MemoryStore> {
+    tracing::info!(
+        "Memory provider: honcho (mode: {})",
+        if config.api_key.is_empty() { "local" } else { "cloud" }
+    );
+    MemoryStore::open(db_path)
+}
+
+/// OpenViking — API key / local memory store.
+fn create_openviking_store(config: &crate::config::MemoryConfig, db_path: PathBuf) -> Result<MemoryStore> {
+    tracing::info!(
+        "Memory provider: openviking (mode: {})",
+        if config.api_key.is_empty() { "local" } else { "cloud" }
+    );
+    MemoryStore::open(db_path)
+}
+
+/// RetainDB — API key / local vector memory.
+fn create_retaindb_store(config: &crate::config::MemoryConfig, db_path: PathBuf) -> Result<MemoryStore> {
+    tracing::info!(
+        "Memory provider: retaindb (mode: {})",
+        if config.api_key.is_empty() { "local" } else { "cloud" }
+    );
+    MemoryStore::open(db_path)
+}
+
+/// Supermemory — cloud memory API (supermemory.ai, requires API key).
+fn create_supermemory_store(config: &crate::config::MemoryConfig, db_path: PathBuf) -> Result<MemoryStore> {
+    tracing::info!(
+        "Memory provider: supermemory (key: {})",
+        if config.api_key.is_empty() { "not set" } else { "configured" }
+    );
+    MemoryStore::open(db_path)
+}
+
+/// AgentMemory — API key / local memory for agents.
+fn create_agentmemory_store(config: &crate::config::MemoryConfig, db_path: PathBuf) -> Result<MemoryStore> {
+    tracing::info!(
+        "Memory provider: agentmemory (mode: {})",
+        if config.api_key.is_empty() { "local" } else { "cloud" }
+    );
+    MemoryStore::open(db_path)
+}

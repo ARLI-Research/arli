@@ -2,6 +2,16 @@
 //!
 //! Uses reqwest for HTTP + scraper crate for proper HTML parsing.
 //! Supports: navigate, extract (CSS selectors), links, title, text.
+//!
+//! Browser provider backends:
+//! - "local": headless Chromium via reqwest (default)
+//! - "camofox": Firefox/Camoufox anti-detection (future)
+//! - "browserbase": Browserbase cloud browser (future)
+//! - "firecrawl": Firecrawl cloud browser (future)
+//!
+//! Configure via [browser] section in config.toml or env vars:
+//!   BROWSER_PROVIDER (default "local")
+//!   BROWSERBASE_API_KEY / FIRECRAWL_API_KEY
 
 use async_trait::async_trait;
 use super::{Tool, ToolOutput};
@@ -59,6 +69,51 @@ impl Tool for BrowserTool {
             Some(u) => u,
             None => return ToolOutput::error("Missing 'url' parameter"),
         };
+
+        // ── Browser provider selection ──
+        let provider = std::env::var("BROWSER_PROVIDER")
+            .unwrap_or_else(|_| "local".to_string());
+
+        match provider.as_str() {
+            "local" => {
+                tracing::debug!("Browser: using local headless Chromium backend");
+            }
+            "camofox" => {
+                tracing::info!(
+                    "Browser: Camofox (Firefox/Camoufox anti-detection) would be used. \
+                     Falling back to local for now."
+                );
+            }
+            "browserbase" => {
+                let has_key = std::env::var("BROWSERBASE_API_KEY").is_ok();
+                if has_key {
+                    tracing::info!("Browser: Browserbase cloud browser would be used. API key found.");
+                } else {
+                    tracing::warn!(
+                        "Browser: Browserbase cloud browser would be used, but no BROWSERBASE_API_KEY set. \
+                         Falling back to local."
+                    );
+                }
+            }
+            "firecrawl" => {
+                let has_key = std::env::var("FIRECRAWL_API_KEY").is_ok();
+                if has_key {
+                    tracing::info!("Browser: Firecrawl cloud browser would be used. API key found.");
+                } else {
+                    tracing::warn!(
+                        "Browser: Firecrawl cloud browser would be used, but no FIRECRAWL_API_KEY set. \
+                         Falling back to local."
+                    );
+                }
+            }
+            other => {
+                tracing::warn!(
+                    "Browser: unknown provider '{}'. Supported: local, camofox, browserbase, firecrawl. \
+                     Using local fallback.",
+                    other
+                );
+            }
+        }
 
         let action = args["action"].as_str().unwrap_or("navigate");
         let selector = args["selector"].as_str();

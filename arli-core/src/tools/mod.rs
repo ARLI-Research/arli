@@ -3,6 +3,7 @@ pub mod browser;
 pub mod delegate;
 pub mod execute_code;
 pub mod http_get;
+pub mod image_gen;
 pub mod memory;
 pub mod patch;
 pub mod process;
@@ -12,8 +13,10 @@ pub mod toolsets;
 pub mod web_search;
 pub mod vision;
 pub mod voice;
+pub mod video_gen;
 
 pub use delegate::DelegateTaskTool;
+pub use image_gen::ImageGenTool;
 pub use memory::MemoryTool;
 
 use async_trait::async_trait;

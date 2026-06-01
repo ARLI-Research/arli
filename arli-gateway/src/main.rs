@@ -12,15 +12,53 @@
 //!   WHATSAPP_TOKEN       — WhatsApp Cloud API access token
 //!   WHATSAPP_VERIFY      — WhatsApp webhook verify token
 //!   WHATSAPP_PORT        — WhatsApp webhook port (default: 3000)
+//!   MS_TEAMS_APP_ID       — Azure Bot app ID
+//!   MS_TEAMS_APP_PASSWORD — Azure Bot app password / client secret
+//!   MS_TEAMS_PORT         — Teams webhook port (default: 3007)
+//!   SIGNAL_CLI_PATH        — Path to signal-cli binary (default: "signal-cli")
+//!   SIGNAL_PHONE_NUMBER    — Registered Signal phone number
+//!   TWILIO_ACCOUNT_SID     — Twilio Account SID
+//!   TWILIO_AUTH_TOKEN      — Twilio Auth Token
+//!   TWILIO_PHONE_NUMBER    — Twilio phone number
+//!   SMS_PORT               — SMS webhook port (default: 3008)
+//!   GOOGLE_CHAT_VERIFICATION_TOKEN — Google Chat verification token
+//!   GOOGLE_CHAT_ACCESS_TOKEN       — Google Chat OAuth2 access token
+//!   GOOGLE_CHAT_PORT               — Google Chat webhook port (default: 3009)
+//!   NTFY_TOPIC                     — ntfy topic to subscribe to
+//!   NTFY_SERVER                    — ntfy server base URL (default: https://ntfy.sh)
+//!   QQ_APP_ID                      — QQ Bot app ID
+//!   QQ_BOT_TOKEN                   — QQ Bot access token
+//!   SIMPLEX_CLI_PATH               — Path to simplex-chat CLI binary (default: "simplex-chat")
+//!   YUANBAO_APP_ID                 — Yuanbao app ID
+//!   YUANBAO_APP_SECRET             — Yuanbao app secret
+//!   YUANBAO_PORT                   — Yuanbao webhook port (default: 3014)
+//!   BLUEBUBBLES_SERVER             — BlueBubbles server URL (default: http://localhost:1234)
+//!   BLUEBUBBLES_PASSWORD           — BlueBubbles server password
 //!
 //! Daemon mode:
 //!   arli-gateway --daemon           Start in background (writes PID to ~/.arli/gateway.pid)
 //!   arli-gateway --daemon --pid-file /path/to/pid
 
+mod bluebubbles;
+mod dingtalk;
 mod discord;
+mod email;
+mod feishu;
+mod google_chat;
+mod irc;
+mod line;
+mod matrix;
+mod ntfy;
+mod qq;
+mod simplex;
+mod signal;
 mod slack;
+mod sms;
+mod teams;
 mod telegram;
+mod wecom;
 mod whatsapp;
+mod yuanbao;
 
 use clap::Parser;
 use std::fs;
@@ -200,6 +238,28 @@ async fn main() -> anyhow::Result<()> {
         }));
     }
 
+    // ── Email (IMAP/SMTP) ──
+    if std::env::var("EMAIL_USER").is_ok() {
+        info!("Platform: Email (IMAP/SMTP)");
+        let dd = data_dir.clone();
+        handles.push(tokio::spawn(async move {
+            if let Err(e) = email::run(dd).await {
+                tracing::error!("Email gateway died: {}", e);
+            }
+        }));
+    }
+
+    // ── Matrix ──
+    if resolve_token("MATRIX_USER", "matrix_user").is_some() {
+        info!("Platform: Matrix");
+        let dd = data_dir.clone();
+        handles.push(tokio::spawn(async move {
+            if let Err(e) = matrix::run(dd).await {
+                tracing::error!("Matrix gateway died: {}", e);
+            }
+        }));
+    }
+
     // ── Slack ──
     let slack_bot = resolve_token("SLACK_BOT_TOKEN", "slack_bot_token");
     let slack_app = resolve_token("SLACK_APP_TOKEN", "slack_app_token");
@@ -227,6 +287,219 @@ async fn main() -> anyhow::Result<()> {
         handles.push(tokio::spawn(async move {
             if let Err(e) = whatsapp::run(phone_id, token, verify, port, dd).await {
                 tracing::error!("WhatsApp gateway died: {}", e);
+            }
+        }));
+    }
+
+    // ── Microsoft Teams ──
+    let teams_app_id = resolve_token("MS_TEAMS_APP_ID", "teams_app_id");
+    let teams_app_password = resolve_token("MS_TEAMS_APP_PASSWORD", "teams_app_password");
+    if let (Some(app_id), Some(app_password)) = (teams_app_id, teams_app_password) {
+        let port: u16 = std::env::var("MS_TEAMS_PORT")
+            .ok()
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(3007);
+        info!("Platform: Microsoft Teams (port {})", port);
+        let dd = data_dir.clone();
+        handles.push(tokio::spawn(async move {
+            if let Err(e) = teams::run(app_id, app_password, port, dd).await {
+                tracing::error!("Teams gateway died: {}", e);
+            }
+        }));
+    }
+
+    // ── Signal ──
+    if std::env::var("SIGNAL_PHONE_NUMBER").is_ok() {
+        info!("Platform: Signal");
+        let dd = data_dir.clone();
+        handles.push(tokio::spawn(async move {
+            if let Err(e) = signal::run(dd).await {
+                tracing::error!("Signal gateway died: {}", e);
+            }
+        }));
+    }
+
+    // ── SMS / Twilio ──
+    let twilio_sid = resolve_token("TWILIO_ACCOUNT_SID", "twilio_account_sid");
+    let twilio_token = resolve_token("TWILIO_AUTH_TOKEN", "twilio_auth_token");
+    let twilio_phone = resolve_token("TWILIO_PHONE_NUMBER", "twilio_phone_number");
+    if let (Some(sid), Some(token), Some(phone)) = (twilio_sid, twilio_token, twilio_phone) {
+        let port: u16 = std::env::var("SMS_PORT")
+            .ok()
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(3008);
+        info!("Platform: SMS/Twilio (port {})", port);
+        let dd = data_dir.clone();
+        handles.push(tokio::spawn(async move {
+            if let Err(e) = sms::run(sid, token, phone, port, dd).await {
+                tracing::error!("SMS gateway died: {}", e);
+            }
+        }));
+    }
+
+    // ── Google Chat ──
+    if resolve_token("GOOGLE_CHAT_VERIFICATION_TOKEN", "google_chat_verification_token").is_some() {
+        let port: u16 = std::env::var("GOOGLE_CHAT_PORT")
+            .ok()
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(3009);
+        info!("Platform: Google Chat (port {})", port);
+        let dd = data_dir.clone();
+        handles.push(tokio::spawn(async move {
+            if let Err(e) = google_chat::run(port, dd).await {
+                tracing::error!("Google Chat gateway died: {}", e);
+            }
+        }));
+    }
+
+    // ── ntfy ──
+    if std::env::var("NTFY_TOPIC").is_ok() {
+        info!("Platform: ntfy");
+        let dd = data_dir.clone();
+        handles.push(tokio::spawn(async move {
+            if let Err(e) = ntfy::run(dd).await {
+                tracing::error!("ntfy gateway died: {}", e);
+            }
+        }));
+    }
+
+    // ── QQ Bot ──
+    if std::env::var("QQ_APP_ID").is_ok() {
+        info!("Platform: QQ Bot");
+        let dd = data_dir.clone();
+        handles.push(tokio::spawn(async move {
+            if let Err(e) = qq::run(dd).await {
+                tracing::error!("QQ Bot gateway died: {}", e);
+            }
+        }));
+    }
+
+    // ── SimpleX Chat ──
+    // SimpleX is always available if simplex-chat is installed (uses default SIMPLEX_CLI_PATH)
+    {
+        let simplex_path = std::env::var("SIMPLEX_CLI_PATH")
+            .unwrap_or_else(|_| "simplex-chat".to_string());
+        if std::path::Path::new(&simplex_path).exists()
+            || std::env::var("SIMPLEX_CLI_PATH").is_ok()
+        {
+            info!("Platform: SimpleX Chat");
+            let dd = data_dir.clone();
+            handles.push(tokio::spawn(async move {
+                if let Err(e) = simplex::run(dd).await {
+                    tracing::error!("SimpleX gateway died: {}", e);
+                }
+            }));
+        }
+    }
+
+    // ── Yuanbao ──
+    let yuanbao_app_id = resolve_token("YUANBAO_APP_ID", "yuanbao_app_id");
+    let yuanbao_app_secret = resolve_token("YUANBAO_APP_SECRET", "yuanbao_app_secret");
+    if let (Some(app_id), Some(app_secret)) = (yuanbao_app_id, yuanbao_app_secret) {
+        let port: u16 = std::env::var("YUANBAO_PORT")
+            .ok()
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(3014);
+        info!("Platform: Yuanbao (port {})", port);
+        let dd = data_dir.clone();
+        handles.push(tokio::spawn(async move {
+            if let Err(e) = yuanbao::run(app_id, app_secret, port, dd).await {
+                tracing::error!("Yuanbao gateway died: {}", e);
+            }
+        }));
+    }
+
+    // ── BlueBubbles (iMessage) ──
+    if std::env::var("BLUEBUBBLES_PASSWORD").is_ok() {
+        info!("Platform: BlueBubbles (iMessage)");
+        let dd = data_dir.clone();
+        handles.push(tokio::spawn(async move {
+            if let Err(e) = bluebubbles::run(dd).await {
+                tracing::error!("BlueBubbles gateway died: {}", e);
+            }
+        }));
+    }
+
+    // ── Feishu / Lark ──
+    let feishu_app_id = resolve_token("FEISHU_APP_ID", "feishu_app_id");
+    let feishu_app_secret = resolve_token("FEISHU_APP_SECRET", "feishu_app_secret");
+    let feishu_verify = resolve_token("FEISHU_VERIFICATION_TOKEN", "feishu_verification_token");
+    if let (Some(app_id), Some(app_secret), Some(verify)) = (feishu_app_id, feishu_app_secret, feishu_verify) {
+        let port: u16 = std::env::var("FEISHU_PORT")
+            .ok()
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(3010);
+        info!("Platform: Feishu (port {})", port);
+        let dd = data_dir.clone();
+        handles.push(tokio::spawn(async move {
+            if let Err(e) = feishu::run(app_id, app_secret, verify, port, dd).await {
+                tracing::error!("Feishu gateway died: {}", e);
+            }
+        }));
+    }
+
+    // ── DingTalk ──
+    let dingtalk_app_key = resolve_token("DINGTALK_APP_KEY", "dingtalk_app_key");
+    let dingtalk_app_secret = resolve_token("DINGTALK_APP_SECRET", "dingtalk_app_secret");
+    if let (Some(app_key), Some(app_secret)) = (dingtalk_app_key, dingtalk_app_secret) {
+        let port: u16 = std::env::var("DINGTALK_PORT")
+            .ok()
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(3011);
+        info!("Platform: DingTalk (port {})", port);
+        let dd = data_dir.clone();
+        handles.push(tokio::spawn(async move {
+            if let Err(e) = dingtalk::run(app_key, app_secret, port, dd).await {
+                tracing::error!("DingTalk gateway died: {}", e);
+            }
+        }));
+    }
+
+    // ── LINE ──
+    let line_secret = resolve_token("LINE_CHANNEL_SECRET", "line_channel_secret");
+    let line_token = resolve_token("LINE_CHANNEL_ACCESS_TOKEN", "line_channel_access_token");
+    if let (Some(secret), Some(access_token)) = (line_secret, line_token) {
+        let port: u16 = std::env::var("LINE_PORT")
+            .ok()
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(3012);
+        info!("Platform: LINE (port {})", port);
+        let dd = data_dir.clone();
+        handles.push(tokio::spawn(async move {
+            if let Err(e) = line::run(secret, access_token, port, dd).await {
+                tracing::error!("LINE gateway died: {}", e);
+            }
+        }));
+    }
+
+    // ── IRC ──
+    if std::env::var("IRC_NICK").is_ok() {
+        info!("Platform: IRC");
+        let dd = data_dir.clone();
+        handles.push(tokio::spawn(async move {
+            if let Err(e) = irc::run(dd).await {
+                tracing::error!("IRC gateway died: {}", e);
+            }
+        }));
+    }
+
+    // ── WeCom / Enterprise WeChat ──
+    let wecom_corp_id = resolve_token("WECOM_CORP_ID", "wecom_corp_id");
+    let wecom_agent_secret = resolve_token("WECOM_AGENT_SECRET", "wecom_agent_secret");
+    let wecom_token = resolve_token("WECOM_TOKEN", "wecom_token");
+    let wecom_aes_key = resolve_token("WECOM_ENCODING_AES_KEY", "wecom_encoding_aes_key");
+    if let (Some(corp_id), Some(agent_secret), Some(token), Some(aes_key)) =
+        (wecom_corp_id, wecom_agent_secret, wecom_token, wecom_aes_key)
+    {
+        let port: u16 = std::env::var("WECOM_PORT")
+            .ok()
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(3013);
+        info!("Platform: WeCom (port {})", port);
+        let dd = data_dir.clone();
+        handles.push(tokio::spawn(async move {
+            if let Err(e) = wecom::run(corp_id, agent_secret, token, aes_key, port, dd).await {
+                tracing::error!("WeCom gateway died: {}", e);
             }
         }));
     }

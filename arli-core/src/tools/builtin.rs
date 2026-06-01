@@ -327,6 +327,8 @@ use super::http_get::HttpGetTool;
 use super::web_search::WebSearchTool;
 use super::vision::VisionTool;
 use super::voice::VoiceTool;
+use super::image_gen::ImageGenTool;
+use super::video_gen::VideoGenTool;
 use super::memory::MemoryTool;
 use super::delegate::DelegateTaskTool;
 use super::execute_code::ExecuteCodeTool;
@@ -354,6 +356,8 @@ pub fn register_builtin_tools(
     registry.register(Box::new(WebSearchTool));
     registry.register(Box::new(VisionTool));
     registry.register(Box::new(VoiceTool));
+    registry.register(Box::new(ImageGenTool));
+    registry.register(Box::new(VideoGenTool));
     registry.register(Box::new(PatchTool));
     registry.register(Box::new(BrowserTool));
     registry.register(Box::new(ExecuteCodeTool));

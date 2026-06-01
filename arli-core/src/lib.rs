@@ -28,7 +28,7 @@ pub mod telemetry;
 pub mod webhooks;
 
 pub use agent::{Agent, AgentConfig, AgentMessage, AgentState};
-pub use config::{Config, ProviderConfig};
+pub use config::{Config, ProviderConfig, SessionResetConfig, SearchConfig, MemoryConfig, TerminalConfig};
 pub use error::Error;
 pub use policy::{Decision, PolicyEngine, PolicyRule, TradingLimits};
 pub use providers::{

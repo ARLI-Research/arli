@@ -38,3 +38,15 @@ tower = "0.5"
 hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
+
+# Email (IMAP/SMTP)
+async-imap = "0.9"
+async-native-tls = "0.5"
+async-std = { version = "1", features = ["attributes"] }
+lettre = { version = "0.11", default-features = false, features = ["tokio1-native-tls", "smtp-transport", "builder"] }
+
+# Matrix
+matrix-sdk = { version = "0.9", default-features = false, features = ["native-tls"] }
+
+# WeCom XML parsing
+quick-xml = { version = "0.37", features = ["serialize"] }

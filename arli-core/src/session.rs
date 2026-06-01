@@ -363,3 +363,85 @@ pub struct SessionInfo {
     pub updated_at: String,
     pub status: String,
 }
+
+/// Check whether a session should be reset based on the session reset policy.
+///
+/// Parameters:
+/// - `mode`: "inactivity_daily", "inactivity", "daily", or "never"
+/// - `inactivity_minutes`: minutes of inactivity before reset (for "inactivity" / "inactivity_daily")
+/// - `daily_reset_hour`: hour of day (0-23) when daily reset occurs (for "daily" / "inactivity_daily")
+/// - `last_message_ts`: timestamp of the last message in the session (UNIX epoch seconds)
+/// - `now_ts`: current time (UNIX epoch seconds)
+///
+/// Returns `true` if the session should be reset.
+pub fn should_reset_session(
+    mode: &str,
+    inactivity_minutes: u32,
+    daily_reset_hour: u8,
+    last_message_ts: i64,
+    now_ts: i64,
+) -> bool {
+    match mode {
+        "never" => false,
+
+        "inactivity" => {
+            let inactive_secs = (inactivity_minutes as i64) * 60;
+            (now_ts - last_message_ts) >= inactive_secs
+        }
+
+        "daily" => {
+            // Check if we've crossed the daily reset hour since last message
+            let last_dt = utc_from_timestamp(last_message_ts);
+            let now_dt = utc_from_timestamp(now_ts);
+
+            let last_reset_boundary = last_dt
+                .date_naive()
+                .and_hms_opt(daily_reset_hour.into(), 0, 0)
+                .map(|naive| naive.and_utc())
+                .unwrap_or(last_dt);
+
+            let next_reset_boundary = if last_dt >= last_reset_boundary {
+                last_reset_boundary + chrono::Duration::days(1)
+            } else {
+                last_reset_boundary
+            };
+
+            now_dt >= next_reset_boundary
+        }
+
+        "inactivity_daily" | _ => {
+            // Reset if EITHER inactivity timeout OR daily reset hour has been crossed
+            let inactive_secs = (inactivity_minutes as i64) * 60;
+            let inactivity_triggered = (now_ts - last_message_ts) >= inactive_secs;
+
+            if inactivity_triggered {
+                return true;
+            }
+
+            // Also check daily boundary
+            let last_dt = utc_from_timestamp(last_message_ts);
+            let now_dt = utc_from_timestamp(now_ts);
+
+            let last_reset_boundary = last_dt
+                .date_naive()
+                .and_hms_opt(daily_reset_hour.into(), 0, 0)
+                .map(|naive| naive.and_utc())
+                .unwrap_or(last_dt);
+
+            let next_reset_boundary = if last_dt >= last_reset_boundary {
+                last_reset_boundary + chrono::Duration::days(1)
+            } else {
+                last_reset_boundary
+            };
+
+            now_dt >= next_reset_boundary
+        }
+    }
+}
+
+/// Helper: convert a UNIX timestamp to a UTC DateTime.
+fn utc_from_timestamp(ts: i64) -> chrono::DateTime<chrono::Utc> {
+    chrono::DateTime::from_timestamp(ts, 0).unwrap_or_else(|| {
+        chrono::DateTime::from_timestamp(0, 0).unwrap()
+    })
+}

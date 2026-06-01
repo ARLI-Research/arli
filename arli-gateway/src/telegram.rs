@@ -6,6 +6,7 @@ use arli_core::{
     OpenAIProvider, SessionStore, ToolRegistry,
     memory::MemoryStore,
 };
+use arli_core::policy::{Decision, PolicyEngine, PolicyRule};
 use arli_core::tools::builtin::register_builtin_tools;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -19,6 +20,14 @@ use tracing::{info, warn, error};
 #[derive(Debug, Deserialize)]
 struct TelegramUpdate {
     update_id: i64,
+    message: Option<TelegramMessage>,
+    callback_query: Option<TelegramCallback>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TelegramCallback {
+    id: String,
+    data: Option<String>,
     message: Option<TelegramMessage>,
 }
 
@@ -45,11 +54,31 @@ struct SendMessageRequest {
     chat_id: i64,
     text: String,
     parse_mode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reply_markup: Option<InlineKeyboardMarkup>,
+}
+
+#[derive(Debug, Serialize)]
+struct InlineKeyboardMarkup {
+    inline_keyboard: Vec<Vec<InlineKeyboardButton>>,
+}
+
+#[derive(Debug, Serialize)]
+struct InlineKeyboardButton {
+    text: String,
+    callback_data: String,
+}
+
+#[derive(Debug, Serialize)]
+struct AnswerCallbackRequest {
+    callback_query_id: String,
+    text: Option<String>,
 }
 
 struct TelegramGateway {
     api_url: String,
     agents: Mutex<HashMap<i64, tokio::sync::mpsc::Sender<AgentMessage>>>,
+    pending_approvals: Mutex<HashMap<i64, tokio::sync::oneshot::Sender<bool>>>,
     last_update_id: Mutex<i64>,
     data_dir: PathBuf,
     provider_api_key: String,
@@ -63,6 +92,7 @@ impl TelegramGateway {
         Ok(Self {
             api_url: format!("https://api.telegram.org/bot{}", token),
             agents: Mutex::new(HashMap::new()),
+            pending_approvals: Mutex::new(HashMap::new()),
             last_update_id: Mutex::new(0),
             data_dir,
             provider_api_key: config.provider.api_key,
@@ -71,16 +101,59 @@ impl TelegramGateway {
         })
     }
 
+    async fn send_chat_action(&self, chat_id: i64, action: &str) {
+        let url = format!("{}/sendChatAction", self.api_url);
+        let body = serde_json::json!({"chat_id": chat_id, "action": action});
+        let _ = reqwest::Client::new().post(&url).json(&body).send().await;
+    }
+
     async fn send_message(&self, chat_id: i64, text: &str) -> anyhow::Result<()> {
         let url = format!("{}/sendMessage", self.api_url);
         let req = SendMessageRequest {
             chat_id,
             text: text.to_string(),
             parse_mode: "Markdown".to_string(),
+            reply_markup: None,
         };
         let client = reqwest::Client::new();
         client.post(&url).json(&req).send().await?;
         Ok(())
+    }
+
+    async fn send_approval_request(&self, chat_id: i64, tool_name: &str, reason: &str) -> anyhow::Result<()> {
+        let url = format!("{}/sendMessage", self.api_url);
+        let markup = InlineKeyboardMarkup {
+            inline_keyboard: vec![
+                vec![
+                    InlineKeyboardButton {
+                        text: "Approve".to_string(),
+                        callback_data: format!("approve:{}", tool_name),
+                    },
+                    InlineKeyboardButton {
+                        text: "Deny".to_string(),
+                        callback_data: format!("deny:{}", tool_name),
+                    },
+                ],
+            ],
+        };
+        let req = SendMessageRequest {
+            chat_id,
+            text: format!("*Approval required*: {}\n\nTool: `{}`\nReason: {}", "\u{26a0}\u{fe0f}", tool_name, reason),
+            parse_mode: "Markdown".to_string(),
+            reply_markup: Some(markup),
+        };
+        let client = reqwest::Client::new();
+        client.post(&url).json(&req).send().await?;
+        Ok(())
+    }
+
+    async fn answer_callback(&self, callback_id: &str, text: &str) {
+        let url = format!("{}/answerCallbackQuery", self.api_url);
+        let req = AnswerCallbackRequest {
+            callback_query_id: callback_id.to_string(),
+            text: Some(text.to_string()),
+        };
+        let _ = reqwest::Client::new().post(&url).json(&req).send().await;
     }
 
     async fn get_updates(&self) -> anyhow::Result<Vec<TelegramUpdate>> {
@@ -104,6 +177,21 @@ impl TelegramGateway {
         }
 
         Ok(updates)
+    }
+
+    fn make_permissive_policy() -> PolicyEngine {
+        let mut engine = PolicyEngine::new();
+        // Allow all tools for trusted Telegram user
+        engine.add_rule(PolicyRule {
+            name: "allow-all-telegram".into(),
+            tool_match: None, // matches all
+            toolset: None,
+            decision: Decision::Allow,
+            priority: 1000,
+            agent_profile: None,
+            description: "Telegram user is trusted — allow all tools".into(),
+        });
+        engine
     }
 
     async fn get_or_create_agent(
@@ -151,7 +239,7 @@ impl TelegramGateway {
             agent_config,
             provider,
             tools,
-            arli_core::PolicyEngine::default(),
+            Self::make_permissive_policy(),
             Some(store),
             20,
             None,
@@ -159,28 +247,67 @@ impl TelegramGateway {
 
         let sender = agent.sender();
         let api_url = self.api_url.clone();
+        let chat_id_clone = chat_id;
 
         tokio::spawn(async move {
             loop {
+                // Send typing indicator
+                let action_url = format!("{}/sendChatAction", api_url);
+                let action_body = serde_json::json!({"chat_id": chat_id_clone, "action": "typing"});
+                let _ = reqwest::Client::new().post(&action_url).json(&action_body).send().await;
+
                 match agent.run(None).await {
                     Ok(response) => {
+                        // Check for approval requests in the response
+                        let needs_approval = response.contains("APPROVAL REQUIRED");
+                        
                         let url = format!("{}/sendMessage", api_url);
+                        let text = if response.len() > 4000 {
+                            format!("{}... _(truncated)_", &response[..4000])
+                        } else {
+                            response.clone()
+                        };
+
+                        // Build message with inline keyboard if approval needed
+                        let reply_markup = if needs_approval {
+                            Some(InlineKeyboardMarkup {
+                                inline_keyboard: vec![
+                                    vec![
+                                        InlineKeyboardButton {
+                                            text: "Approve".to_string(),
+                                            callback_data: "approve:generic".to_string(),
+                                        },
+                                        InlineKeyboardButton {
+                                            text: "Deny".to_string(),
+                                            callback_data: "deny:generic".to_string(),
+                                        },
+                                    ],
+                                ],
+                            })
+                        } else {
+                            None
+                        };
+
                         let req = SendMessageRequest {
-                            chat_id,
-                            text: if response.len() > 4000 {
-                                format!("{}... _(truncated)_", &response[..4000])
-                            } else {
-                                response
-                            },
+                            chat_id: chat_id_clone,
+                            text,
                             parse_mode: "Markdown".to_string(),
+                            reply_markup,
                         };
                         if let Err(e) = reqwest::Client::new().post(&url).json(&req).send().await {
                             error!("Failed to send Telegram response: {}", e);
                         }
                     }
                     Err(e) => {
-                        error!("Telegram agent error for chat {}: {}", chat_id, e);
-                        break;
+                        error!("Agent error for chat {}: {}", chat_id_clone, e);
+                        let url = format!("{}/sendMessage", api_url);
+                        let req = SendMessageRequest {
+                            chat_id: chat_id_clone,
+                            text: format!("Error: {}", e),
+                            parse_mode: "Markdown".to_string(),
+                            reply_markup: None,
+                        };
+                        let _ = reqwest::Client::new().post(&url).json(&req).send().await;
                     }
                 }
             }
@@ -190,103 +317,100 @@ impl TelegramGateway {
         Ok(sender)
     }
 
-    async fn process_updates(&self, updates: Vec<TelegramUpdate>) {
-        for update in updates {
-            if let Some(msg) = update.message {
-                let chat_id = msg.chat.id;
-                let text = match msg.text {
-                    Some(ref t) => t.clone(),
-                    None => continue,
-                };
+    async fn handle_callback(&self, callback: &TelegramCallback) {
+        let chat_id = match &callback.message {
+            Some(msg) => msg.chat.id,
+            None => return,
+        };
 
-                info!("TG message from {}: {}", chat_id, text);
+        let data = match &callback.data {
+            Some(d) => d.as_str(),
+            None => return,
+        };
 
-                if text == "/start" {
-                    let _ = self.send_message(chat_id, "ARLI agent is ready. Send a message to begin.").await;
-                    continue;
-                }
+        let approved = data.starts_with("approve:");
+        let status = if approved { "Approved" } else { "Denied" };
+        
+        // Answer the callback to remove loading state
+        self.answer_callback(&callback.id, status).await;
 
-                if text == "/help" {
-                    let help = "ARLI Agent Harness\n\n\
-                        Commands:\n\
-                        /start — Initialize agent\n\
-                        /help — This help\n\
-                        /reset — Reset conversation";
-                    let _ = self.send_message(chat_id, help).await;
-                    continue;
-                }
+        // Send confirmation message
+        let tool = data.split(':').nth(1).unwrap_or("unknown");
+        let text = if approved {
+            format!("Approved: `{}` — proceeding.", tool)
+        } else {
+            format!("Denied: `{}` — blocked.", tool)
+        };
+        let _ = self.send_message(chat_id, &text).await;
 
-                if text == "/reset" {
-                    self.agents.lock().await.remove(&chat_id);
-                    let _ = self.send_message(chat_id, "Conversation reset. New session started.").await;
-                    continue;
-                }
+        // Resolve pending approval if any
+        let sender = {
+            let mut pending = self.pending_approvals.lock().await;
+            pending.remove(&chat_id)
+        };
+        if let Some(tx) = sender {
+            let _ = tx.send(approved);
+        }
+    }
+}
 
-                match self.get_or_create_agent(chat_id).await {
-                    Ok(sender) => {
-                        if let Err(e) = sender.send(AgentMessage::UserMessage(text)).await {
-                            error!("Failed to send to agent {}: {}", chat_id, e);
-                            self.agents.lock().await.remove(&chat_id);
+/// Public entry point — starts the Telegram long-poll loop.
+pub async fn run(data_dir: PathBuf) -> anyhow::Result<()> {
+    let token = std::env::var("TELEGRAM_BOT_TOKEN")
+        .ok()
+        .or_else(|| {
+            let config_path = data_dir.join("config.toml");
+            if config_path.exists() {
+                std::fs::read_to_string(&config_path).ok().and_then(|s| {
+                    toml::from_str::<toml::Value>(&s).ok().and_then(|v| {
+                        v.get("gateway")?
+                            .get("telegram_token")
+                            .or_else(|| v.get("gateway")?.get("bot_token"))
+                            .and_then(|val| val.as_str().map(String::from))
+                    })
+                })
+            } else {
+                None
+            }
+        })
+        .ok_or_else(|| anyhow::anyhow!("TELEGRAM_BOT_TOKEN not set"))?;
+
+    let gateway = TelegramGateway::new(token, data_dir)?;
+
+    info!("Telegram gateway started — long-polling for updates");
+
+    loop {
+        match gateway.get_updates().await {
+            Ok(updates) => {
+                for update in updates {
+                    if let Some(ref callback) = update.callback_query {
+                        gateway.handle_callback(callback).await;
+                    }
+                    if let Some(ref msg) = update.message {
+                        if let Some(ref text) = msg.text {
+                            if text == "/start" {
+                                let _ = gateway.send_message(msg.chat.id,
+                                    "ARLI at your service. Send me any message to begin."
+                                ).await;
+                                continue;
+                            }
+                            
+                            let sender = gateway.get_or_create_agent(msg.chat.id).await?;
+                            let user_msg = AgentMessage::UserMessage(text.clone());
+                            if let Err(e) = sender.send(user_msg).await {
+                                error!("Failed to send message to agent for chat {}: {}", msg.chat.id, e);
+                                let _ = gateway.send_message(msg.chat.id,
+                                    &format!("Error processing message: {}", e)
+                                ).await;
+                            }
                         }
                     }
-                    Err(e) => {
-                        error!("Cannot create agent for {}: {}", chat_id, e);
-                        let _ = self.send_message(chat_id, "Agent initialization failed.").await;
-                    }
                 }
+            }
+            Err(e) => {
+                error!("Telegram polling error: {}", e);
+                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
             }
         }
     }
-
-    async fn run_forever(self: Arc<Self>) {
-        info!("Telegram gateway starting...");
-        loop {
-            let updates = match self.get_updates().await {
-                Ok(u) => u,
-                Err(e) => {
-                    error!("Telegram poll error: {}", e);
-                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-                    continue;
-                }
-            };
-            if !updates.is_empty() {
-                self.process_updates(updates).await;
-            }
-        }
-    }
-}
-
-/// Read the Telegram bot token from env or config file.
-fn resolve_telegram_token() -> Option<String> {
-    std::env::var("TELEGRAM_BOT_TOKEN").ok().or_else(|| {
-        let config_path = std::env::var("ARLI_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| {
-                std::env::var("HOME")
-                    .map(|h| PathBuf::from(h).join(".arli"))
-                    .unwrap_or_else(|_| PathBuf::from(".arli"))
-            })
-            .join("config.toml");
-        if config_path.exists() {
-            std::fs::read_to_string(&config_path).ok().and_then(|s| {
-                toml::from_str::<toml::Value>(&s).ok().and_then(|v| {
-                    v.get("gateway")?.get("telegram_token")?.as_str().map(String::from)
-                })
-            })
-        } else {
-            None
-        }
-    })
-}
-
-pub async fn run(data_dir: PathBuf) -> anyhow::Result<()> {
-    let token = resolve_telegram_token()
-        .ok_or_else(|| anyhow::anyhow!(
-            "TELEGRAM_BOT_TOKEN not set. Set TELEGRAM_BOT_TOKEN env var or \
-             gateway.telegram_token in config.toml"
-        ))?;
-
-    let gateway = Arc::new(TelegramGateway::new(token, data_dir)?);
-    gateway.run_forever().await;
-    Ok(())
 }

@@ -32,5 +32,12 @@ image.workspace = true
 axum = "0.7"
 tower = "0.5"
 
+# Sandboxing (OpenShell patterns)
+landlock.workspace = true
+seccompiler.workspace = true
+serde_yaml.workspace = true
+nix.workspace = true
+users.workspace = true
+
 [dev-dependencies]
 tokio-test = "0.4"

@@ -45,6 +45,7 @@ mod discord;
 mod email;
 mod feishu;
 mod google_chat;
+mod health;
 mod irc;
 mod line;
 mod matrix;
@@ -224,6 +225,10 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
 
     let data_dir = arli_data_dir();
     std::fs::create_dir_all(&data_dir)?;
+
+    // ── Health check server (OpenShell production pattern) ──
+    let health_state = health::HealthState::new();
+    health::serve(health_state.clone()).await?;
 
     let mut handles = Vec::new();
 
@@ -527,9 +532,11 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
     if handles.is_empty() {
         // Backward compat: if no tokens, default to Telegram
         info!("No platform tokens configured. Defaulting to Telegram...");
+        health_state.mark_ready();
         telegram::run(data_dir).await?;
     } else {
         info!("Gateway running {} platform(s)", handles.len());
+        health_state.mark_ready();
         for handle in handles {
             let _ = handle.await;
         }

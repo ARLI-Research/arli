@@ -1,7 +1,9 @@
 <p align="center">
   <img src="https://img.shields.io/badge/language-Rust-orange?style=flat-square" alt="Rust">
-  <img src="https://img.shields.io/badge/binary-20MB-22d3ee?style=flat-square" alt="20MB">
+  <img src="https://img.shields.io/badge/binary-12MB-22d3ee?style=flat-square" alt="12MB">
   <img src="https://img.shields.io/badge/cold_start-50ms-34d399?style=flat-square" alt="50ms">
+  <img src="https://img.shields.io/badge/sandbox-Landlock%2Bseccomp-ef4444?style=flat-square" alt="Landlock+seccomp">
+  <img src="https://img.shields.io/badge/audit-OCSF-blue?style=flat-square" alt="OCSF">
   <img src="https://img.shields.io/badge/providers-36-fbbf24?style=flat-square" alt="36 providers">
   <img src="https://img.shields.io/badge/platforms-20-a78bfa?style=flat-square" alt="20 platforms">
   <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT">
@@ -211,16 +213,96 @@ swarm.kill_all().await;
 
 ## Policy Engine
 
-```toml
-[policy.default]
-trade_execution = "needs_approval"
-file_delete = "deny"
-shell = "allow"
+Policy-driven security rules with host glob matching. Define allowed filesystem paths, network targets, and process capabilities in YAML.
 
-[rate_limits.shell]
-max_calls = 30
-window_secs = 60
+```yaml
+# default_policy.yaml (embedded in binary)
+policies:
+  - name: "restricted-agent"
+    filesystem:
+      read_only: ["/workspace", "/tmp"]
+      read_write: ["/tmp/output"]
+      allow_network: false
+    process:
+      disallow_exec: true
+  - name: "network-agent"
+    network:
+      allowed_hosts: ["api.example.com", "*.github.com"]
+      allowed_ports: [443, 80]
+    rate_limits:
+      max_requests_per_minute: 60
+
+# Host glob matching
+# *.example.com    → matches api.example.com, www.example.com
+# 10.0.*           → matches any host in 10.0.0.0/16
+# *                → matches everything
 ```
+
+## Sandbox
+
+Kernel-level isolation via Linux Landlock + seccomp BPF. Agent commands run in a restricted environment that physically cannot escape.
+
+```rust
+let sandbox = Sandbox::from_policy(&policy)?;
+
+// Execute a command inside the sandbox
+// Chain: seccomp → Landlock → privilege drop → exec
+let output = sandbox.execute_isolated("ls /workspace")?;
+```
+
+**Enforcement layers (applied in order):**
+
+1. **Seccomp BPF** — syscall whitelist. Blocks dangerous calls (`ptrace`, `mount`, `reboot`, `kexec_load`, etc.)
+2. **Landlock** — filesystem access control at kernel level. White-list directories, deny everything else
+3. **Privilege drop** — `initgroups` → `setgid` → `setuid` before `exec`. Process runs as unprivileged user
+
+All layers activate via `Command::pre_exec()` — attack surface is closed before the child process starts.
+
+## Inference Routing
+
+Smart multi-provider routing with automatic failover:
+
+```rust
+let registry = ProviderRegistry::from_embedded()?;
+
+// Round-robin across providers
+registry.route(RouteStrategy::RoundRobin, &request).await?;
+
+// Fallback chain: primary → secondary → tertiary
+registry.route(RouteStrategy::Fallback, &request).await?;
+
+// Affinity: same provider for same user/session
+registry.route(RouteStrategy::Affinity("user-123"), &request).await?;
+```
+
+11 providers: DeepSeek, OpenAI, Anthropic, Groq, Together, Fireworks, xAI, Google, Mistral, OpenRouter, Perplexity. All defined in YAML, switchable at runtime.
+
+## Audit Logging
+
+All agent actions logged in OCSF (Open Cybersecurity Schema Framework) format — the industry standard for security telemetry.
+
+```json
+{
+  "class_uid": 6007,
+  "class_name": "Agent Activity",
+  "activity_name": "Execute",
+  "activity_id": 1,
+  "time": 1717286400,
+  "agent": {
+    "name": "arli-core",
+    "policy": "restricted-agent"
+  },
+  "command": "ls /workspace",
+  "result": "success",
+  "sandbox": {
+    "landlock_enforced": true,
+    "seccomp_enforced": true,
+    "uid": 65534
+  }
+}
+```
+
+Compatible with SIEM systems, log aggregators, and security monitoring pipelines.
 
 ## Cron Jobs
 
@@ -248,7 +330,9 @@ scheduler.add_job(CronJob {
 | MCP server | Native | — | Native |
 | Self-update | — | Native | Native |
 | Trading | — | — | Native (Hyperliquid) |
-| Sandbox | Partial | Partial | Linux namespaces |
+| Sandbox | Partial | Partial | Landlock + seccomp |
+| Audit logging | — | — | OCSF |
+| Inference routing | — | — | Round-robin, fallback, affinity |
 | TTS | 16 providers | — | 3 providers |
 | Image generation | — | — | 2 providers |
 
@@ -305,7 +389,7 @@ cd arli && cargo build --release
 ## Tests
 
 ```bash
-cargo test -p arli-core      # 86 tests
+cargo test -p arli-core      # 134 tests
 cargo test --workspace       # all crates
 ```
 

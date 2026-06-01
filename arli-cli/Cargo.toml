@@ -25,3 +25,4 @@ crossterm = "0.28"
 rpassword = "7"
 toml.workspace = true
 clap_complete.workspace = true
+self_update = "0.41"

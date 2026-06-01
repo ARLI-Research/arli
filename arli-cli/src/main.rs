@@ -97,6 +97,13 @@ enum Commands {
     /// Manage checkpoints
     #[command(subcommand)]
     Checkpoint(CheckpointCmd),
+
+    /// Update ARLI to the latest release from GitHub
+    Update {
+        /// Check for updates without installing
+        #[arg(long)]
+        check: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -789,6 +796,39 @@ async fn run_chat(
     Ok(())
 }
 
+// --- Self-update ---
+
+fn run_update(check_only: bool) -> anyhow::Result<()> {
+    let current = env!("CARGO_PKG_VERSION");
+    println!("Current version: v{}", current);
+
+    let updater = self_update::backends::github::Update::configure()
+        .repo_owner("ARLI-Research")
+        .repo_name("arli")
+        .bin_name("arli")
+        .show_download_progress(true)
+        .current_version(current)
+        .no_confirm(true)
+        .build()?;
+
+    if check_only {
+        let latest = updater.get_latest_release()?;
+        if latest.version != current {
+            println!("New version available: v{}", latest.version);
+            println!("Release: {}", latest.body.unwrap_or_default());
+            println!("\nRun 'arli update' to install.");
+        } else {
+            println!("Already up to date.");
+        }
+    } else {
+        let status = updater.update()?;
+        println!("Updated to v{}", status.version());
+        println!("Restart arli to use the new version.");
+    }
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -1099,6 +1139,10 @@ async fn main() -> anyhow::Result<()> {
                     println!("Pruned {} checkpoints (keeping {}).", removed, keep);
                 }
             }
+        }
+
+        Commands::Update { check } => {
+            tokio::task::spawn_blocking(move || run_update(check)).await??;
         }
     }
 

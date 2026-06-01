@@ -107,6 +107,18 @@ enum Commands {
     /// Manage the gateway daemon
     #[command(subcommand)]
     Gateway(GatewayCmd),
+
+    /// Manage ARLI cryptographic keys (for ENSO attestation)
+    #[command(subcommand)]
+    Key(KeyCmd),
+}
+
+#[derive(Subcommand)]
+enum KeyCmd {
+    /// Generate a new ed25519 keypair for attestation signing
+    Generate,
+    /// Show the current public key (for ENSO Registry registration)
+    Show,
 }
 
 #[derive(Subcommand)]
@@ -1992,6 +2004,50 @@ async fn main() -> anyhow::Result<()> {
 
         Commands::Gateway(cmd) => {
             run_gateway(cmd)?;
+        }
+
+        Commands::Key(cmd) => {
+            run_key(cmd)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn run_key(cmd: KeyCmd) -> anyhow::Result<()> {
+    use arli_core::attestation::ArliKeypair;
+
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    let key_path = std::path::PathBuf::from(home).join(".arli").join("arli_key.pem");
+
+    match cmd {
+        KeyCmd::Generate => {
+            if key_path.exists() {
+                anyhow::bail!(
+                    "Key already exists at {}. Delete it first to regenerate.",
+                    key_path.display()
+                );
+            }
+            let kp = ArliKeypair::generate();
+            kp.save(&key_path).map_err(|e| anyhow::anyhow!("{}", e))?;
+            println!("Key generated: {}", key_path.display());
+            println!("Permissions: 600 (owner read/write only)");
+            println!();
+            println!("Public key for ENSO Registry:");
+            println!("  {}", kp.public_key_hex());
+        }
+        KeyCmd::Show => {
+            if !key_path.exists() {
+                println!("No key found. Generate one with: arli key generate");
+                return Ok(());
+            }
+            let kp = ArliKeypair::load(&key_path).map_err(|e| anyhow::anyhow!("{}", e))?;
+            println!("Key location: {}", key_path.display());
+            println!();
+            println!("Public key for ENSO Registry:");
+            println!("  {}", kp.public_key_hex());
+            println!();
+            println!("Register this key with ENSO Registry to enable attestation verification.");
         }
     }
 

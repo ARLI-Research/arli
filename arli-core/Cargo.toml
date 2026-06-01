@@ -39,5 +39,19 @@ serde_yaml.workspace = true
 nix.workspace = true
 users.workspace = true
 
+# Cryptography (attestation + ENSO integration)
+ed25519-dalek.workspace = true
+sha2.workspace = true
+hex.workspace = true
+rand.workspace = true
+
+# ICP client (ENSO canister calls) — optional feature
+ic-agent = { version = "0.37", optional = true }
+candid = { version = "0.10", optional = true }
+
+[features]
+default = []
+enso = ["ic-agent", "candid"]
+
 [dev-dependencies]
 tokio-test = "0.4"

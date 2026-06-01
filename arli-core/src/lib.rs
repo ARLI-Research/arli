@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod attestation;
 pub mod audit;
 pub mod checkpoints;
 pub mod compaction;
@@ -6,6 +7,7 @@ pub mod config;
 pub mod context;
 pub mod credentials;
 pub mod cron;
+pub mod enso;
 pub mod error;
 pub mod guardrail;
 pub mod health;

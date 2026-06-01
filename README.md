@@ -1,135 +1,171 @@
 # ARLI — Rust-native AI Agent Harness
 
-Universal agent infrastructure. Actor-based, swarm-first. ~20MB binary, ~50ms cold start.
+Production-grade agent infrastructure. Single ~20MB binary, ~50ms cold start, zero runtime dependencies. Actor-based agent loop with swarm orchestration, multi-platform messaging gateway, cron scheduler, and self-updating CLI.
 
 ## Quick Start
 
-### 1. Install
-
 ```bash
+# Install (Linux / macOS, no Rust toolchain needed)
 curl -fsSL https://raw.githubusercontent.com/ARLI-Research/arli/main/install.sh | bash
-```
 
-Requires: Linux or macOS. No Rust toolchain needed — downloads pre-built binary.
-Falls back to building from source if no binary for your platform.
-
-### 2. Configure
-
-```bash
+# Configure
 arli setup
+
+# Chat
+arli chat                    # Interactive TUI
+arli chat -q "Explain Rust"  # Single query
 ```
 
-Or manually:
+## What It Does
+
+ARLI is a universal agent runtime — the engine that powers AI assistants. It handles:
+
+- **Agent loop** — mailbox-driven actor, auto-compaction, streaming, budget tracking
+- **LLM routing** — 36 providers behind a unified interface
+- **Messaging** — 20 platforms, one gateway daemon
+- **Scheduling** — cron jobs with skill attachments
+- **Self-update** — `arli update` from GitHub Releases
+
+## Features
+
+### LLM Providers (36)
+
+DeepSeek, OpenAI, Anthropic, OpenRouter, Google AI Studio, xAI/Grok, GitHub Copilot, Nous Portal, NovitaAI, Qwen/DashScope, Xiaomi MiMo, Tencent TokenHub, NVIDIA NIM, HuggingFace, Z.AI/GLM, Kimi/Moonshot, StepFun, MiniMax (global + China), LM Studio, Ollama, AWS Bedrock, Azure Foundry, Arcee AI, GMI Cloud, Kilo Code, OpenCode Zen/Go, Alibaba Cloud, Custom endpoint — full list in `arli setup`.
+
+All routed through a single provider trait. OpenAI-compatible providers share one adapter. Anthropic has native prompt caching.
+
+### Messaging Gateway (20 platforms)
+
+Telegram, Discord, Slack, WhatsApp, Matrix, Microsoft Teams, Email (IMAP/SMTP), Signal, SMS/Twilio, Google Chat, Feishu/Lark, DingTalk, LINE, IRC, WeCom, QQ Bot, ntfy, SimpleX, Yuanbao, BlueBubbles/iMessage.
+
+One daemon, zero-config per platform — set env vars, start `arli gateway start`.
 
 ```bash
-export DEEPSEEK_API_KEY="sk-..."
-# or: OPENAI_API_KEY, ANTHROPIC_API_KEY
+# Set platform tokens
+export TELEGRAM_BOT_TOKEN="..."
+export DISCORD_BOT_TOKEN="..."
+export MATRIX_USER="..." MATRIX_PASSWORD="..."
+
+# Start all platforms at once
+arli gateway start
 ```
 
-### 3. Chat
+### Agent Settings
 
-```bash
-arli chat                  # Interactive TUI
-arli chat -q "What is Rust?"  # Single query
-```
+- **Max iterations** — 90 default (configurable)
+- **Tool progress** — off / new / all / verbose
+- **Context compression** — threshold 0.5–0.95
+- **Session reset** — inactivity + daily, inactivity-only, daily-only, never
 
-### Build from source
+### Tools
 
-```bash
-git clone https://github.com/ARLI-Research/arli
-cd arli
-cargo build --release
-./target/release/arli setup  # configure API keys
-./target/release/arli chat   # start chatting
-```
-./target/release/arli-gateway
-```
+Terminal, file read/write/patch/search, HTTP fetch, web search, browser automation, vision/image analysis, text-to-speech, image generation, video generation, session search, persistent memory, task delegation, code execution.
+
+### TTS (Edge TTS default, free)
+
+Edge TTS (Microsoft, free cloud), OpenAI TTS, local engines (espeak-ng, flite, macOS say). Auto-fallback — tries Edge first, then OpenAI, then local.
+
+### Image Generation
+
+FAL.ai (Flux), OpenAI DALL-E 3. Auto-fallback — tries FAL first, then OpenAI.
+
+### Search Providers
+
+DuckDuckGo (free, default), Brave, SearXNG (self-hosted), Tavily, Firecrawl, Exa, Parallel, xAI Web Search.
+
+### Memory Backends
+
+Built-in (SQLite, default), mem0, ChromaDB, Qdrant, Byterover, Hindsight, Holographic, Honcho, OpenViking, RetainDB, Supermemory, AgentMemory.
+
+### Terminal Backends
+
+Local (default), Docker, SSH, Modal, Daytona, Singularity/Apptainer.
+
+### Browser Providers
+
+Local Chromium (default), Camofox (Firefox anti-detection), Browserbase, Firecrawl, Browser Use.
 
 ## Architecture
 
 ```
 arli-core
-  Agent Actor <- Mailbox <- User/System messages
-       |
-       ├── Context Manager (tiktoken-rs, pressure detection)
+  Agent Actor ← Mailbox ← User/System messages
+       │
+       ├── Context Manager (token counting, pressure detection)
        ├── Compaction (LLM summarization)
-       ├── Policy Engine (allow/deny/needs_approval, rate limiting, budget)
+       ├── Policy Engine (allow/deny/needs_approval, rate limiting)
        ├── Hook System (lifecycle callbacks)
-       |
-       ├── Tools (10 built-in)
-       │   read_file, write_file, patch, shell,
-       │   search_files, http_get, browser,
-       │   session_search, memory, delegate_task
-       |
-       ├── Providers (3 adapters)
-       │   OpenAI, DeepSeek, Anthropic (w/ prompt caching)
-       |
+       │
+       ├── Tools
+       │   terminal, read_file, write_file, patch, search_files,
+       │   http_get, web_search, browser, vision, voice/TTS,
+       │   image_generate, video_generate, session_search,
+       │   memory, delegate_task, execute_code
+       │
+       ├── Providers (36 via 3 adapters)
+       │   OpenAI-compatible, Anthropic (prompt caching), OpenRouter
+       │
        ├── Session Store (SQLite + WAL + FTS5)
-       ├── Memory Store (persistent cross-session)
+       ├── Memory Store (persistent cross-session, 12 backends)
        ├── Skill Loader (SKILL.md from disk)
-       |
+       │
        ├── Swarm (spawn/steer/kill/redirect/restart)
        ├── Cron Scheduler (cron expressions + human intervals)
        └── Sandbox (Linux namespaces)
 
 arli-cli              CLI + TUI (ratatui)
-arli-gateway          Telegram long-poll bot
-arli-trading          Hyperliquid integration (hypersdk, WIP)
+arli-gateway          20-platform messaging daemon
+arli-trading          Hyperliquid integration (hypersdk)
 ```
 
-## Features
+## Commands
 
-### Agent Loop
-- Actor model: mailbox-driven, externally steerable
-- Context pressure: automatic token counting via tiktoken-rs
-- Auto-compaction: LLM summarization at critical pressure
-- Prompt injection: auto-loads AGENTS.md / CLAUDE.md from workdir
-- Streaming: token-by-token via `chat_stream()`
-- Budget tracking: token/time/dollar limits with grace period
+```
+arli chat              Interactive TUI chat
+arli chat -q "..."     Single query
+arli setup             Configure providers, platforms, settings
+arli model             Change model/provider interactively
+arli doctor            Check system health and configuration
+arli update            Self-update from GitHub Releases
+arli gateway start     Start messaging daemon
+arli gateway stop      Stop daemon
+arli gateway status    Daemon status
+arli gateway log       View daemon logs
+arli config show       Display current configuration
+arli config set ...    Set config values
+arli sessions          List recent sessions
+arli cron add ...      Schedule a recurring task
+arli cron list         List cron jobs
+arli cron start        Start cron scheduler
+arli serve             Health check HTTP server (port 3001)
+arli mcp               MCP server on stdio
+arli profile ...       Manage named profiles
+arli webhook ...       Manage webhook subscriptions
+arli checkpoint ...    Session checkpoint management
+arli plugins list      List discovered plugins
+arli completion        Shell completions (bash/zsh/fish)
+```
 
-### Tools
-
-| Tool | Description |
-|------|-------------|
-| `read_file` | Read files with offset/limit pagination |
-| `write_file` | Create/overwrite files |
-| `patch` | Targeted find-and-replace edits with diffs |
-| `shell` | Execute shell commands |
-| `search_files` | Ripgrep-based file search |
-| `http_get` | HTTP GET with auto-truncation |
-| `browser` | Fetch web pages, HTML-to-text extraction |
-| `session_search` | FTS5 full-text search across sessions |
-| `memory` | Persistent memory (add/replace/remove/search) |
-| `delegate_task` | Spawn child agents |
-
-### LLM Providers
-- OpenAI: GPT-4o, GPT-4-turbo
-- DeepSeek: deepseek-chat, deepseek-reasoner
-- Anthropic: Claude 3.5 Sonnet, Claude 3 Opus (w/ ephemeral prompt caching)
-
-### Swarm
+## Swarm
 
 ```rust
 let swarm = Swarm::new(provider_factory, policy, tools_factory);
 
-// Spawn with restart policy
 let child_id = swarm.spawn(SwarmAgentConfig {
     name: "research-agent",
     initial_message: Some("Analyze cointegration for top-50 perps"),
     max_iterations: 20,
-    restart_policy: Some(3),  // restart up to 3 times on failure
+    restart_policy: Some(3),
 }).await?;
 
-// Steer: pause, resume, kill, redirect
 swarm.get(&child_id).await?.pause().await;
-swarm.get(&child_id).await?.resume().await;
 swarm.get(&child_id).await?.send_message(
-    AgentMessage::Redirect("New goal: check BTC orderbook".into())
+    AgentMessage::Redirect("Check BTC orderbook".into())
 ).await;
 swarm.kill_all().await;
 ```
 
-### Policy Engine
+## Policy Engine
 
 ```toml
 [policy.default]
@@ -142,96 +178,139 @@ trade_execution = "needs_approval"
 max_position_size = "1000 USDC"
 max_daily_trades = 50
 
-# Rate limiting per tool
 [rate_limits.shell]
 max_calls = 30
 window_secs = 60
 ```
 
-### Cron Jobs
+## Cron Jobs
 
 ```rust
 let scheduler = CronScheduler::new();
 scheduler.add_job(CronJob {
     id: "market-check",
-    schedule_str: "0 */5 * * * *",  // every 5 min
+    schedule_str: "0 */5 * * * *",
     prompt: "Check funding rates on top perps",
 }).await;
 ```
 
-### Skills (disk-based)
+## Configuration
 
-```
-~/.arli/skills/
-  execute-trade/SKILL.md    # YAML frontmatter + markdown body
-  code-review/SKILL.md
-  data-analysis.toml        # Alternative TOML format
+```toml
+# ~/.arli/config.toml
+model = "deepseek-chat"
+max_iterations = 90
+tool_progress = "all"
+compression_threshold = 0.5
+
+[provider]
+name = "deepseek"
+api_key = "sk-..."
+
+[session_reset]
+mode = "inactivity_daily"
+inactivity_minutes = 1440
+daily_reset_hour = 4
+
+[search]
+provider = "duckduckgo"
+
+[memory]
+provider = "builtin"
+
+[terminal]
+backend = "local"
+
+[browser]
+provider = "local"
+
+[gateway]
+telegram_token = "..."
+discord_bot_token = "..."
 ```
 
-### Memory (persistent across sessions)
+## Environment Variables
 
-```
-Agent: [memory action='add'    target='memory' content='Project uses Rust 1.95']
-Agent: [memory action='search' query='Rust toolchain']
-Agent: [memory action='get'    target='user']
-```
+| Variable | Description |
+|---|---|
+| `DEEPSEEK_API_KEY` | DeepSeek API key |
+| `OPENAI_API_KEY` | OpenAI API key |
+| `ANTHROPIC_API_KEY` | Anthropic API key |
+| `GOOGLE_API_KEY` | Google AI Studio API key |
+| `XAI_API_KEY` | xAI/Grok API key |
+| `GITHUB_TOKEN` | GitHub Copilot token |
+| `OPENROUTER_API_KEY` | OpenRouter API key |
+| `ARLI_MODEL` | Override model name |
+| `ARLI_MAX_ITERATIONS` | Override max iterations |
+| `ARLI_HOME` | Data directory (default `~/.arli`) |
+| `ARLI_LOG` | Log level filter |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token |
+| `DISCORD_BOT_TOKEN` | Discord bot token |
+| `SLACK_BOT_TOKEN` | Slack bot token |
+| `MATRIX_USER` / `MATRIX_PASSWORD` | Matrix credentials |
+| `MS_TEAMS_APP_ID` / `MS_TEAMS_APP_PASSWORD` | Teams credentials |
+| `EMAIL_IMAP_SERVER` / `EMAIL_USER` / `EMAIL_PASSWORD` | Email credentials |
+
+Full env var list for all 36 providers and 20 platforms — run `arli setup` for guided configuration.
 
 ## Comparison
 
 | | Hermes | Claude Code | ARLI |
-|---|--------|-------------|------|
+|---|---|---|---|
 | Language | Python | TypeScript | Rust |
 | Binary size | ~200MB | ~150MB | ~20MB |
-| Cold start | 2-5s | 1-3s | ~50ms |
+| Cold start | 2–5s | 1–3s | ~50ms |
+| LLM providers | 37 | 3 | 36 |
+| Messaging platforms | 21 | — | 20 |
 | Swarm | Partial | Partial | Native |
-| Trading | No | No | Native |
-| Sandbox | Partial | Partial | Namespaces |
-| Typed skills | Partial | Partial | JSON Schema |
+| Trading | No | No | Native (Hyperliquid) |
+| Self-update | No | Yes | Yes |
+| Sandbox | Partial | Partial | Linux namespaces |
+| Cron scheduler | Yes | No | Yes |
+| MCP server | Yes | No | Yes |
+| TTS | 16 providers | — | 3 providers |
 
 ## Project Structure
 
 ```
 arli/
   Cargo.toml                 # Workspace root
-  arli-core/                 # Core library (17 modules)
+  arli-core/                 # Core library
     src/
       agent.rs               # Agent actor loop
       swarm.rs               # Swarm orchestrator
       cron.rs                # Cron scheduler
       hooks.rs               # Lifecycle hooks
-      memory.rs              # Persistent memory store
-      session.rs             # SQLite session store
+      memory.rs              # 12-backend memory store
+      session.rs             # SQLite session store (FTS5)
       compaction.rs          # LLM conversation compaction
       context.rs             # Token counting + pressure
-      skill_loader.rs        # Skills from disk
-      telemetry.rs           # JSON structured logging
       policy.rs              # Approval engine + rate limiting
       sandbox.rs             # Linux namespace isolation
-      providers/             # OpenAI + DeepSeek + Anthropic adapters
-      tools/                 # 10 tool implementations
+      telemetry.rs           # JSON structured logging
+      providers/             # 36 LLM providers, 3 adapters
+      tools/                 # 15 tool implementations
   arli-cli/                  # CLI + TUI binary
-  arli-gateway/              # Telegram bot binary
-  arli-trading/              # Trading integration (WIP)
+  arli-gateway/              # 20-platform messaging daemon
+  arli-trading/              # Hyperliquid trading (hypersdk)
 ```
 
-## Environment Variables
+## Install
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DEEPSEEK_API_KEY` | — | DeepSeek API key |
-| `OPENAI_API_KEY` | — | OpenAI API key |
-| `ANTHROPIC_API_KEY` | — | Anthropic API key |
-| `ARLI_MODEL` | `deepseek-chat` | Default model |
-| `ARLI_PROVIDER` | `deepseek` | Provider name |
-| `ARLI_BASE_URL` | — | Custom API base URL |
-| `ARLI_HOME` | `~/.arli` | Data directory |
-| `ARLI_LOG` | `info` | Log level filter |
-| `TELEGRAM_BOT_TOKEN` | — | Telegram bot token |
+```bash
+# One-liner (Linux / macOS)
+curl -fsSL https://raw.githubusercontent.com/ARLI-Research/arli/main/install.sh | bash
+
+# Or build from source
+git clone https://github.com/ARLI-Research/arli
+cd arli && cargo build --release
+./target/release/arli setup
+```
 
 ## Tests
 
 ```bash
-cargo test -p arli-core      # 44 tests
+cargo test -p arli-core      # 86 tests
 cargo test --workspace       # all crates
 ```
 

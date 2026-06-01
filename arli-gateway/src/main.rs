@@ -178,30 +178,40 @@ fn daemonize(pid_file: &str, log_file: &str) -> anyhow::Result<()> {
 
 use std::os::fd::AsRawFd;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    // ── Daemon mode ──
+    // ── Daemonize BEFORE tokio runtime starts ──
+    // On macOS, kqueue FDs from tokio don't survive fork,
+    // so we must fork before creating the async runtime.
     if cli.daemon {
         let data_dir = arli_data_dir();
         let pid_file = if cli.pid_file.is_empty() {
             data_dir.join("gateway.pid").display().to_string()
         } else {
-            cli.pid_file
+            cli.pid_file.clone()
         };
         let log_file = if cli.log_file.is_empty() {
             data_dir.join("gateway.log").display().to_string()
         } else {
-            cli.log_file
+            cli.log_file.clone()
         };
 
         daemonize(&pid_file, &log_file)?;
-        // After daemonize, we're the child. Write our PID.
+        // After daemonize, we're the grandchild. Write our PID.
         if !pid_file.is_empty() {
             fs::write(&pid_file, std::process::id().to_string())?;
         }
     }
+
+    // Now start tokio runtime — fresh, after fork
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    rt.block_on(async_main(cli))
+}
+
+async fn async_main(cli: Cli) -> anyhow::Result<()> {
 
     tracing_subscriber::fmt()
         .with_env_filter(

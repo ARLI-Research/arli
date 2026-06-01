@@ -973,6 +973,7 @@ fn run_update(check_only: bool) -> anyhow::Result<()> {
     let current = env!("CARGO_PKG_VERSION");
     println!("Current version: v{}", current);
 
+    let auth_token = std::env::var("GITHUB_TOKEN").ok();
     let updater = self_update::backends::github::Update::configure()
         .repo_owner("ARLI-Research")
         .repo_name("arli")
@@ -980,6 +981,7 @@ fn run_update(check_only: bool) -> anyhow::Result<()> {
         .show_download_progress(true)
         .current_version(current)
         .no_confirm(true)
+        .auth_token(auth_token.as_deref().unwrap_or(""))
         .build()?;
 
     if check_only {

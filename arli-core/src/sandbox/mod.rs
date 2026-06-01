@@ -8,6 +8,8 @@
 
 pub mod policy;
 pub mod landlock;
+pub mod seccomp;
+pub mod privdrop;
 // - PID namespace (can't see host processes)
 // - Optional memory/CPU limits via cgroups
 //

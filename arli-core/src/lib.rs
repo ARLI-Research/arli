@@ -13,6 +13,7 @@ pub mod guardrail;
 pub mod health;
 pub mod hooks;
 pub mod inference;
+pub mod kanban;
 pub mod mcp;
 pub mod memory;
 pub mod metrics;
@@ -35,7 +36,10 @@ pub mod webhooks;
 pub mod x402;
 
 pub use agent::{Agent, AgentConfig, AgentMessage, AgentState};
-pub use config::{Config, ProviderConfig, SessionResetConfig, SearchConfig, MemoryConfig, TerminalConfig, BrowserConfig, X402Config};
+pub use config::{
+    BrowserConfig, Config, MemoryConfig, ProviderConfig, SearchConfig, SessionResetConfig,
+    TerminalConfig, X402Config,
+};
 pub use cron::{CronEvent, CronJob, CronScheduler};
 pub use error::Error;
 pub use policy::{Decision, PolicyEngine, PolicyRule, TradingLimits};
@@ -45,7 +49,7 @@ pub use providers::{
 };
 pub use session::SessionStore;
 pub use skill_loader::{
-    SkillDef, ToolSequenceTracker, create_skill_from_template, load_skill_on_activate,
-    load_skills_from_dir, suggest_skill,
+    create_skill_from_template, load_skill_on_activate, load_skills_from_dir, suggest_skill,
+    SkillDef, ToolSequenceTracker,
 };
 pub use tools::{Tool, ToolOutput, ToolRegistry};

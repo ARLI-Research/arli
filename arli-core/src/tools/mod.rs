@@ -4,6 +4,7 @@ pub mod delegate;
 pub mod execute_code;
 pub mod http_get;
 pub mod image_gen;
+pub mod kanban;
 pub mod memory;
 pub mod patch;
 pub mod process;

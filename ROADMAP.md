@@ -72,11 +72,11 @@
 
 | # | Что | Статус |
 |---|-----|--------|
-| 1 | Trading live execution (hypersdk) | ⏳ сейчас |
-| 2 | Metrics/telemetry (Prometheus endpoint) | ⏳ |
-| 3 | Python sandbox hardening (wasm isolation, pkg mgmt) | ⏳ |
-| 4 | Auto-optimization (DSPy-like prompt tuning) | ⏳ |
-| 5 | Kanban task boards | ⏳ |
+| 1 | Trading live execution (hypersdk) | ✅ v0.5.0 |
+| 2 | Metrics/telemetry (Prometheus endpoint) | ✅ v0.5.0 |
+| 3 | Python sandbox hardening (wasm isolation, pkg mgmt) | ✅ v0.5.0 |
+| 4 | Auto-optimization (DSPy-like prompt tuning) | ✅ v0.5.0 |
+| 5 | Kanban task boards | ✅ v0.5.0 |
 | 6 | Web UI dashboard (axum + htmx) | ⏳ |
 
 ## 📋 TIER 4 — ECOSYSTEM

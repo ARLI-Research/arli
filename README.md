@@ -4,7 +4,7 @@
   <img src="https://img.shields.io/badge/cold_start-50ms-34d399?style=flat-square" alt="50ms">
   <img src="https://img.shields.io/badge/sandbox-Landlock%2Bseccomp-ef4444?style=flat-square" alt="Landlock+seccomp">
   <img src="https://img.shields.io/badge/audit-OCSF-blue?style=flat-square" alt="OCSF">
-  <img src="https://img.shields.io/badge/tests-213-green?style=flat-square" alt="213 tests">
+  <img src="https://img.shields.io/badge/tests-254-green?style=flat-square" alt="254 tests">
   <img src="https://img.shields.io/badge/providers-36-fbbf24?style=flat-square" alt="36 providers">
   <img src="https://img.shields.io/badge/platforms-20-a78bfa?style=flat-square" alt="20 platforms">
   <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT">
@@ -53,11 +53,12 @@ Hyperliquid live trading, ENSO/ICP on-chain settlements.
                              │              │  skill attachments   │
                              │              └──────────────────────┘
                     ┌────────▼──────────────────────────────┐
-                    │  15 BUILT-IN TOOLS                    │
+                    │  18 BUILT-IN TOOLS                    │
                     │  terminal  read  write  patch  search │
-                    │  browser  web_search  vision  voice   │
+                    │  hashedit  ast_edit  resolve  browser │
+                    │  web_search  vision  voice  memory    │
                     │  image_generate  video_generate       │
-                    │  memory  delegate  execute_code       │
+                    │  delegate  execute_code               │
                     └────────┬──────────────────────────────┘
                              │
           ┌──────────────────┼───────────────────┬─────────────────┐
@@ -121,7 +122,7 @@ Signal  SMS/Twilio  Google Chat  Feishu  DingTalk  LINE  IRC
 WeCom  QQ  ntfy  SimpleX  Yuanbao  BlueBubbles/iMessage
 ```
 
-### Tools — 15
+### Tools — 18
 
 | Tool | Description |
 |---|---|
@@ -129,7 +130,10 @@ WeCom  QQ  ntfy  SimpleX  Yuanbao  BlueBubbles/iMessage
 | `read_file` | Read with offset/limit pagination |
 | `write_file` | Create/overwrite files |
 | `patch` | Targeted find-and-replace edits |
-| `search_files` | Ripgrep-backed file search |
+| `hashedit` | Content-hash-anchored edits — zero whitespace battles |
+| `ast_edit` | Structural code edits via AST pattern matching (ast-grep) |
+| `resolve` | Accept/reject staged edits (preview-then-accept workflow) |
+| `search_files` | Ripgrep-backed in-process file search |
 | `web_search` | Search via 8 providers (DuckDuckGo, Brave, etc.) |
 | `browser` | Browser automation (5 backends) |
 | `vision` | Image analysis / OCR |
@@ -140,6 +144,18 @@ WeCom  QQ  ntfy  SimpleX  Yuanbao  BlueBubbles/iMessage
 | `memory` | Persistent memory (add/replace/remove/search) |
 | `delegate_task` | Spawn sub-agents in parallel |
 | `execute_code` | Run Python with tool access |
+
+### Edit Engine — 5 Layers
+
+ARLI's editing pipeline eliminates the "string not found" problem entirely through layered precision:
+
+| Layer | Tool | What it does |
+|---|---|---|
+| **1. In-process search** | `search_files` | Ripgrep linked into the binary — no fork/exec, no external dependency. ~10–100ms saved per search. |
+| **2. Hash-anchored edits** | `hashedit` | Model identifies lines by SHA-256 content hash (8 chars), not by retyping text. Whitespace battles just stop happening. |
+| **3. AST structural edits** | `ast_edit` | tree-sitter grammars for Rust/Python/TypeScript/JavaScript. Pattern `console.log($X)` matches the real AST node — not comments, not strings, not lookalikes. |
+| **4. Preview-then-accept** | `resolve` | Edits are staged, not written. Agent shows a unified diff. You accept or reject. File untouched until approved. |
+| **5. Stream rules (TTSR)** | `stream_rules` | Regex policies sit dormant until violated. No context tax on every turn. Match triggers injection + retry — max 3 retries per turn. |
 
 ### Agent Settings
 
@@ -496,7 +512,7 @@ scheduler.add_job(CronJob {
 | Inference routing | — | — | Round-robin, fallback, affinity |
 | TTS | 16 providers | — | 3 providers |
 | Image generation | — | — | 2 providers |
-| Tests | — | — | 213 (0 fail) |
+| Tests | — | — | 254 (0 fail) |
 
 ---
 

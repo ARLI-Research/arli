@@ -76,7 +76,7 @@ pub struct AgentHandle {
     pub id: AgentId,
     pub name: String,
     pub status: SwarmAgentStatus,
-    sender: mpsc::Sender<AgentMessage>,
+    pub sender: mpsc::Sender<AgentMessage>,
 }
 
 impl AgentHandle {

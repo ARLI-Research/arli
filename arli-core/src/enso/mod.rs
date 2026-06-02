@@ -1,10 +1,11 @@
-//! ENSO integration — ICP canister client for Agent Registry + Contracts.
+//! ENSO integration — ICP canister client for Agent Registry + Contracts + Oracle.
 //!
 //! Provides clients for:
 //! - ENSO Agent Registry: agent registration, key management
 //! - ENSO Contracts: attestation submission for settlement
-//!
-//! Requires `enso` feature flag (pulls in ic-agent + candid).
+//! - ENSO Oracle: automated job execution + attestation loop
+
+pub mod oracle;
 
 use crate::attestation::ArliAttestation;
 use serde::{Deserialize, Serialize};

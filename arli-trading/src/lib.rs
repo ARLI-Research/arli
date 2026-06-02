@@ -4,6 +4,7 @@
 //! trading skill contracts (TOML), and agent configurations
 //! optimized for algorithmic trading.
 
+pub mod client;
 pub mod skills;
 pub mod tools;
 

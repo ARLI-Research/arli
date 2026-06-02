@@ -4,17 +4,19 @@
   <img src="https://img.shields.io/badge/cold_start-50ms-34d399?style=flat-square" alt="50ms">
   <img src="https://img.shields.io/badge/sandbox-Landlock%2Bseccomp-ef4444?style=flat-square" alt="Landlock+seccomp">
   <img src="https://img.shields.io/badge/audit-OCSF-blue?style=flat-square" alt="OCSF">
+  <img src="https://img.shields.io/badge/tests-213-green?style=flat-square" alt="213 tests">
   <img src="https://img.shields.io/badge/providers-36-fbbf24?style=flat-square" alt="36 providers">
   <img src="https://img.shields.io/badge/platforms-20-a78bfa?style=flat-square" alt="20 platforms">
   <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT">
 </p>
 
 <h1 align="center">ARLI</h1>
-<h3 align="center">Rust-native AI Agent Harness</h3>
+<h3 align="center">Rust-native AI Agent Harness — Production-grade agent infrastructure</h3>
 
 <p align="center">
-Production-grade agent infrastructure. Single binary, zero runtime dependencies.<br>
-Actor-based agent loop, swarm orchestration, 20-platform messaging gateway.
+Single binary. Zero runtime dependencies. Kernel-level sandbox.<br>
+Actor-based agent loop, swarm orchestration, 20-platform messaging gateway,<br>
+Hyperliquid live trading, ENSO/ICP on-chain settlements.
 </p>
 
 ---
@@ -34,16 +36,19 @@ Actor-based agent loop, swarm orchestration, 20-platform messaging gateway.
                               │  arli-gateway Daemon          │
                               │  systemd · auto-restart       │
                               │  per-chat agent sessions      │
+                              │  Prometheus /metrics          │
                               └──────┬──────────────┬────────┘
                                      │              │
                     ┌────────────────▼──┐   ┌───────▼──────────────┐
                     │  Agent Actor      │   │  Swarm Orchestrator  │
                     │  Mailbox-driven   │   │  spawn/steer/kill    │
                     │  Context pressure │   │  redirect/restart    │
-                    │  Auto-compaction  │   └──────────────────────┘
-                    │  Policy engine    │
-                    │  Hook system      │   ┌──────────────────────┐
-                    └────────┬──────────┘   │  Cron Scheduler      │
+                    │  Auto-compaction  │   │  TaskRouter          │
+                    │  Policy engine    │   │  fan-out/round-robin │
+                    │  Hook system      │   └──────────────────────┘
+                    └────────┬──────────┘
+                             │              ┌──────────────────────┐
+                             │              │  Cron Scheduler      │
                              │              │  cron · intervals    │
                              │              │  skill attachments   │
                              │              └──────────────────────┘
@@ -55,15 +60,15 @@ Actor-based agent loop, swarm orchestration, 20-platform messaging gateway.
                     │  memory  delegate  execute_code       │
                     └────────┬──────────────────────────────┘
                              │
-          ┌──────────────────┼───────────────────┐
-          │                  │                   │
-  ┌───────▼──────┐  ┌────────▼───────┐  ┌───────▼──────────┐
-  │ 36 PROVIDERS │  │   STORAGE      │  │  TRADING (WIP)   │
-  │ 3 adapters   │  │   SQLite+WAL   │  │  Hyperliquid SDK │
-  │ OpenAI-compat│  │   FTS5 search  │  │  Perps · Spot    │
-  │ Anthropic    │  │   12 memory    │  │  WebSocket live  │
-  │ OpenRouter   │  │   backends     │  └──────────────────┘
-  └──────────────┘  └────────────────┘
+          ┌──────────────────┼───────────────────┬─────────────────┐
+          │                  │                   │                 │
+  ┌───────▼──────┐  ┌────────▼───────┐  ┌───────▼──────────┐  ┌──▼─────────────┐
+  │ 36 PROVIDERS │  │   STORAGE      │  │  LIVE TRADING    │  │  ENSO / ICP     │
+  │ 3 adapters   │  │   SQLite+WAL   │  │  Hyperliquid SDK │  │  Attestation    │
+  │ OpenAI-compat│  │   FTS5 search  │  │  Perps · Spot    │  │  Payments·Escrow│
+  │ Anthropic    │  │   12 memory    │  │  WS fusion feed  │  │  Marketplace    │
+  │ OpenRouter   │  │   backends     │  │  Metrics·Alerts  │  │  Oracle loop    │
+  └──────────────┘  └────────────────┘  └──────────────────┘  └─────────────────┘
 ```
 
 [Full interactive diagram — dark-themed SVG](/docs/architecture.html)
@@ -108,7 +113,7 @@ Alibaba Cloud  Custom endpoint
 
 ### Messaging Gateway — 20 Platforms
 
-One daemon. Set env vars, start `arli gateway start`. All platforms run in parallel.
+One daemon. Set env vars, start `arli gateway start`. Prometheus metrics at `/metrics`.
 
 ```
 Telegram  Discord  Slack  WhatsApp  Matrix  Microsoft Teams  Email
@@ -181,6 +186,23 @@ arli cron add          Schedule recurring task
 arli cron list         List all cron jobs
 arli cron start        Start cron scheduler
 arli serve -p PORT     Health check HTTP server
+arli dashboard -p PORT Web UI dashboard (metrics + logs)
+
+arli key generate      Ed25519 keypair for ENSO attestation
+arli key show          Show public key
+
+arli enso setup        ENSO ICP integration setup
+arli enso status       Key, config, active contracts
+arli enso pay <id>     Build + sign attestation
+
+arli marketplace rfq-create  Create RFQ for ENSO marketplace
+arli marketplace rfq-list    List open RFQs
+arli marketplace stats       Marketplace statistics
+
+arli kanban create     Create task board
+arli kanban add        Add card (backlog…)
+arli kanban show       View board
+arli kanban move       Move card between columns
 
 arli mcp               MCP server on stdio
 arli profile ...       Manage named profiles
@@ -189,6 +211,133 @@ arli checkpoint ...    Session checkpoint management
 arli plugins list      List discovered plugins
 arli completion bash   Generate shell completions
 ```
+
+---
+
+## Live Trading — Hyperliquid
+
+Native Rust trading via `hypersdk`. Perpetuals + spot, WebSocket fusion feed, cointegration signals, Prometheus metrics.
+
+```rust
+// Live trading with OCSF attestation
+use arli_trading::fusion_live::FusionLiveTrader;
+
+let trader = FusionLiveTrader::new(config, metrics).await?;
+trader.run().await; // WebSocket loop + signals + execution
+```
+
+**Capabilities:**
+- 229 perpetual + 19 spot markets on Hyperliquid mainnet
+- Cointegration signal generation (10 min candles)
+- Fusion backtest integration (Sharpe 3.83 on historical)
+- OCSF event hash embedded in every order for attestation
+- Prometheus metrics: PnL, positions, signal count, execution latency
+
+---
+
+## ENSO / ICP Integration
+
+On-chain agent settlements via Internet Computer Protocol. Full attestation loop: contract → execution → attestation → payment release. All atomic in one ICP call.
+
+### Architecture
+
+```
+ARLI Agent                     ENSO Contracts (ICP)             ICP Ledger
+─────                          ────────────────────             ──────────
+│                              │
+│ 1. Run job in sandbox        │
+│    Landlock + seccomp        │
+│                              │
+│ 2. Build OCSF attestation    │
+│    + ed25519 signature       │
+│                              │
+│ 3. submit_arli_payment ────→ │
+│    (one ICP call)            │  verify attestation
+│                              ├─ ed25519 verify
+│                              ├─ binary hash match
+│                              ├─ sandbox config match
+│                              ├─ Landlock enforced
+│                              ├─ Seccomp enforced
+│                              │
+│                              │  settlement triggered
+│                              │  escrow released ────→ USDC/ICP
+│                              │
+│  ←─── ArliPaymentResult      │
+│       status + tx_id + amount│
+```
+
+### CLI
+
+```bash
+# One-shot setup: keygen + config + registration
+arli enso setup --contracts 7yv6j-ryaaa-aaaaa-qhheq-cai
+
+# Check status
+arli enso status
+
+# Build and sign attestation for a contract
+arli enso pay contract_1780372735456935314_4
+```
+
+### Oracle Mode
+
+```bash
+# Daemon that polls ENSO contracts and auto-attests
+ENSO_CONTRACTS=contract_xxx,contract_yyy arli enso oracle
+```
+
+**ENS Contract endpoints used:**
+- `submit_arli_payment(contract_id, attestation_json)` — atomic verify + settle + release
+- `register_arli_agent(pubkey, binary_hash, name, capabilities)` — agent registration
+- `get_canister_metadata()` — DID version, supported protocols
+
+**Deployed canisters (ICP mainnet):**
+- Contracts: `7yv6j-ryaaa-aaaaa-qhheq-cai`
+- Frontend:  `7rwvv-hqaaa-aaaaa-qhhfa-cai`
+- Bridge UI: `https://7rwvv-hqaaa-aaaaa-qhhfa-cai.icp0.io/#/app`
+
+---
+
+## Kanban Task Boards
+
+SQLite-backed kanban boards with WIP limits, priorities, and agent assignment.
+
+```bash
+arli kanban create "Sprint 1" -d "ENSO integration"
+arli kanban add <board_id> backlog "Fix attestation bug" -p critical
+arli kanban show
+arli kanban move <card_id> in_progress
+arli kanban stats
+```
+
+**Features:**
+- 4-column workflow: backlog → in_progress → review → done
+- WIP limits per column (max 3 in_progress)
+- Card priorities: low, medium, high, critical
+- Agent assignment per card
+- Board statistics: counts, blocked cards, cycle time
+
+---
+
+## Auto-Optimization (DSPy-like)
+
+Pure Rust prompt and strategy optimization. No Python dependency.
+
+```rust
+use arli_core::optimization::{PromptOptimizer, StrategyOptimizer, AutoFewShot};
+
+// Optimize a prompt against a metric
+let optimizer = PromptOptimizer::new(evaluator);
+let improved = optimizer.optimize(&base_prompt, &metric, 10)?;
+
+// Auto-select few-shot examples from history
+let few_shot = AutoFewShot::from_history(&session_store, "trading analysis", 5)?;
+```
+
+**Optimizers:**
+- PromptOptimizer — iterative refinement against evaluation metric
+- StrategyOptimizer — tool selection and execution order optimization
+- AutoFewShot — automatic example selection from session history
 
 ---
 
@@ -210,6 +359,14 @@ swarm.get(&child_id).await?.send_message(
 ).await;
 swarm.kill_all().await;
 ```
+
+**Coordination primitives:**
+- TaskRouter — fan-out tasks to available agents
+- AgentRole — researcher, executor, reviewer
+- Round-robin load distribution
+- Task queue with priority
+
+---
 
 ## Policy Engine
 
@@ -321,20 +478,25 @@ scheduler.add_job(CronJob {
 | | Hermes | Claude Code | ARLI |
 |---|---|---|---|
 | Language | Python | TypeScript | Rust |
-| Binary size | ~200MB | ~150MB | ~20MB |
+| Binary size | ~200MB | ~150MB | ~12MB |
 | Cold start | 2–5s | 1–3s | ~50ms |
 | LLM providers | 37 | 3 | 36 |
 | Messaging platforms | 21 | — | 20 |
-| Swarm orchestration | Partial | Partial | Native |
+| Swarm orchestration | Partial | Partial | Native (TaskRouter, fan-out, round-robin) |
 | Cron scheduler | Native | — | Native |
 | MCP server | Native | — | Native |
 | Self-update | — | Native | Native |
-| Trading | — | — | Native (Hyperliquid) |
-| Sandbox | Partial | Partial | Landlock + seccomp |
-| Audit logging | — | — | OCSF |
+| Live trading | — | — | Native (Hyperliquid, fusion, WS) |
+| On-chain settlement | — | — | Native (ICP, ENSO, attestation loop) |
+| Kanban boards | — | — | Native (SQLite, WIP limits) |
+| Web dashboard | Native | — | Native (axum + htmx) |
+| Auto-optimization | — | — | Native (DSPy-like, pure Rust) |
+| Sandbox | Partial | Partial | Landlock + seccomp (kernel-level) |
+| Audit logging | — | — | OCSF (SIEM-compatible) |
 | Inference routing | — | — | Round-robin, fallback, affinity |
 | TTS | 16 providers | — | 3 providers |
 | Image generation | — | — | 2 providers |
+| Tests | — | — | 213 (0 fail) |
 
 ---
 
@@ -370,6 +532,16 @@ provider = "local"
 
 [gateway]
 telegram_token = "..."
+
+[enso]
+icp_gateway = "https://icp0.io"
+registry_canister_id = "ENSO_REGISTRY_CANISTER_ID"
+contracts_canister_id = "7yv6j-ryaaa-aaaaa-qhheq-cai"
+arli_public_key = "..."
+
+[trading]
+hyperliquid_wallet = "..."
+hyperliquid_rpc = "https://api.hyperliquid.xyz"
 ```
 
 ---
@@ -389,8 +561,8 @@ cd arli && cargo build --release
 ## Tests
 
 ```bash
-cargo test -p arli-core      # 134 tests
-cargo test --workspace       # all crates
+cargo test -p arli-core       # 213 tests, 0 fail
+cargo test --workspace        # all crates
 ```
 
 ## License

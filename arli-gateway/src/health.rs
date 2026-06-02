@@ -3,8 +3,7 @@
 //! Exposes:
 //! - GET /healthz  — liveness probe (always 200 if process alive)
 //! - GET /readyz   — readiness probe (200 when all platforms connected)
-//!
-//! Used by Kubernetes/container orchestration for probes.
+//! - GET /metrics  — Prometheus-compatible metrics (counters + gauges)
 
 use axum::{routing::get, Router};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -18,6 +17,8 @@ pub struct HealthState {
     pub ready: Arc<AtomicBool>,
     /// Total number of platform adapters running.
     pub platform_count: Arc<std::sync::atomic::AtomicUsize>,
+    /// ARLI metrics registry (Prometheus-compatible).
+    pub metrics: arli_core::metrics::Metrics,
 }
 
 impl HealthState {
@@ -25,17 +26,20 @@ impl HealthState {
         Self {
             ready: Arc::new(AtomicBool::new(false)),
             platform_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            metrics: arli_core::metrics::Metrics::global().clone(),
         }
     }
 
     /// Mark the gateway as ready.
     pub fn mark_ready(&self) {
         self.ready.store(true, Ordering::Release);
+        self.metrics.mark_ready();
     }
 
     /// Increment the active platform count.
     pub fn inc_platforms(&self) {
-        self.platform_count.fetch_add(1, Ordering::Relaxed);
+        let n = self.platform_count.fetch_add(1, Ordering::Relaxed) + 1;
+        self.metrics.set_platforms(n as u64);
     }
 }
 
@@ -55,12 +59,14 @@ pub async fn serve(state: HealthState) -> anyhow::Result<()> {
         .and_then(|p| p.parse().ok())
         .unwrap_or(8080);
 
+    let state_ready = state.clone();
+    let state_metrics = state.clone();
     let app = Router::new()
         .route("/healthz", get(healthz))
-        .route("/readyz", get(move || readyz(state.clone())))
-        .route("/metrics", get(metrics_handler));
+        .route("/readyz", get(move || readyz(state_ready)))
+        .route("/metrics", get(move || metrics_handler(state_metrics)));
 
-    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?;
     info!("Health server listening on 0.0.0.0:{port}");
 
     tokio::spawn(async move {
@@ -78,8 +84,6 @@ async fn healthz() -> &'static str {
 }
 
 /// Readiness — returns 200 when gateway is fully initialized.
-///
-/// Returns 503 if platforms haven't connected yet.
 async fn readyz(state: HealthState) -> (axum::http::StatusCode, &'static str) {
     if state.ready.load(Ordering::Acquire) {
         (axum::http::StatusCode::OK, "ready")
@@ -91,16 +95,10 @@ async fn readyz(state: HealthState) -> (axum::http::StatusCode, &'static str) {
     }
 }
 
-/// Prometheus-style metrics endpoint.
+/// Prometheus-compatible metrics endpoint.
 ///
-/// Returns basic gateway metrics: uptime, platform count, readiness.
-async fn metrics_handler() -> String {
-    format!(
-        "# HELP arli_gateway_platforms Number of active platform adapters\n\
-         # TYPE arli_gateway_platforms gauge\n\
-         arli_gateway_platforms 0\n\
-         # HELP arli_gateway_ready Gateway readiness status (1=ready, 0=not)\n\
-         # TYPE arli_gateway_ready gauge\n\
-         arli_gateway_ready 1\n"
-    )
+/// Returns counters (agent runs, tool calls, trades, attestations, memory ops)
+/// and gauges (sessions, platforms, readiness, uptime).
+async fn metrics_handler(state: HealthState) -> String {
+    state.metrics.prometheus_text()
 }

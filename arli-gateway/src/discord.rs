@@ -89,6 +89,7 @@ impl DiscordBot {
             None,
             None,
             None,
+            None,
         );
 
         let system_prompt = format!(

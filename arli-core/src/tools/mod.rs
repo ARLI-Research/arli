@@ -15,6 +15,9 @@ pub mod video_gen;
 pub mod vision;
 pub mod voice;
 pub mod web_search;
+// AST-based editing with preview-then-accept
+pub mod ast_edit;
+pub mod resolve;
 
 pub use delegate::DelegateTaskTool;
 pub use image_gen::ImageGenTool;

@@ -323,6 +323,7 @@ use std::sync::Arc;
 
 use super::browser::BrowserTool;
 
+use super::ast_edit::AstEditTool;
 use super::delegate::DelegateTaskTool;
 use super::execute_code::ExecuteCodeTool;
 use super::http_get::HttpGetTool;
@@ -330,6 +331,7 @@ use super::image_gen::ImageGenTool;
 use super::memory::MemoryTool;
 use super::patch::PatchTool;
 use super::process::ProcessTool;
+use super::resolve::ResolveTool;
 use super::search::SessionSearchTool;
 use super::search_files::SearchFilesTool;
 use super::video_gen::VideoGenTool;
@@ -438,6 +440,7 @@ impl Tool for X402PayTool {
 /// Pass a swarm to enable the delegate_task tool.
 /// Pass a process manager to enable the process tool.
 /// Pass an x402 client to enable the x402_pay payment tool.
+/// Pass a stage_dir to enable ast_edit + resolve (preview-then-accept editing).
 pub fn register_builtin_tools(
     registry: &mut super::ToolRegistry,
     db_path: Option<PathBuf>,
@@ -445,6 +448,7 @@ pub fn register_builtin_tools(
     swarm: Option<Arc<Swarm>>,
     process_manager: Option<Arc<ProcessManager>>,
     x402_client: Option<Arc<X402Client>>,
+    stage_dir: Option<PathBuf>,
 ) {
     registry.register(Box::new(ReadFileTool));
     registry.register(Box::new(WriteFileTool));
@@ -478,5 +482,10 @@ pub fn register_builtin_tools(
 
     if let Some(client) = x402_client {
         registry.register(Box::new(X402PayTool::new(client)));
+    }
+
+    if let Some(dir) = stage_dir {
+        registry.register(Box::new(AstEditTool::new(dir.clone())));
+        registry.register(Box::new(ResolveTool::new(dir)));
     }
 }

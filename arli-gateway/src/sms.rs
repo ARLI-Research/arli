@@ -70,6 +70,7 @@ impl SmsState {
             None,
             None,
             None,
+            None,
         );
 
         let agent_config = AgentConfig {

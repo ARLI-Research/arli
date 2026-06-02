@@ -94,5 +94,14 @@ grep-regex = "0.1"
 grep-searcher = "0.1"
 ignore = "0.4"
 
+# AST-based structural edits (ast-grep)
+ast-grep-core = "0.43"
+
+# Tree-sitter grammars for AST edits
+tree-sitter = "0.26"
+tree-sitter-rust = "0.23"
+tree-sitter-python = "0.23"
+tree-sitter-typescript = "0.23"
+
 # General regex (for stream rules, validation, etc.)
 regex = "1"

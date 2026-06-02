@@ -1666,6 +1666,7 @@ async fn run_chat(
         None,
         None,
         None,
+        None,
     );
 
     let session = Some(store);
@@ -1903,7 +1904,7 @@ async fn main() -> anyhow::Result<()> {
             let db_path = data_dir.join("sessions.db");
 
             let mut tools = arli_core::ToolRegistry::new();
-            register_builtin_tools(&mut tools, Some(db_path), None, None, None, None);
+            register_builtin_tools(&mut tools, Some(db_path), None, None, None, None, None);
 
             let mut server = McpServer::new(tools);
             server.run_sync()?;

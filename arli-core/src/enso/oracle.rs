@@ -145,9 +145,6 @@ impl EnsoOracle {
                         attested_count += 1;
                         tracing::info!("Oracle: contract {} attested OK", job.contract_id);
                     }
-                    Ok(OracleResult::AlreadyDone) => {
-                        job.attested = true;
-                    }
                     Err(e) => {
                         job.failures += 1;
                         tracing::error!(
@@ -186,7 +183,7 @@ impl EnsoOracle {
             .store(false, std::sync::atomic::Ordering::Relaxed);
     }
 
-    /// Process a single contract: build attestation, sign, submit.
+    /// Process a single contract: build attestation, sign, submit payment atomically.
     async fn process_contract(&self, job: &OracleJob) -> Result<OracleResult, String> {
         let keypair = self.keypair.as_ref().unwrap();
 
@@ -216,22 +213,36 @@ impl EnsoOracle {
             65534,
         );
 
+        let attestation_json =
+            serde_json::to_string(&attestation).map_err(|e| format!("serialize attestation: {}", e))?;
+
         tracing::info!(
-            "Oracle: submitting attestation for {} (ocsf:{})",
+            "Oracle: submitting payment+attestation for {} (ocsf:{})",
             job.contract_id,
             &attestation.ocsf_event_hash[..16],
         );
 
-        let response = self.enso.submit_attestation(&attestation).await?;
+        // One ICP call: verify attestation → settle → release payment
+        let result = self
+            .enso
+            .submit_arli_payment(&job.contract_id, &attestation_json)
+            .await?;
 
         use crate::enso::SettlementStatus;
-        match response.status {
-            SettlementStatus::Verified => {
+        match result.status {
+            SettlementStatus::Verified | SettlementStatus::Settled => {
                 crate::metrics::Metrics::global().inc_attestations();
+                if let Some(ref tx_id) = result.tx_id {
+                    tracing::info!(
+                        "Oracle: contract {} settled, payment released. tx={}, amount={}¢",
+                        job.contract_id,
+                        tx_id,
+                        result.amount_cents,
+                    );
+                }
                 Ok(OracleResult::Attested)
             }
-            SettlementStatus::Settled => Ok(OracleResult::AlreadyDone),
-            SettlementStatus::Disputed => Err(format!("Disputed: {}", response.message)),
+            SettlementStatus::Disputed => Err(format!("Disputed: {}", result.message)),
             SettlementStatus::Pending => Err("Pending — may need admin approval".into()),
         }
     }
@@ -241,7 +252,6 @@ impl EnsoOracle {
 #[derive(Debug, PartialEq)]
 enum OracleResult {
     Attested,
-    AlreadyDone,
 }
 
 /// Dry-run oracle stub when ENSO feature not compiled.

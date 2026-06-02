@@ -1,8 +1,8 @@
 //! x402 agentic wallet — on-chain USDC settlement.
 //!
-//! Provides an Ethereum wallet for paying premium AI tools with USDC.
-//! Uses secp256k1 signing (k256 crate), EIP-1559 transactions (type 2),
-//! and raw JSON-RPC calls via reqwest.
+//! **DEPRECATED** — use ENSO ICP-native payments instead.
+//! Migration path: ENSO `submit_arli_payment` = verify + settle + release in one ICP call.
+//! This module remains for backward compatibility with existing Ethereum USDC deployments.
 //!
 //! # Architecture
 //!

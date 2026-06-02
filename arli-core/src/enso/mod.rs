@@ -104,6 +104,22 @@ pub struct AttestationResponse {
     pub message: String,
 }
 
+/// Result from atomic payment + attestation (submit_arli_payment).
+/// One ICP call = verify + settle + release payment.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArliPaymentResult {
+    /// Settlement status after atomic call
+    pub status: SettlementStatus,
+    /// Human-readable message from ENSO
+    pub message: String,
+    /// Transaction ID on ICP ledger (if payment released)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tx_id: Option<String>,
+    /// Amount released to agent (USDC cents)
+    #[serde(default)]
+    pub amount_cents: u64,
+}
+
 // ============================================================================
 // ENSO CONFIGURATION
 // ============================================================================
@@ -235,6 +251,40 @@ impl EnsoClient {
 
         serde_json::from_str(&response_str).map_err(|e| format!("parse response: {}", e))
     }
+
+    /// Submit attestation AND trigger atomic payment settlement.
+    ///
+    /// One ICP call: verify attestation → settle contract → release escrowed payment.
+    /// Uses ENSO's `submit_arli_payment` endpoint (P0 — replaces Ethereum x402).
+    pub async fn submit_arli_payment(
+        &self,
+        contract_id: &str,
+        attestation_json: &str,
+    ) -> Result<ArliPaymentResult, String> {
+        let canister_id = self
+            .config
+            .contracts_canister_id
+            .parse::<ic_agent::Principal>()
+            .map_err(|e| format!("parse canister id: {}", e))?;
+
+        let args = candid::encode_args((contract_id.to_string(), attestation_json.to_string()))
+            .map_err(|e| format!("encode args: {}", e))?;
+
+        let result = self
+            .agent
+            .update(&canister_id, "submit_arli_payment")
+            .with_arg(args)
+            .call_and_wait()
+            .await
+            .map_err(|e| format!("call submit_arli_payment: {}", e))?;
+
+        // Decode response — Candid variant { Ok: ArliPaymentResult; Err: text }
+        let response_str: String = candid::decode_args(&result)
+            .map_err(|e| format!("decode response: {}", e))?
+            .0;
+
+        serde_json::from_str(&response_str).map_err(|e| format!("parse payment result: {}", e))
+    }
 }
 
 /// Stub client when `enso` feature is not enabled.
@@ -255,6 +305,14 @@ impl EnsoClientStub {
         &self,
         _attestation: &ArliAttestation,
     ) -> Result<AttestationResponse, String> {
+        Err("ENSO integration not compiled — rebuild with `--features enso`".into())
+    }
+
+    pub async fn submit_arli_payment(
+        &self,
+        _contract_id: &str,
+        _attestation_json: &str,
+    ) -> Result<ArliPaymentResult, String> {
         Err("ENSO integration not compiled — rebuild with `--features enso`".into())
     }
 }
@@ -325,5 +383,30 @@ mod tests {
             serde_json::to_string(&SettlementStatus::Verified).unwrap(),
             "\"Verified\""
         );
+    }
+
+    #[test]
+    fn test_arli_payment_result() {
+        let r = ArliPaymentResult {
+            status: SettlementStatus::Verified,
+            message: "Payment released".into(),
+            tx_id: Some("0xabc123".into()),
+            amount_cents: 5000,
+        };
+        let json = serde_json::to_string(&r).unwrap();
+        assert!(json.contains("Verified"));
+        assert!(json.contains("0xabc123"));
+        assert!(json.contains("5000"));
+
+        // Without tx_id (error case)
+        let r2 = ArliPaymentResult {
+            status: SettlementStatus::Disputed,
+            message: "Failed".into(),
+            tx_id: None,
+            amount_cents: 0,
+        };
+        let json2 = serde_json::to_string(&r2).unwrap();
+        assert!(json2.contains("Disputed"));
+        assert!(!json2.contains("tx_id"));
     }
 }

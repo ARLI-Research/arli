@@ -7,7 +7,7 @@
 
 use super::policy::SandboxPolicy;
 use landlock::{
-    path_beneath_rules, Access, AccessFs, CompatLevel, Compatible, HandledAccess, PathBeneath,
+    path_beneath_rules, AccessFs, CompatLevel, Compatible, PathBeneath,
     Ruleset, RulesetAttr, RulesetCreated, RulesetCreatedAttr, RulesetStatus,
 };
 use std::path::Path;

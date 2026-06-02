@@ -7,7 +7,7 @@
 //!
 //! Default-deny posture: if no rule matches, access is denied.
 
-use super::policy::{NetworkEndpoint, NetworkMode, SandboxPolicy};
+use super::policy::{NetworkMode, SandboxPolicy};
 
 /// Compiled policy engine for fast per-request evaluation.
 pub struct PolicyEngine {

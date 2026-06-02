@@ -19,7 +19,7 @@ use arli_core::{
 use axum::{
     extract::{Query, State},
     response::IntoResponse,
-    routing::{get, post},
+    routing::get,
     Router,
 };
 use serde::{Deserialize, Serialize};

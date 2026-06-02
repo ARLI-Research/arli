@@ -215,7 +215,7 @@ fn main() -> anyhow::Result<()> {
     rt.block_on(async_main(cli))
 }
 
-async fn async_main(cli: Cli) -> anyhow::Result<()> {
+async fn async_main(_cli: Cli) -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             std::env::var("ARLI_LOG").unwrap_or_else(|_| "info,arli_gateway=debug".to_string()),

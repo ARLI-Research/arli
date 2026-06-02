@@ -2,10 +2,12 @@ use async_trait::async_trait;
 
 use super::{Tool, ToolOutput};
 
-/// Search file contents or find files by name using ripgrep.
+/// Search file contents or find files by name — in-process, no shell-out.
 ///
-/// Content search: regex search inside files with line numbers.
-/// File search: find files by glob pattern.
+/// Content search: regex inside files via ripgrep crates (grep-regex + grep-searcher).
+/// File search: glob-based file discovery via `ignore` crate.
+///
+/// No fork/exec. Works cross-platform without requiring `rg` or `find` installed.
 pub struct SearchFilesTool;
 
 #[async_trait]
@@ -18,7 +20,7 @@ impl Tool for SearchFilesTool {
         "Search inside files (content) or find files by name (glob). \
          Content search: regex pattern in files, returns matching lines with line numbers. \
          File search: glob pattern to find files by name. \
-         Use this instead of grep/find/ls in shell."
+         In-process — no shell-out. Use this instead of grep/find/ls in shell."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
@@ -83,28 +85,10 @@ impl Tool for SearchFilesTool {
 
         match target {
             "files" => {
-                // Find files by name pattern
-                let mut cmd = std::process::Command::new("find");
-                cmd.arg(search_path)
-                    .arg("-name")
-                    .arg(pattern)
-                    .arg("-type")
-                    .arg("f")
-                    .arg("-maxdepth")
-                    .arg("5");
-
-                if let Some(glob) = file_glob {
-                    cmd.arg("-name").arg(glob);
-                }
-
-                match cmd.output() {
-                    Ok(output) => {
-                        let stdout = String::from_utf8_lossy(&output.stdout);
-                        let lines: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
-                        let total = lines.len();
-                        let shown: Vec<&str> = lines.into_iter().take(limit).collect();
-
-                        if shown.is_empty() {
+                // Find files by glob pattern — in-process via ignore crate
+                match crate::native_search::find_files(pattern, search_path, file_glob, limit) {
+                    Ok(files) => {
+                        if files.is_empty() {
                             return ToolOutput {
                                 success: true,
                                 content: format!(
@@ -115,13 +99,10 @@ impl Tool for SearchFilesTool {
                             };
                         }
 
-                        let mut result =
-                            format!("Found {} file(s) matching '{}':\n", total, pattern);
-                        for f in shown {
+                        let total = files.len();
+                        let mut result = format!("Found {} file(s) matching '{}':\n", total, pattern);
+                        for f in &files {
                             result.push_str(&format!("  {}\n", f));
-                        }
-                        if total > limit {
-                            result.push_str(&format!("... and {} more\n", total - limit));
                         }
 
                         ToolOutput {
@@ -138,31 +119,15 @@ impl Tool for SearchFilesTool {
                 }
             }
             _ => {
-                // Content search using ripgrep
-                let mut cmd = std::process::Command::new("rg");
-                cmd.arg("--line-number")
-                    .arg("--no-heading")
-                    .arg("--color")
-                    .arg("never")
-                    .arg("-n"); // line numbers
-
-                if let Some(glob) = file_glob {
-                    cmd.arg("--glob").arg(glob);
-                }
-
-                cmd.arg(pattern).arg(search_path);
-
-                // Limit results
-                let max_results = (limit * 2).to_string();
-                cmd.arg("-m").arg(&max_results);
-
-                match cmd.output() {
-                    Ok(output) => {
-                        let stdout = String::from_utf8_lossy(&output.stdout);
-                        let stderr = String::from_utf8_lossy(&output.stderr);
-
-                        if output.status.code() == Some(1) {
-                            // ripgrep returns 1 for no matches
+                // Content search — in-process via grep-regex + grep-searcher
+                match crate::native_search::grep_content(
+                    pattern,
+                    search_path,
+                    file_glob,
+                    limit,
+                ) {
+                    Ok(matches) => {
+                        if matches.is_empty() {
                             return ToolOutput {
                                 success: true,
                                 content: format!("No matches found for '{}'", pattern),
@@ -170,39 +135,18 @@ impl Tool for SearchFilesTool {
                             };
                         }
 
-                        if !output.status.success() {
-                            return ToolOutput {
-                                success: false,
-                                content: String::new(),
-                                error: Some(format!("ripgrep error: {}", stderr)),
-                            };
-                        }
-
-                        let lines: Vec<&str> = stdout.lines().collect();
-                        let total = lines.len();
-                        let shown = if total > limit {
-                            &lines[..limit]
-                        } else {
-                            &lines[..]
-                        };
-
-                        if shown.is_empty() {
-                            return ToolOutput {
-                                success: true,
-                                content: format!("No matches for '{}'", pattern),
-                                error: None,
-                            };
-                        }
-
+                        let total = matches.len();
                         let mut result = String::new();
-                        for line in shown {
-                            result.push_str(line);
-                            result.push('\n');
+                        for m in &matches {
+                            result.push_str(&format!(
+                                "{}:{}: {}\n",
+                                m.file, m.line, m.content
+                            ));
                         }
-                        if total > limit {
+                        if total >= limit {
                             result.push_str(&format!(
                                 "... truncated {} more results. Narrow your search.\n",
-                                total - limit
+                                total.saturating_sub(limit)
                             ));
                         }
 
@@ -212,48 +156,11 @@ impl Tool for SearchFilesTool {
                             error: None,
                         }
                     }
-                    Err(e) => {
-                        // ripgrep not installed — fall back to grep
-                        let mut cmd = std::process::Command::new("grep");
-                        cmd.arg("-rn")
-                            .arg("--color=never")
-                            .arg(pattern)
-                            .arg(search_path);
-
-                        if let Some(glob) = file_glob {
-                            cmd.arg("--include").arg(glob);
-                        }
-
-                        match cmd.output() {
-                            Ok(output) => {
-                                let stdout = String::from_utf8_lossy(&output.stdout);
-                                if stdout.trim().is_empty() {
-                                    return ToolOutput {
-                                        success: true,
-                                        content: format!(
-                                            "No matches for '{}' (rg not available, used grep)",
-                                            pattern
-                                        ),
-                                        error: None,
-                                    };
-                                }
-                                let lines: Vec<&str> = stdout.lines().take(limit).collect();
-                                ToolOutput {
-                                    success: true,
-                                    content: lines.join("\n"),
-                                    error: Some(format!(
-                                        "ripgrep unavailable ({}), fell back to grep",
-                                        e
-                                    )),
-                                }
-                            }
-                            Err(e2) => ToolOutput {
-                                success: false,
-                                content: String::new(),
-                                error: Some(format!("Both rg and grep failed: {} / {}", e, e2)),
-                            },
-                        }
-                    }
+                    Err(e) => ToolOutput {
+                        success: false,
+                        content: String::new(),
+                        error: Some(format!("search failed: {}", e)),
+                    },
                 }
             }
         }

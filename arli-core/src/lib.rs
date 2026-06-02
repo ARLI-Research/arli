@@ -18,6 +18,7 @@ pub mod kanban;
 pub mod mcp;
 pub mod memory;
 pub mod metrics;
+pub mod native_search;
 pub mod optimize;
 pub mod plugins;
 pub mod policy;

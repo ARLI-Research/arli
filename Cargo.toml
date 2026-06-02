@@ -88,3 +88,8 @@ hex = "0.4"
 rand = "0.8"
 k256 = { version = "0.13", features = ["ecdsa", "std"] }
 rlp = "0.5"
+
+# In-process search (ripgrep crates — no shell-out)
+grep-regex = "0.1"
+grep-searcher = "0.1"
+ignore = "0.4"

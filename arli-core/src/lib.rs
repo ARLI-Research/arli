@@ -16,6 +16,7 @@ pub mod inference;
 pub mod mcp;
 pub mod memory;
 pub mod metrics;
+pub mod optimize;
 pub mod plugins;
 pub mod policy;
 pub mod process;

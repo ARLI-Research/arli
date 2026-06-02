@@ -5,6 +5,7 @@
 //! - ENSO Contracts: attestation submission for settlement
 //! - ENSO Oracle: automated job execution + attestation loop
 
+pub mod marketplace;
 pub mod oracle;
 
 use crate::attestation::ArliAttestation;
@@ -216,8 +217,8 @@ impl EnsoClient {
         let attestation_str =
             String::from_utf8(attestation_json).map_err(|e| format!("UTF-8: {}", e))?;
 
-        let args = candid::encode_args((attestation_str,))
-            .map_err(|e| format!("encode args: {}", e))?;
+        let args =
+            candid::encode_args((attestation_str,)).map_err(|e| format!("encode args: {}", e))?;
 
         let result = self
             .agent

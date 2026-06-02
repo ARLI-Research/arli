@@ -83,7 +83,7 @@
 
 | # | Что | Статус |
 |---|-----|--------|
-| 7 | ENSO marketplace (RFQ → Quote → Contract flow, frontend) | ⏳ |
+| 7 | ENSO marketplace (RFQ → Quote → Contract flow, frontend) | ✅ v0.5.0 |
 | 8 | Inference brokering (ARLI API keys, wholesale margin) | ⏳ |
 | 9 | x402 USDC settlement (actual on-chain transfers) | ⏳ |
 | 10 | Multi-agent swarm coordination | ⏳ |

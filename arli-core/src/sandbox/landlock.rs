@@ -7,8 +7,8 @@
 
 use super::policy::SandboxPolicy;
 use landlock::{
-    path_beneath_rules, AccessFs, CompatLevel, Compatible, PathBeneath,
-    Ruleset, RulesetAttr, RulesetCreated, RulesetCreatedAttr, RulesetStatus,
+    path_beneath_rules, AccessFs, CompatLevel, Compatible, PathBeneath, Ruleset, RulesetAttr,
+    RulesetCreated, RulesetCreatedAttr, RulesetStatus,
 };
 use std::path::Path;
 
@@ -38,7 +38,8 @@ impl LandlockSandbox {
 
         // Build access flags
         let ro_access = AccessFs::from_read(landlock::ABI::V1);
-        let rw_access = AccessFs::from_read(landlock::ABI::V1) | AccessFs::from_write(landlock::ABI::V1);
+        let rw_access =
+            AccessFs::from_read(landlock::ABI::V1) | AccessFs::from_write(landlock::ABI::V1);
 
         // Create ruleset
         let ruleset = Ruleset::default()

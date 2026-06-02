@@ -24,8 +24,8 @@ impl HyperliquidContext {
     /// - `HYPERLIQUID_PRIVATE_KEY` — required, 0x-prefixed hex
     /// - `HYPERLIQUID_TESTNET` — optional, "true" to use testnet
     pub fn from_env() -> Result<Self> {
-        let private_key = std::env::var("HYPERLIQUID_PRIVATE_KEY")
-            .context("HYPERLIQUID_PRIVATE_KEY not set")?;
+        let private_key =
+            std::env::var("HYPERLIQUID_PRIVATE_KEY").context("HYPERLIQUID_PRIVATE_KEY not set")?;
 
         let signer: PrivateKeySigner = private_key
             .parse()

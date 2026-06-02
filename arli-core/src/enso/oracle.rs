@@ -152,14 +152,25 @@ impl EnsoOracle {
                         job.failures += 1;
                         tracing::error!(
                             "Oracle: contract {} attempt {}/{} failed: {}",
-                            job.contract_id, job.failures, MAX_RETRIES, e,
+                            job.contract_id,
+                            job.failures,
+                            MAX_RETRIES,
+                            e,
                         );
                     }
                 }
             }
 
-            if self.jobs.iter().all(|j| j.attested || j.failures >= MAX_RETRIES) {
-                tracing::info!("Oracle: all {} contracts done ({} attested)", self.jobs.len(), attested_count);
+            if self
+                .jobs
+                .iter()
+                .all(|j| j.attested || j.failures >= MAX_RETRIES)
+            {
+                tracing::info!(
+                    "Oracle: all {} contracts done ({} attested)",
+                    self.jobs.len(),
+                    attested_count
+                );
                 break;
             }
 
@@ -171,17 +182,16 @@ impl EnsoOracle {
 
     /// Stop the oracle loop.
     pub fn stop(&self) {
-        self.running.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.running
+            .store(false, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Process a single contract: build attestation, sign, submit.
     async fn process_contract(&self, job: &OracleJob) -> Result<OracleResult, String> {
         let keypair = self.keypair.as_ref().unwrap();
 
-        let builder = crate::attestation::AttestationBuilder::new(
-            keypair.clone(),
-            self.binary_hash.clone(),
-        );
+        let builder =
+            crate::attestation::AttestationBuilder::new(keypair.clone(), self.binary_hash.clone());
 
         let ocsf_event = serde_json::json!({
             "class_uid": 6007,
@@ -255,7 +265,10 @@ impl EnsoOracle {
     }
 
     pub async fn run(&mut self) -> usize {
-        tracing::warn!("ENSO feature not compiled — oracle dry-run only. {} contracts loaded.", self.jobs.len());
+        tracing::warn!(
+            "ENSO feature not compiled — oracle dry-run only. {} contracts loaded.",
+            self.jobs.len()
+        );
         0
     }
 

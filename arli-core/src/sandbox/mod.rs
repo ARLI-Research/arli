@@ -6,11 +6,11 @@
 //!
 //! Phase 2 upgrade (OpenShell patterns): Landlock filesystem + seccomp syscalls + privilege drop.
 
-pub mod policy;
 pub mod engine;
 pub mod landlock;
-pub mod seccomp;
+pub mod policy;
 pub mod privdrop;
+pub mod seccomp;
 // - PID namespace (can't see host processes)
 // - Optional memory/CPU limits via cgroups
 //

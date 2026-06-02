@@ -195,12 +195,15 @@ impl PromptOptimizer {
                     count += 1;
                 }
 
-                let avg = if count > 0 { round_score / count as f64 } else { 0.0 };
+                let avg = if count > 0 {
+                    round_score / count as f64
+                } else {
+                    0.0
+                };
 
                 // Update running average
-                candidate.score =
-                    (candidate.score * candidate.evaluations as f64 + avg)
-                        / (candidate.evaluations + 1) as f64;
+                candidate.score = (candidate.score * candidate.evaluations as f64 + avg)
+                    / (candidate.evaluations + 1) as f64;
                 candidate.evaluations += 1;
 
                 let step = OptimizationStep {
@@ -226,7 +229,9 @@ impl PromptOptimizer {
 
         // Pick winner — highest cumulative score
         let best = self.candidates.iter().max_by(|a, b| {
-            a.score.partial_cmp(&b.score).unwrap_or(std::cmp::Ordering::Equal)
+            a.score
+                .partial_cmp(&b.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
         })?;
 
         tracing::info!(
@@ -243,7 +248,9 @@ impl PromptOptimizer {
     /// Get the best candidate without re-running optimization.
     pub fn best(&self) -> Option<&PromptCandidate> {
         self.candidates.iter().max_by(|a, b| {
-            a.score.partial_cmp(&b.score).unwrap_or(std::cmp::Ordering::Equal)
+            a.score
+                .partial_cmp(&b.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
         })
     }
 }
@@ -341,9 +348,7 @@ impl StrategyParam {
                 }
                 vals
             }
-            "choice" => {
-                (0..self.choices.len()).map(|i| i as f64).collect()
-            }
+            "choice" => (0..self.choices.len()).map(|i| i as f64).collect(),
             _ => vec![self.current],
         }
     }
@@ -383,10 +388,8 @@ pub struct StrategyConfig {
 
 impl StrategyConfig {
     pub fn new(name: impl Into<String>, params: Vec<StrategyParam>) -> Self {
-        let best_params: HashMap<String, f64> = params
-            .iter()
-            .map(|p| (p.name.clone(), p.current))
-            .collect();
+        let best_params: HashMap<String, f64> =
+            params.iter().map(|p| (p.name.clone(), p.current)).collect();
 
         Self {
             name: name.into(),
@@ -607,8 +610,9 @@ impl AutoFewShot {
                 }
 
                 // Recency boost (newer = higher)
-                let age_hours = (chrono::Utc::now().timestamp() as u64)
-                    .saturating_sub(ex.timestamp) as f64 / 3600.0;
+                let age_hours = (chrono::Utc::now().timestamp() as u64).saturating_sub(ex.timestamp)
+                    as f64
+                    / 3600.0;
                 let recency = 1.0 / (1.0 + age_hours / 24.0); // decays over days
                 score += recency * 0.1;
 
@@ -627,9 +631,9 @@ impl AutoFewShot {
             }
 
             // Diversity check: skip if too similar to already selected
-            let is_duplicate = selected.iter().any(|s: &FewShotExample| {
-                similarity(&s.input, &ex.input) > 0.8
-            });
+            let is_duplicate = selected
+                .iter()
+                .any(|s: &FewShotExample| similarity(&s.input, &ex.input) > 0.8);
 
             if !is_duplicate {
                 selected.push(ex.clone());
@@ -648,10 +652,8 @@ impl Default for AutoFewShot {
 
 /// Simple Jaccard similarity between two strings.
 fn similarity(a: &str, b: &str) -> f64 {
-    let a_words: std::collections::HashSet<&str> =
-        a.split_whitespace().collect();
-    let b_words: std::collections::HashSet<&str> =
-        b.split_whitespace().collect();
+    let a_words: std::collections::HashSet<&str> = a.split_whitespace().collect();
+    let b_words: std::collections::HashSet<&str> = b.split_whitespace().collect();
 
     if a_words.is_empty() && b_words.is_empty() {
         return 1.0;
@@ -751,10 +753,7 @@ mod tests {
                 .with_quality(0.7)
                 .with_tags(vec!["trading".into()]),
         );
-        afs.add(
-            FewShotExample::new("Weather in London", "Sunny 22C")
-                .with_quality(0.2),
-        );
+        afs.add(FewShotExample::new("Weather in London", "Sunny 22C").with_quality(0.2));
 
         let selected = afs.select("crypto trading bot", &["trading".into()]);
         assert_eq!(selected.len(), 2);

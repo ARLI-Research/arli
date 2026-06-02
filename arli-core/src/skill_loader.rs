@@ -135,7 +135,11 @@ fn load_script_files(dir: &Path) -> Vec<(String, String)> {
 }
 
 /// Rough token estimate: chars / 4.
-fn estimate_tokens(system_prompt: &str, references: &[(String, String)], scripts: &[(String, String)]) -> usize {
+fn estimate_tokens(
+    system_prompt: &str,
+    references: &[(String, String)],
+    scripts: &[(String, String)],
+) -> usize {
     let mut total_chars = system_prompt.len();
     for (name, content) in references {
         total_chars += name.len() + content.len();
@@ -158,12 +162,12 @@ fn estimate_tokens(system_prompt: &str, references: &[(String, String)], scripts
 /// ---
 ///
 /// # Skill: My Skill
-/// 
+///
 /// Instructions for the model...
 /// ```
 fn parse_skill_md(path: &Path, dir: &Path) -> Result<SkillDef> {
     let content = std::fs::read_to_string(path)?;
-    
+
     let mut name = String::new();
     let mut version = "0.1.0".to_string();
     let mut description = String::new();
@@ -200,7 +204,8 @@ fn parse_skill_md(path: &Path, dir: &Path) -> Result<SkillDef> {
 
     if name.is_empty() {
         // Derive name from directory
-        name = dir.file_name()
+        name = dir
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("unknown")
             .to_string();
@@ -339,7 +344,8 @@ pub fn suggest_skill(tracker: &ToolSequenceTracker) -> Option<(String, String)> 
                  Use this skill when you need to perform this sequence of operations.",
                 name,
                 tools.join(" → "),
-                tools.iter()
+                tools
+                    .iter()
                     .enumerate()
                     .map(|(i, t)| format!("{}. Run `{}`", i + 1, t))
                     .collect::<Vec<_>>()
@@ -398,7 +404,11 @@ mod tests {
 
         let sub = dir.join("my-skill");
         fs::create_dir_all(&sub).unwrap();
-        fs::write(sub.join("SKILL.md"), "---\nname: my-skill\n---\n\nBe helpful.\n").unwrap();
+        fs::write(
+            sub.join("SKILL.md"),
+            "---\nname: my-skill\n---\n\nBe helpful.\n",
+        )
+        .unwrap();
 
         let skills = load_skills_from_dir(&dir).unwrap();
         assert_eq!(skills.len(), 1);
@@ -414,13 +424,21 @@ mod tests {
 
         let sub = dir.join("ref-skill");
         fs::create_dir_all(&sub).unwrap();
-        fs::write(sub.join("SKILL.md"), "---\nname: ref-skill\n---\n\nSkill with refs.\n").unwrap();
+        fs::write(
+            sub.join("SKILL.md"),
+            "---\nname: ref-skill\n---\n\nSkill with refs.\n",
+        )
+        .unwrap();
 
         // Create references/
         let refs_dir = sub.join("references");
         fs::create_dir_all(&refs_dir).unwrap();
         fs::write(refs_dir.join("api.md"), "# API\n\nEndpoint: /v1/foo\n").unwrap();
-        fs::write(refs_dir.join("endpoints.md"), "# Endpoints\n\nGET /health\n").unwrap();
+        fs::write(
+            refs_dir.join("endpoints.md"),
+            "# Endpoints\n\nGET /health\n",
+        )
+        .unwrap();
 
         // Create scripts/
         let scripts_dir = sub.join("scripts");
@@ -441,7 +459,11 @@ mod tests {
         assert!(skill.total_tokens > 0);
 
         // Verify reference content
-        let api_ref = skill.references.iter().find(|(n, _)| n == "api.md").unwrap();
+        let api_ref = skill
+            .references
+            .iter()
+            .find(|(n, _)| n == "api.md")
+            .unwrap();
         assert!(api_ref.1.contains("/v1/foo"));
 
         // Verify script content
@@ -507,7 +529,10 @@ mod tests {
         assert!(tokens > 0);
         assert_eq!(tokens, 2); // 11 chars / 4 = 2
 
-        let refs = vec![("api.md".to_string(), "# API docs\n\nSome content here.".to_string())];
+        let refs = vec![(
+            "api.md".to_string(),
+            "# API docs\n\nSome content here.".to_string(),
+        )];
         let tokens_with_refs = estimate_tokens("hello world", &refs, &[]);
         assert!(tokens_with_refs > tokens);
     }

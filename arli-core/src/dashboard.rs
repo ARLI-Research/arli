@@ -319,7 +319,10 @@ async fn overview_partial(State(state): State<Arc<DashboardState>>) -> Html<Stri
         .replace("{{attestations}}", &metrics.attestations.to_string())
         .replace("{{sessions}}", &metrics.sessions.to_string())
         .replace("{{trades}}", &metrics.trades.to_string())
-        .replace("{{kanban_boards}}", &kanban_summary.total_boards.to_string())
+        .replace(
+            "{{kanban_boards}}",
+            &kanban_summary.total_boards.to_string(),
+        )
         .replace("{{kanban_cards}}", &kanban_summary.total_cards.to_string());
 
     Html(html)
@@ -329,25 +332,31 @@ async fn overview_partial(State(state): State<Arc<DashboardState>>) -> Html<Stri
 async fn kanban_page(State(state): State<Arc<DashboardState>>) -> Html<String> {
     let kanban = match &state.kanban {
         Some(k) => k,
-        None => return Html(format!("{KANBAN_PAGE_PREFIX}{NO_KANBAN}{KANBAN_PAGE_SUFFIX}")),
+        None => {
+            return Html(format!(
+                "{KANBAN_PAGE_PREFIX}{NO_KANBAN}{KANBAN_PAGE_SUFFIX}"
+            ))
+        }
     };
 
     // Build board selector dropdown
     let boards = kanban.list_boards().unwrap_or_default();
     if boards.is_empty() {
-        return Html(format!("{KANBAN_PAGE_PREFIX}{NO_KANBAN}{KANBAN_PAGE_SUFFIX}"));
+        return Html(format!(
+            "{KANBAN_PAGE_PREFIX}{NO_KANBAN}{KANBAN_PAGE_SUFFIX}"
+        ));
     }
 
     // Use first board
     let board = &boards[0];
-    let stats = kanban.get_board_stats(&board.id).unwrap_or_else(|_| {
-        crate::kanban::BoardStats {
+    let stats = kanban
+        .get_board_stats(&board.id)
+        .unwrap_or_else(|_| crate::kanban::BoardStats {
             board_id: board.id.clone(),
             board_name: board.name.clone(),
             total_cards: 0,
             columns: Vec::new(),
-        }
-    });
+        });
 
     let mut html = String::from(KANBAN_PAGE_PREFIX);
 

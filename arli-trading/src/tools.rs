@@ -32,12 +32,16 @@ pub struct ExecuteTradeTool {
 }
 
 impl ExecuteTradeTool {
-    pub fn new(ctx: Arc<HyperliquidContext>) -> Self { Self { ctx } }
+    pub fn new(ctx: Arc<HyperliquidContext>) -> Self {
+        Self { ctx }
+    }
 }
 
 #[async_trait]
 impl Tool for ExecuteTradeTool {
-    fn name(&self) -> &str { "execute_trade" }
+    fn name(&self) -> &str {
+        "execute_trade"
+    }
 
     fn description(&self) -> &str {
         "Execute a trade on Hyperliquid. Coin, side (long/short), \
@@ -52,31 +56,40 @@ impl Tool for ExecuteTradeTool {
     async fn execute(&self, arguments: &str) -> ToolOutput {
         let args: serde_json::Value = match serde_json::from_str(arguments) {
             Ok(v) => v,
-            Err(e) => return ToolOutput {
-                success: false, content: String::new(),
-                error: Some(format!("Invalid JSON: {}", e)),
-            },
+            Err(e) => {
+                return ToolOutput {
+                    success: false,
+                    content: String::new(),
+                    error: Some(format!("Invalid JSON: {}", e)),
+                }
+            }
         };
 
         if let Err(errors) = TradingSkillRegistry::execute_trade().validate(&args) {
             return ToolOutput {
-                success: false, content: String::new(),
+                success: false,
+                content: String::new(),
                 error: Some(format!("Validation: {}", errors.join("; "))),
             };
         }
 
         let coin = args["coin"].as_str().unwrap_or("BTC").to_uppercase();
         let buy = is_buy(args["side"].as_str().unwrap_or("long"));
-        let size: Decimal = args["size_usd"].as_f64()
-            .and_then(|v| Decimal::try_from(v).ok()).unwrap_or_default();
+        let size: Decimal = args["size_usd"]
+            .as_f64()
+            .and_then(|v| Decimal::try_from(v).ok())
+            .unwrap_or_default();
         let leverage: u64 = args["leverage"].as_u64().unwrap_or(1);
         let order_type = args["order_type"].as_str().unwrap_or("market");
-        let limit_price: Option<Decimal> = args.get("limit_price")
-            .and_then(|v| v.as_f64()).and_then(|p| Decimal::try_from(p).ok());
+        let limit_price: Option<Decimal> = args
+            .get("limit_price")
+            .and_then(|v| v.as_f64())
+            .and_then(|p| Decimal::try_from(p).ok());
 
         if size <= Decimal::ZERO {
             return ToolOutput {
-                success: false, content: String::new(),
+                success: false,
+                content: String::new(),
                 error: Some("size_usd must be > 0".into()),
             };
         }
@@ -84,30 +97,43 @@ impl Tool for ExecuteTradeTool {
         // Find market
         let markets = match self.ctx.client.perps().await {
             Ok(m) => m,
-            Err(e) => return ToolOutput {
-                success: false, content: String::new(),
-                error: Some(format!("Failed to fetch markets: {}", e)),
-            },
+            Err(e) => {
+                return ToolOutput {
+                    success: false,
+                    content: String::new(),
+                    error: Some(format!("Failed to fetch markets: {}", e)),
+                }
+            }
         };
 
         let market = match markets.iter().find(|m| m.name.eq_ignore_ascii_case(&coin)) {
             Some(m) => m,
-            None => return ToolOutput {
-                success: false, content: String::new(),
-                error: Some(format!("Coin '{}' not found", coin)),
-            },
+            None => {
+                return ToolOutput {
+                    success: false,
+                    content: String::new(),
+                    error: Some(format!("Coin '{}' not found", coin)),
+                }
+            }
         };
 
         // Set leverage if needed
         if leverage != 1 {
             let nonce = chrono::Utc::now().timestamp_millis() as u64;
-            if let Err(e) = self.ctx.client.update_leverage(
-                self.ctx.signer.as_ref(),
-                market.index,
-                true, // is_cross
-                leverage as u32,
-                nonce, None, None,
-            ).await {
+            if let Err(e) = self
+                .ctx
+                .client
+                .update_leverage(
+                    self.ctx.signer.as_ref(),
+                    market.index,
+                    true, // is_cross
+                    leverage as u32,
+                    nonce,
+                    None,
+                    None,
+                )
+                .await
+            {
                 tracing::warn!("Leverage update failed (may already be set): {}", e);
             }
         }
@@ -123,30 +149,44 @@ impl Tool for ExecuteTradeTool {
                         limit_px: limit_price.unwrap_or(Decimal::ZERO),
                         sz: size,
                         reduce_only: false,
-                        order_type: OrderTypePlacement::Limit { tif: TimeInForce::Gtc },
+                        order_type: OrderTypePlacement::Limit {
+                            tif: TimeInForce::Gtc,
+                        },
                         cloid: Default::default(),
                     }],
                     grouping: OrderGrouping::Na,
                     builder: None,
                 };
-                self.ctx.client.place(
-                    self.ctx.signer.as_ref(), batch, nonce, None, None,
-                ).await.map_err(|e| format!("{:?}", e))
+                self.ctx
+                    .client
+                    .place(self.ctx.signer.as_ref(), batch, nonce, None, None)
+                    .await
+                    .map_err(|e| format!("{:?}", e))
             }
             _ => {
                 // market order via market_open
                 let worst_price = limit_price.unwrap_or_else(|| {
-                    if buy { Decimal::MAX / Decimal::TEN } else { Decimal::ZERO }
+                    if buy {
+                        Decimal::MAX / Decimal::TEN
+                    } else {
+                        Decimal::ZERO
+                    }
                 });
-                self.ctx.client.market_open(
-                    self.ctx.signer.as_ref(),
-                    market,
-                    buy,
-                    worst_price,
-                    size,
-                    nonce,
-                    None, None, None,
-                ).await.map_err(|e| e.to_string())
+                self.ctx
+                    .client
+                    .market_open(
+                        self.ctx.signer.as_ref(),
+                        market,
+                        buy,
+                        worst_price,
+                        size,
+                        nonce,
+                        None,
+                        None,
+                        None,
+                    )
+                    .await
+                    .map_err(|e| e.to_string())
             }
         };
 
@@ -167,8 +207,12 @@ impl Tool for ExecuteTradeTool {
 
                 tracing::info!(
                     "TRADE: {} {} ${} on {} ({}x) — ocsf:{}",
-                    if buy { "LONG" } else { "SHORT" }, coin,
-                    size, order_type, leverage, &event_hash[..16],
+                    if buy { "LONG" } else { "SHORT" },
+                    coin,
+                    size,
+                    order_type,
+                    leverage,
+                    &event_hash[..16],
                 );
 
                 ToolOutput {
@@ -183,12 +227,14 @@ impl Tool for ExecuteTradeTool {
                         "nonce": nonce,
                         "ocsf_event_hash": event_hash,
                         "fills": statuses.iter().map(|s| format!("{:?}", s)).collect::<Vec<_>>(),
-                    })).unwrap_or_default(),
+                    }))
+                    .unwrap_or_default(),
                     error: None,
                 }
             }
             Err(e) => ToolOutput {
-                success: false, content: String::new(),
+                success: false,
+                content: String::new(),
                 error: Some(format!("Trade failed: {}", e)),
             },
         }
@@ -204,12 +250,16 @@ pub struct CancelOrderTool {
 }
 
 impl CancelOrderTool {
-    pub fn new(ctx: Arc<HyperliquidContext>) -> Self { Self { ctx } }
+    pub fn new(ctx: Arc<HyperliquidContext>) -> Self {
+        Self { ctx }
+    }
 }
 
 #[async_trait]
 impl Tool for CancelOrderTool {
-    fn name(&self) -> &str { "cancel_order" }
+    fn name(&self) -> &str {
+        "cancel_order"
+    }
 
     fn description(&self) -> &str {
         "Cancel an order by oid (order ID). Requires coin."
@@ -222,46 +272,64 @@ impl Tool for CancelOrderTool {
     async fn execute(&self, arguments: &str) -> ToolOutput {
         let args: serde_json::Value = match serde_json::from_str(arguments) {
             Ok(v) => v,
-            Err(e) => return ToolOutput {
-                success: false, content: String::new(),
-                error: Some(format!("Invalid JSON: {}", e)),
-            },
+            Err(e) => {
+                return ToolOutput {
+                    success: false,
+                    content: String::new(),
+                    error: Some(format!("Invalid JSON: {}", e)),
+                }
+            }
         };
 
         let coin = args["coin"].as_str().unwrap_or("BTC").to_uppercase();
         let oid: u64 = match args.get("oid").and_then(|v| v.as_u64()) {
             Some(id) if id > 0 => id,
-            _ => return ToolOutput {
-                success: false, content: String::new(),
-                error: Some("oid (order ID) is required".into()),
-            },
+            _ => {
+                return ToolOutput {
+                    success: false,
+                    content: String::new(),
+                    error: Some("oid (order ID) is required".into()),
+                }
+            }
         };
 
         // Find asset index
         let markets = match self.ctx.client.perps().await {
             Ok(m) => m,
-            Err(e) => return ToolOutput {
-                success: false, content: String::new(),
-                error: Some(format!("Failed to fetch markets: {}", e)),
-            },
+            Err(e) => {
+                return ToolOutput {
+                    success: false,
+                    content: String::new(),
+                    error: Some(format!("Failed to fetch markets: {}", e)),
+                }
+            }
         };
 
         let market = match markets.iter().find(|m| m.name.eq_ignore_ascii_case(&coin)) {
             Some(m) => m,
-            None => return ToolOutput {
-                success: false, content: String::new(),
-                error: Some(format!("Coin '{}' not found", coin)),
-            },
+            None => {
+                return ToolOutput {
+                    success: false,
+                    content: String::new(),
+                    error: Some(format!("Coin '{}' not found", coin)),
+                }
+            }
         };
 
         let nonce = chrono::Utc::now().timestamp_millis() as u64;
         let batch = BatchCancel {
-            cancels: vec![Cancel { asset: market.index, oid }],
+            cancels: vec![Cancel {
+                asset: market.index,
+                oid,
+            }],
         };
 
-        match self.ctx.client.cancel(
-            self.ctx.signer.as_ref(), batch, nonce, None, None,
-        ).await {
+        match self
+            .ctx
+            .client
+            .cancel(self.ctx.signer.as_ref(), batch, nonce, None, None)
+            .await
+        {
             Ok(statuses) => {
                 tracing::info!("CANCEL: oid {} on {}", oid, coin);
                 ToolOutput {
@@ -270,12 +338,14 @@ impl Tool for CancelOrderTool {
                         "cancelled": true, "coin": coin, "oid": oid,
                         "nonce": nonce,
                         "statuses": statuses.iter().map(|s| format!("{:?}", s)).collect::<Vec<_>>(),
-                    })).unwrap_or_default(),
+                    }))
+                    .unwrap_or_default(),
                     error: None,
                 }
             }
             Err(e) => ToolOutput {
-                success: false, content: String::new(),
+                success: false,
+                content: String::new(),
                 error: Some(format!("Cancel failed: {}", e)),
             },
         }
@@ -291,12 +361,16 @@ pub struct GetPositionsTool {
 }
 
 impl GetPositionsTool {
-    pub fn new(ctx: Arc<HyperliquidContext>) -> Self { Self { ctx } }
+    pub fn new(ctx: Arc<HyperliquidContext>) -> Self {
+        Self { ctx }
+    }
 }
 
 #[async_trait]
 impl Tool for GetPositionsTool {
-    fn name(&self) -> &str { "get_positions" }
+    fn name(&self) -> &str {
+        "get_positions"
+    }
 
     fn description(&self) -> &str {
         "Get open positions: coin, size, entry price, unrealized PnL, \
@@ -308,25 +382,32 @@ impl Tool for GetPositionsTool {
     }
 
     async fn execute(&self, _arguments: &str) -> ToolOutput {
-        match self.ctx.client.clearinghouse_state(
-            self.ctx.address, None::<String>,
-        ).await {
+        match self
+            .ctx
+            .client
+            .clearinghouse_state(self.ctx.address, None::<String>)
+            .await
+        {
             Ok(state) => {
-                let positions: Vec<serde_json::Value> = state.asset_positions.iter()
+                let positions: Vec<serde_json::Value> = state
+                    .asset_positions
+                    .iter()
                     .filter(|p| p.position.szi != Decimal::ZERO)
-                    .map(|p| serde_json::json!({
-                        "coin": p.position.coin,
-                        "size": p.position.szi.to_string(),
-                        "entry_price": p.position.entry_px
-                            .map(|px| px.to_string()).unwrap_or_default(),
-                        "position_value": p.position.position_value.to_string(),
-                        "unrealized_pnl": p.position.unrealized_pnl.to_string(),
-                        "return_on_equity": p.position.return_on_equity.to_string(),
-                        "leverage": p.position.leverage.value.to_string(),
-                        "liquidation_price": p.position.liquidation_px
-                            .map(|lp| lp.to_string()).unwrap_or_default(),
-                        "margin_used": p.position.margin_used.to_string(),
-                    }))
+                    .map(|p| {
+                        serde_json::json!({
+                            "coin": p.position.coin,
+                            "size": p.position.szi.to_string(),
+                            "entry_price": p.position.entry_px
+                                .map(|px| px.to_string()).unwrap_or_default(),
+                            "position_value": p.position.position_value.to_string(),
+                            "unrealized_pnl": p.position.unrealized_pnl.to_string(),
+                            "return_on_equity": p.position.return_on_equity.to_string(),
+                            "leverage": p.position.leverage.value.to_string(),
+                            "liquidation_price": p.position.liquidation_px
+                                .map(|lp| lp.to_string()).unwrap_or_default(),
+                            "margin_used": p.position.margin_used.to_string(),
+                        })
+                    })
                     .collect();
 
                 ToolOutput {
@@ -339,12 +420,14 @@ impl Tool for GetPositionsTool {
                         "withdrawable": state.withdrawable.to_string(),
                         "positions": positions,
                         "count": positions.len(),
-                    })).unwrap_or_default(),
+                    }))
+                    .unwrap_or_default(),
                     error: None,
                 }
             }
             Err(e) => ToolOutput {
-                success: false, content: String::new(),
+                success: false,
+                content: String::new(),
                 error: Some(format!("Failed: {}", e)),
             },
         }
@@ -360,12 +443,16 @@ pub struct GetMarketDataTool {
 }
 
 impl GetMarketDataTool {
-    pub fn new(ctx: Arc<HyperliquidContext>) -> Self { Self { ctx } }
+    pub fn new(ctx: Arc<HyperliquidContext>) -> Self {
+        Self { ctx }
+    }
 }
 
 #[async_trait]
 impl Tool for GetMarketDataTool {
-    fn name(&self) -> &str { "get_market_data" }
+    fn name(&self) -> &str {
+        "get_market_data"
+    }
 
     fn description(&self) -> &str {
         "Get market data: mid price, max leverage, config, recent funding."
@@ -378,37 +465,52 @@ impl Tool for GetMarketDataTool {
     async fn execute(&self, arguments: &str) -> ToolOutput {
         let args: serde_json::Value = match serde_json::from_str(arguments) {
             Ok(v) => v,
-            Err(e) => return ToolOutput {
-                success: false, content: String::new(),
-                error: Some(format!("Invalid JSON: {}", e)),
-            },
+            Err(e) => {
+                return ToolOutput {
+                    success: false,
+                    content: String::new(),
+                    error: Some(format!("Invalid JSON: {}", e)),
+                }
+            }
         };
         let coin = args["coin"].as_str().unwrap_or("BTC").to_uppercase();
 
         let mids = match self.ctx.client.all_mids(None).await {
             Ok(m) => m,
-            Err(e) => return ToolOutput {
-                success: false, content: String::new(),
-                error: Some(format!("Prices: {}", e)),
-            },
+            Err(e) => {
+                return ToolOutput {
+                    success: false,
+                    content: String::new(),
+                    error: Some(format!("Prices: {}", e)),
+                }
+            }
         };
 
-        let mid = mids.get(&coin).map(|d| d.to_string()).unwrap_or_else(|| "N/A".into());
+        let mid = mids
+            .get(&coin)
+            .map(|d| d.to_string())
+            .unwrap_or_else(|| "N/A".into());
 
         let markets = match self.ctx.client.perps().await {
             Ok(m) => m,
-            Err(e) => return ToolOutput {
-                success: false, content: String::new(),
-                error: Some(format!("Markets: {}", e)),
-            },
+            Err(e) => {
+                return ToolOutput {
+                    success: false,
+                    content: String::new(),
+                    error: Some(format!("Markets: {}", e)),
+                }
+            }
         };
 
         match markets.iter().find(|m| m.name.eq_ignore_ascii_case(&coin)) {
             Some(m) => {
                 let now = chrono::Utc::now().timestamp_millis() as u64;
-                let funding = self.ctx.client.funding_history(
-                    &m.name, now - 3_600_000, Some(now),
-                ).await.ok();
+                let funding = self
+                    .ctx
+                    .client
+                    .funding_history(&m.name, now - 3_600_000, Some(now))
+                    .await
+                    .ok();
 
                 ToolOutput {
                     success: true,
@@ -425,12 +527,14 @@ impl Tool for GetMarketDataTool {
                                 "premium": fr.premium.to_string(),
                             })
                         ).collect::<Vec<_>>()),
-                    })).unwrap_or_default(),
+                    }))
+                    .unwrap_or_default(),
                     error: None,
                 }
             }
             None => ToolOutput {
-                success: false, content: String::new(),
+                success: false,
+                content: String::new(),
                 error: Some(format!("Coin '{}' not found", coin)),
             },
         }
@@ -446,12 +550,16 @@ pub struct GetAccountInfoTool {
 }
 
 impl GetAccountInfoTool {
-    pub fn new(ctx: Arc<HyperliquidContext>) -> Self { Self { ctx } }
+    pub fn new(ctx: Arc<HyperliquidContext>) -> Self {
+        Self { ctx }
+    }
 }
 
 #[async_trait]
 impl Tool for GetAccountInfoTool {
-    fn name(&self) -> &str { "get_account_info" }
+    fn name(&self) -> &str {
+        "get_account_info"
+    }
 
     fn description(&self) -> &str {
         "Account summary: address, equity, margin, withdrawable, positions."
@@ -462,9 +570,12 @@ impl Tool for GetAccountInfoTool {
     }
 
     async fn execute(&self, _arguments: &str) -> ToolOutput {
-        match self.ctx.client.clearinghouse_state(
-            self.ctx.address, None::<String>,
-        ).await {
+        match self
+            .ctx
+            .client
+            .clearinghouse_state(self.ctx.address, None::<String>)
+            .await
+        {
             Ok(state) => {
                 let ms = &state.margin_summary;
                 ToolOutput {
@@ -481,12 +592,14 @@ impl Tool for GetAccountInfoTool {
                         "cross_margin_used": state.cross_maintenance_margin_used.to_string(),
                         "positions": state.asset_positions.iter()
                             .filter(|p| p.position.szi != Decimal::ZERO).count(),
-                    })).unwrap_or_default(),
+                    }))
+                    .unwrap_or_default(),
                     error: None,
                 }
             }
             Err(e) => ToolOutput {
-                success: false, content: String::new(),
+                success: false,
+                content: String::new(),
                 error: Some(format!("Failed: {}", e)),
             },
         }

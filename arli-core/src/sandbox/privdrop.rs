@@ -4,7 +4,7 @@
 //! Also applies child process hardening (no core dumps, PR_SET_DUMPABLE=0).
 
 use super::policy::ProcessPolicy;
-use nix::unistd::{Gid, Uid, getgid, getuid, setgid, setuid};
+use nix::unistd::{getgid, getuid, setgid, setuid, Gid, Uid};
 use std::ffi::CString;
 
 /// Privilege dropper — ensures sandboxed processes run as unprivileged users.
@@ -32,8 +32,7 @@ impl PrivilegeDrop {
 
         // Step 1: initgroups — set supplementary group list
         let c_username = CString::new(username).map_err(|e| format!("CString: {:?}", e))?;
-        nix::unistd::initgroups(&c_username, gid)
-            .map_err(|e| format!("initgroups: {}", e))?;
+        nix::unistd::initgroups(&c_username, gid).map_err(|e| format!("initgroups: {}", e))?;
 
         // Step 2: setgid — set real, effective, and saved GID
         setgid(gid).map_err(|e| format!("setgid: {}", e))?;
@@ -107,7 +106,11 @@ mod tests {
     fn test_drop_to_non_root_is_noop() {
         if !getuid().is_root() {
             let result = PrivilegeDrop::drop_to("nobody", "nogroup");
-            assert!(result.is_ok(), "Drop from non-root should succeed (no-op): {:?}", result.err());
+            assert!(
+                result.is_ok(),
+                "Drop from non-root should succeed (no-op): {:?}",
+                result.err()
+            );
         }
     }
 

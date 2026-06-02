@@ -88,10 +88,7 @@ async fn readyz(state: HealthState) -> (axum::http::StatusCode, &'static str) {
     if state.ready.load(Ordering::Acquire) {
         (axum::http::StatusCode::OK, "ready")
     } else {
-        (
-            axum::http::StatusCode::SERVICE_UNAVAILABLE,
-            "not ready",
-        )
+        (axum::http::StatusCode::SERVICE_UNAVAILABLE, "not ready")
     }
 }
 

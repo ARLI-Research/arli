@@ -2018,7 +2018,9 @@ fn run_key(cmd: KeyCmd) -> anyhow::Result<()> {
     use arli_core::attestation::ArliKeypair;
 
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    let key_path = std::path::PathBuf::from(home).join(".arli").join("arli_key.pem");
+    let key_path = std::path::PathBuf::from(home)
+        .join(".arli")
+        .join("arli_key.pem");
 
     match cmd {
         KeyCmd::Generate => {

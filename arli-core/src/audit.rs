@@ -156,12 +156,7 @@ impl AuditLogger {
     }
 
     /// Log a security violation (seccomp kill, Landlock denial, etc.)
-    pub fn security_violation(
-        &self,
-        sandbox_id: &str,
-        violation_type: &str,
-        detail: &str,
-    ) {
+    pub fn security_violation(&self, sandbox_id: &str, violation_type: &str, detail: &str) {
         self.log(AuditEvent {
             event_type: "security.violation".into(),
             timestamp: Self::now_iso(),
@@ -211,10 +206,7 @@ impl AuditLogger {
         let minutes = (time_of_day % 3600) / 60;
         let seconds = time_of_day % 60;
         // Approximate date from UNIX epoch (simplified)
-        format!(
-            "unix_{}.{:02}:{:02}:{:02}Z",
-            days, hours, minutes, seconds
-        )
+        format!("unix_{}.{:02}:{:02}:{:02}Z", days, hours, minutes, seconds)
     }
 
     fn now_ms() -> u64 {

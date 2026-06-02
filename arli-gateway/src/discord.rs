@@ -82,7 +82,14 @@ impl DiscordBot {
         ));
 
         let mut tools = ToolRegistry::new();
-        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None, None);
+        register_builtin_tools(
+            &mut tools,
+            Some(db_path),
+            Some(memory_store),
+            None,
+            None,
+            None,
+        );
 
         let system_prompt = format!(
             "You are ARLI, an AI agent communicating via Discord in channel '{}'. \

@@ -7,7 +7,7 @@
 //! Replay protection: ed25519 signature over SHA-256 of all fields
 //! (run_id || job_id || timestamp_ns || ocsf_event_hash || ...).
 
-use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey, Signature};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -161,7 +161,8 @@ impl ArliKeypair {
     /// Load keypair from PEM file.
     pub fn load(path: &Path) -> Result<Self, String> {
         let pem_bytes = std::fs::read(path).map_err(|e| format!("read key file: {}", e))?;
-        let pem_str = std::str::from_utf8(&pem_bytes).map_err(|e| format!("invalid UTF-8: {}", e))?;
+        let pem_str =
+            std::str::from_utf8(&pem_bytes).map_err(|e| format!("invalid UTF-8: {}", e))?;
 
         // ed25519-dalek PEM parsing via pem crate (not yet a dependency, use simple approach)
         // Simple format: hex-encoded 32-byte seed
@@ -173,7 +174,10 @@ impl ArliKeypair {
             .to_string();
 
         let seed = hex::decode(&seed_hex).map_err(|e| format!("hex decode key: {}", e))?;
-        let seed_arr: &[u8; 32] = seed.as_slice().try_into().map_err(|_| "key must be 32 bytes")?;
+        let seed_arr: &[u8; 32] = seed
+            .as_slice()
+            .try_into()
+            .map_err(|_| "key must be 32 bytes")?;
 
         let signing_key = SigningKey::from_bytes(seed_arr);
         let verifying_key = signing_key.verifying_key();
@@ -186,8 +190,7 @@ impl ArliKeypair {
     /// Save keypair to a file (hex-encoded seed with PEM markers).
     pub fn save(&self, path: &Path) -> Result<(), String> {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("create dir: {}", e))?;
+            std::fs::create_dir_all(parent).map_err(|e| format!("create dir: {}", e))?;
         }
         let seed_hex = hex::encode(self.signing_key.to_bytes());
         let pem = format!(
@@ -308,7 +311,8 @@ mod tests {
             agent_id: "agent-abc".into(),
             job_id: "job-xyz".into(),
             timestamp_ns: 1717286400_000_000_000,
-            ocsf_event_hash: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890".into(),
+            ocsf_event_hash: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+                .into(),
             ocsf_event_uri: None,
             sandbox_config_hash: "sha256:policy-hash".into(),
             arli_binary_hash: "sha256:binary-hash".into(),

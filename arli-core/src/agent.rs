@@ -1,16 +1,14 @@
-use tokio::sync::mpsc;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{info, debug, warn};
+use tokio::sync::mpsc;
+use tracing::{debug, info, warn};
 
 use crate::compaction::Compactor;
 use crate::context::PressureLevel;
 use crate::error::{Error, Result};
 use crate::guardrail::{GuardDecision, Guardrail, ToolCallRecord};
 use crate::policy::{Decision, PolicyEngine};
-use crate::providers::{
-    ChatMessage, LlmResponseContent, Provider, Role, ToolResult,
-};
+use crate::providers::{ChatMessage, LlmResponseContent, Provider, Role, ToolResult};
 use crate::session::SessionStore;
 use crate::skill_loader::{suggest_skill, ToolSequenceTracker};
 use crate::tools::ToolRegistry;
@@ -684,8 +682,7 @@ Try again in {} seconds.",
         *count += 1;
         debug!(
             "Recorded tool sequence (count={}): {:?}",
-            count,
-            self.last_tool_names
+            count, self.last_tool_names
         );
     }
 

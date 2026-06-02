@@ -349,7 +349,9 @@ mod tests {
     fn test_reflect() {
         let store = MemoryStore::open_in_memory().unwrap();
         store.add("memory", "Project uses Rust").unwrap();
-        store.add("memory", "Tests are written with cargo test").unwrap();
+        store
+            .add("memory", "Tests are written with cargo test")
+            .unwrap();
         store.add("memory", "CI runs on GitHub Actions").unwrap();
 
         let prompt = store.reflect("memory", "What tools do we use?").unwrap();
@@ -371,7 +373,9 @@ mod tests {
     #[test]
     fn test_add_and_get_corrections() {
         let store = MemoryStore::open_in_memory().unwrap();
-        let id = store.add_correction("I used python", "Use uv instead").unwrap();
+        let id = store
+            .add_correction("I used python", "Use uv instead")
+            .unwrap();
         assert!(id > 0);
 
         let corrections = store.get_corrections().unwrap();
@@ -386,8 +390,12 @@ mod tests {
     #[test]
     fn test_multiple_corrections() {
         let store = MemoryStore::open_in_memory().unwrap();
-        store.add_correction("bad output 1", "correct output 1").unwrap();
-        store.add_correction("bad output 2", "correct output 2").unwrap();
+        store
+            .add_correction("bad output 1", "correct output 1")
+            .unwrap();
+        store
+            .add_correction("bad output 2", "correct output 2")
+            .unwrap();
 
         let corrections = store.get_corrections().unwrap();
         assert_eq!(corrections.len(), 2);

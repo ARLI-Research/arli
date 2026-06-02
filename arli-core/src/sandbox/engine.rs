@@ -166,9 +166,17 @@ mod tests {
             suffix: "example.com".into(),
         };
         let pattern = "*.example.com";
-        assert!(PolicyEngine::host_matches(&mode, pattern, "sub.example.com"));
+        assert!(PolicyEngine::host_matches(
+            &mode,
+            pattern,
+            "sub.example.com"
+        ));
         assert!(!PolicyEngine::host_matches(&mode, pattern, "example.com"));
-        assert!(!PolicyEngine::host_matches(&mode, pattern, "a.b.example.com"));
+        assert!(!PolicyEngine::host_matches(
+            &mode,
+            pattern,
+            "a.b.example.com"
+        ));
     }
 
     #[test]
@@ -178,9 +186,21 @@ mod tests {
         };
         let pattern = "**.example.com";
         assert!(PolicyEngine::host_matches(&mode, pattern, "example.com"));
-        assert!(PolicyEngine::host_matches(&mode, pattern, "sub.example.com"));
-        assert!(PolicyEngine::host_matches(&mode, pattern, "a.b.example.com"));
-        assert!(!PolicyEngine::host_matches(&mode, pattern, "notexample.com"));
+        assert!(PolicyEngine::host_matches(
+            &mode,
+            pattern,
+            "sub.example.com"
+        ));
+        assert!(PolicyEngine::host_matches(
+            &mode,
+            pattern,
+            "a.b.example.com"
+        ));
+        assert!(!PolicyEngine::host_matches(
+            &mode,
+            pattern,
+            "notexample.com"
+        ));
     }
 
     #[test]
@@ -188,7 +208,11 @@ mod tests {
         let mode = WildcardMode::Exact;
         let pattern = "api.github.com";
         assert!(PolicyEngine::host_matches(&mode, pattern, "api.github.com"));
-        assert!(!PolicyEngine::host_matches(&mode, pattern, "other.github.com"));
+        assert!(!PolicyEngine::host_matches(
+            &mode,
+            pattern,
+            "other.github.com"
+        ));
     }
 
     #[test]

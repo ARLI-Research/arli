@@ -17,13 +17,29 @@ use crate::sandbox::{Sandbox, SandboxConfig};
 
 /// Pip packages allowed for installation inside sandbox.
 const PIP_WHITELIST: &[&str] = &[
-    "numpy", "pandas", "scipy", "scikit-learn", "matplotlib",
-    "pymupdf", "marker-pdf", "pillow",
-    "requests", "httpx", "aiohttp",
-    "pydantic", "jsonschema", "python-dotenv",
-    "typer", "rich", "tqdm",
-    "cryptography", "pycryptodome", "jwt",
-    "redis", "sqlalchemy", "psycopg2-binary",
+    "numpy",
+    "pandas",
+    "scipy",
+    "scikit-learn",
+    "matplotlib",
+    "pymupdf",
+    "marker-pdf",
+    "pillow",
+    "requests",
+    "httpx",
+    "aiohttp",
+    "pydantic",
+    "jsonschema",
+    "python-dotenv",
+    "typer",
+    "rich",
+    "tqdm",
+    "cryptography",
+    "pycryptodome",
+    "jwt",
+    "redis",
+    "sqlalchemy",
+    "psycopg2-binary",
 ];
 
 /// Safety preamble injected before user code.
@@ -78,7 +94,9 @@ pub struct ExecuteCodeTool;
 
 #[async_trait]
 impl Tool for ExecuteCodeTool {
-    fn name(&self) -> &str { "execute_code" }
+    fn name(&self) -> &str {
+        "execute_code"
+    }
 
     fn description(&self) -> &str {
         "Execute a Python script in a sandboxed environment. \
@@ -114,34 +132,47 @@ impl Tool for ExecuteCodeTool {
     async fn execute(&self, arguments: &str) -> ToolOutput {
         let args: serde_json::Value = match serde_json::from_str(arguments) {
             Ok(v) => v,
-            Err(e) => return ToolOutput {
-                success: false, content: String::new(),
-                error: Some(format!("Invalid JSON: {}", e)),
-            },
+            Err(e) => {
+                return ToolOutput {
+                    success: false,
+                    content: String::new(),
+                    error: Some(format!("Invalid JSON: {}", e)),
+                }
+            }
         };
 
         let code = match args["code"].as_str() {
             Some(c) => c,
-            None => return ToolOutput {
-                success: false, content: String::new(),
-                error: Some("Missing required parameter: code".into()),
-            },
+            None => {
+                return ToolOutput {
+                    success: false,
+                    content: String::new(),
+                    error: Some("Missing required parameter: code".into()),
+                }
+            }
         };
 
         let timeout_secs = args["timeout_secs"].as_u64().unwrap_or(60);
 
-        let packages: Vec<String> = args.get("packages")
+        let packages: Vec<String> = args
+            .get("packages")
             .and_then(|p| p.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
 
         for pkg in &packages {
             if !PIP_WHITELIST.contains(&pkg.as_str()) {
                 return ToolOutput {
-                    success: false, content: String::new(),
+                    success: false,
+                    content: String::new(),
                     error: Some(format!(
                         "Package '{}' is not in the sandbox whitelist. Allowed: {}",
-                        pkg, PIP_WHITELIST.join(", ")
+                        pkg,
+                        PIP_WHITELIST.join(", ")
                     )),
                 };
             }
@@ -165,7 +196,8 @@ impl Tool for ExecuteCodeTool {
                 }
             }
             Err(e) => ToolOutput {
-                success: false, content: String::new(),
+                success: false,
+                content: String::new(),
                 error: Some(e),
             },
         }
@@ -210,7 +242,10 @@ impl ExecuteCodeTool {
         let clean_stderr = Self::clean_error(&output.stderr);
 
         if !output.stderr.is_empty() && !output.success {
-            return Err(format!("Python error (exit code {}):\n{}", output.exit_code, clean_stderr));
+            return Err(format!(
+                "Python error (exit code {}):\n{}",
+                output.exit_code, clean_stderr
+            ));
         }
         if !output.success {
             return Err(format!(
@@ -219,7 +254,10 @@ impl ExecuteCodeTool {
             ));
         }
         if output.killed_by_timeout {
-            return Err(format!("Timeout after {}s. Partial:\n{}", timeout_secs, output.stdout));
+            return Err(format!(
+                "Timeout after {}s. Partial:\n{}",
+                timeout_secs, output.stdout
+            ));
         }
 
         let result = if output.stdout.is_empty() && !output.stderr.is_empty() {
@@ -234,10 +272,13 @@ impl ExecuteCodeTool {
     }
 
     fn clean_error(stderr: &str) -> String {
-        stderr.lines()
-            .filter(|l| !l.contains("ARLI Sandbox Safety Guard")
-                && !l.contains("_safe_import")
-                && !l.contains("_blocked_"))
+        stderr
+            .lines()
+            .filter(|l| {
+                !l.contains("ARLI Sandbox Safety Guard")
+                    && !l.contains("_safe_import")
+                    && !l.contains("_blocked_")
+            })
             .collect::<Vec<_>>()
             .join("\n")
     }
@@ -250,9 +291,9 @@ mod tests {
     #[tokio::test]
     async fn test_simple_print() {
         let tool = ExecuteCodeTool;
-        let result = tool.execute(
-            &serde_json::json!({"code": "print('hello from sandbox')"}).to_string()
-        ).await;
+        let result = tool
+            .execute(&serde_json::json!({"code": "print('hello from sandbox')"}).to_string())
+            .await;
         assert!(result.success, "Error: {:?}", result.error);
         assert!(result.content.contains("hello from sandbox"));
     }
@@ -260,9 +301,9 @@ mod tests {
     #[tokio::test]
     async fn test_arithmetic() {
         let tool = ExecuteCodeTool;
-        let result = tool.execute(
-            &serde_json::json!({"code": "print(2 + 2)"}).to_string()
-        ).await;
+        let result = tool
+            .execute(&serde_json::json!({"code": "print(2 + 2)"}).to_string())
+            .await;
         assert!(result.success);
         assert!(result.content.contains('4'));
     }
@@ -270,9 +311,9 @@ mod tests {
     #[tokio::test]
     async fn test_syntax_error() {
         let tool = ExecuteCodeTool;
-        let result = tool.execute(
-            &serde_json::json!({"code": "print("}).to_string()
-        ).await;
+        let result = tool
+            .execute(&serde_json::json!({"code": "print("}).to_string())
+            .await;
         assert!(!result.success);
     }
 
@@ -289,45 +330,47 @@ mod tests {
     #[tokio::test]
     async fn test_blocked_subprocess() {
         let tool = ExecuteCodeTool;
-        let result = tool.execute(
-            &serde_json::json!({"code": "import subprocess\nprint('NO')"}).to_string()
-        ).await;
+        let result = tool
+            .execute(&serde_json::json!({"code": "import subprocess\nprint('NO')"}).to_string())
+            .await;
         assert!(!result.success);
     }
 
     #[tokio::test]
     async fn test_blocked_os_system() {
         let tool = ExecuteCodeTool;
-        let result = tool.execute(
-            &serde_json::json!({"code": "import os\nos.system('echo hacked')"}).to_string()
-        ).await;
+        let result = tool
+            .execute(
+                &serde_json::json!({"code": "import os\nos.system('echo hacked')"}).to_string(),
+            )
+            .await;
         assert!(!result.success);
     }
 
     #[tokio::test]
     async fn test_blocked_ctypes() {
         let tool = ExecuteCodeTool;
-        let result = tool.execute(
-            &serde_json::json!({"code": "import ctypes\nprint('NO')"}).to_string()
-        ).await;
+        let result = tool
+            .execute(&serde_json::json!({"code": "import ctypes\nprint('NO')"}).to_string())
+            .await;
         assert!(!result.success);
     }
 
     #[tokio::test]
     async fn test_os_import_still_works() {
         let tool = ExecuteCodeTool;
-        let result = tool.execute(
-            &serde_json::json!({"code": "import os\nprint(os.getcwd())"}).to_string()
-        ).await;
+        let result = tool
+            .execute(&serde_json::json!({"code": "import os\nprint(os.getcwd())"}).to_string())
+            .await;
         assert!(result.success);
     }
 
     #[tokio::test]
     async fn test_package_whitelist_blocked() {
         let tool = ExecuteCodeTool;
-        let result = tool.execute(
-            &serde_json::json!({"code": "print('ok')", "packages": ["scapy"]}).to_string()
-        ).await;
+        let result = tool
+            .execute(&serde_json::json!({"code": "print('ok')", "packages": ["scapy"]}).to_string())
+            .await;
         assert!(!result.success);
         assert!(result.error.unwrap().contains("whitelist"));
     }

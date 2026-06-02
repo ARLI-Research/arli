@@ -145,11 +145,7 @@ impl SandboxPolicy {
                     "/bin".into(),
                     "/etc".into(),
                 ],
-                read_write: vec![
-                    "/tmp".into(),
-                    "/dev/null".into(),
-                    "/dev/urandom".into(),
-                ],
+                read_write: vec!["/tmp".into(), "/dev/null".into(), "/dev/urandom".into()],
                 include_workdir: true,
             },
             process: ProcessPolicy {
@@ -257,7 +253,10 @@ landlock:
         let policy: SandboxPolicy = SandboxPolicy::from_yaml(yaml).unwrap();
         assert_eq!(policy.network.mode, NetworkMode::Proxy);
         assert_eq!(policy.filesystem.read_only, vec!["/usr", "/etc"]);
-        assert_eq!(policy.landlock.compatibility, LandlockCompatibility::HardRequirement);
+        assert_eq!(
+            policy.landlock.compatibility,
+            LandlockCompatibility::HardRequirement
+        );
         assert_eq!(policy.network.allowed_endpoints.len(), 2);
         assert_eq!(policy.network.allowed_endpoints[0].host, "api.github.com");
         assert!(policy.network.allowed_endpoints[0].tls);

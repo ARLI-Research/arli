@@ -100,7 +100,14 @@ impl YuanbaoState {
         ));
 
         let mut tools = ToolRegistry::new();
-        register_builtin_tools(&mut tools, Some(db_path), Some(memory_store), None, None, None);
+        register_builtin_tools(
+            &mut tools,
+            Some(db_path),
+            Some(memory_store),
+            None,
+            None,
+            None,
+        );
 
         let agent_config = AgentConfig {
             name: format!("yuanbao-{}", safe_id),

@@ -11,6 +11,7 @@ pub mod dashboard;
 pub mod enso;
 pub mod error;
 pub mod guardrail;
+pub mod hashline;
 pub mod health;
 pub mod hooks;
 pub mod inference;

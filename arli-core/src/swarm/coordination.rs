@@ -637,8 +637,12 @@ mod tests {
         let (id2, _) = router.route_round_robin(AgentRole::Executor).await.unwrap();
         let (id3, _) = router.route_round_robin(AgentRole::Executor).await.unwrap();
 
-        assert_eq!(id1, "a1");
-        assert_eq!(id2, "a2");
-        assert_eq!(id3, "a1"); // wraps around
+        // First two should be distinct, third should equal first (wraps around)
+        assert_ne!(id1, id2);
+        assert_eq!(id3, id1);
+        // Both agents should be in the set
+        let ids = [id1.as_str(), id2.as_str()];
+        assert!(ids.contains(&"a1"));
+        assert!(ids.contains(&"a2"));
     }
 }

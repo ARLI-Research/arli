@@ -111,6 +111,20 @@ enum Commands {
     /// Manage ARLI cryptographic keys (for ENSO attestation)
     #[command(subcommand)]
     Key(KeyCmd),
+
+    /// Manage kanban task boards
+    #[command(subcommand)]
+    Kanban(KanbanCmd),
+
+    /// Start the web dashboard
+    Dashboard {
+        #[arg(short, long, default_value = "3000")]
+        port: u16,
+    },
+
+    /// Manage ENSO marketplace (RFQ/Quote/Contract)
+    #[command(subcommand)]
+    Marketplace(MarketplaceCmd),
 }
 
 #[derive(Subcommand)]
@@ -243,6 +257,93 @@ enum CronCmd {
     Start,
     /// Run a job immediately (for testing)
     Run { id: String },
+}
+
+#[derive(Subcommand)]
+enum KanbanCmd {
+    /// Create a new kanban board
+    Create {
+        /// Board name
+        name: String,
+        #[arg(short, long)]
+        description: Option<String>,
+    },
+    /// Show a board with all columns and cards
+    Show {
+        /// Board ID (first board if omitted)
+        id: Option<String>,
+    },
+    /// List all boards
+    List,
+    /// Add a card to a board column
+    Add {
+        /// Board ID
+        board_id: String,
+        /// Column name (backlog, todo, in_progress, review, done)
+        column: String,
+        /// Card title
+        title: String,
+        #[arg(short, long)]
+        description: Option<String>,
+        #[arg(short, long, default_value = "medium")]
+        priority: String,
+    },
+    /// Move a card to another column
+    Move {
+        /// Card ID
+        card_id: String,
+        /// Target column name
+        column: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum MarketplaceCmd {
+    /// Create a new RFQ (Request for Quote)
+    RfqCreate {
+        /// RFQ title
+        title: String,
+        /// Budget in USD cents
+        #[arg(short, long)]
+        budget_cents: u64,
+        /// Deadline (ISO 8601)
+        #[arg(short, long)]
+        deadline: String,
+        /// Required capabilities (comma-separated)
+        #[arg(short, long)]
+        capabilities: Option<String>,
+    },
+    /// List open RFQs
+    RfqList {
+        /// Filter by status (open, quoted, accepted, contracted)
+        #[arg(short, long)]
+        status: Option<String>,
+    },
+    /// Show RFQ details + quotes
+    RfqShow {
+        /// RFQ ID
+        id: String,
+    },
+    /// Submit a quote to an RFQ
+    Quote {
+        /// RFQ ID
+        rfq_id: String,
+        /// Your agent ID
+        agent_id: String,
+        /// Price in USD cents
+        #[arg(short, long)]
+        price_cents: u64,
+        /// Estimated time in seconds
+        #[arg(short, long)]
+        time_secs: u64,
+    },
+    /// Accept a quote (RFQ owner only)
+    Accept {
+        /// Quote ID
+        quote_id: String,
+    },
+    /// Show marketplace stats
+    Stats,
 }
 
 fn get_data_dir() -> PathBuf {
@@ -2009,6 +2110,18 @@ async fn main() -> anyhow::Result<()> {
         Commands::Key(cmd) => {
             run_key(cmd)?;
         }
+
+        Commands::Kanban(cmd) => {
+            run_kanban(cmd)?;
+        }
+
+        Commands::Dashboard { port } => {
+            run_dashboard(port)?;
+        }
+
+        Commands::Marketplace(cmd) => {
+            run_marketplace(cmd)?;
+        }
     }
 
     Ok(())
@@ -2053,5 +2166,193 @@ fn run_key(cmd: KeyCmd) -> anyhow::Result<()> {
         }
     }
 
+    Ok(())
+}
+
+fn run_kanban(cmd: KanbanCmd) -> anyhow::Result<()> {
+    use arli_core::kanban::{KanbanStore, Priority};
+
+    let db_path = get_data_dir().join("kanban.db");
+    let store = KanbanStore::open(db_path)?;
+
+    match cmd {
+        KanbanCmd::Create { name, description } => {
+            let desc = description.unwrap_or_default();
+            let board = store.create_board(&name, &desc)?;
+            println!("Board created: {} ({})", board.name, board.id);
+            let cols = store.list_columns(&board.id)?;
+            println!("Columns: {}", cols.iter().map(|c| c.name.as_str()).collect::<Vec<_>>().join(", "));
+        }
+        KanbanCmd::Show { id } => {
+            let board_id = match id {
+                Some(id) => id,
+                None => {
+                    let boards = store.list_boards()?;
+                    if boards.is_empty() {
+                        anyhow::bail!("No boards. Create one with: arli kanban create <name>");
+                    }
+                    println!("Showing first board: {}", boards[0].name);
+                    boards[0].id.clone()
+                }
+            };
+            let stats = store.get_board_stats(&board_id)?;
+            println!("Board: {} ({} cards)", stats.board_name, stats.total_cards);
+            for col in &stats.columns {
+                let wip = col.wip_limit.map(|l| format!(" [WIP: {l}]")).unwrap_or_default();
+                println!("  [{}] {}{}", col.column_name, col.card_count, wip);
+                for card in &col.cards {
+                    let assignee = card.assignee.as_deref().unwrap_or("-");
+                    println!("    {} | {} | prio:{} | {}", card.id, card.title, card.priority.as_str(), assignee);
+                }
+            }
+        }
+        KanbanCmd::List => {
+            let boards = store.list_boards()?;
+            if boards.is_empty() {
+                println!("No boards. Create one with: arli kanban create <name>");
+            } else {
+                for b in &boards {
+                    let stats = store.get_board_stats(&b.id)?;
+                    println!("{} ({}) — {} cards", b.name, b.id, stats.total_cards);
+                }
+            }
+        }
+        KanbanCmd::Add { board_id, column, title, description, priority } => {
+            let desc = description.unwrap_or_default();
+            let prio = Priority::from_str(&priority);
+            let cols = store.list_columns(&board_id)?;
+            let col = cols.iter().find(|c| c.name == column)
+                .ok_or_else(|| anyhow::anyhow!("Column '{}' not found. Available: {}", column,
+                    cols.iter().map(|c| c.name.as_str()).collect::<Vec<_>>().join(", ")))?;
+            let card = store.add_card(&board_id, &col.id, &title, &desc, prio, None, &[], None)?;
+            println!("Card added: {} ({})", card.title, card.id);
+        }
+        KanbanCmd::Move { card_id, column } => {
+            let card = store.get_card(&card_id)?;
+            let cols = store.list_columns(&card.board_id)?;
+            let target = cols.iter().find(|c| c.name == column)
+                .ok_or_else(|| anyhow::anyhow!("Column '{}' not found. Available: {}",
+                    column, cols.iter().map(|c| c.name.as_str()).collect::<Vec<_>>().join(", ")))?;
+            let moved = store.move_card(&card_id, &target.id)?;
+            println!("Card '{}' moved to {}", moved.title, column);
+        }
+    }
+    Ok(())
+}
+
+fn run_dashboard(port: u16) -> anyhow::Result<()> {
+    use arli_core::dashboard::{build_router, DashboardConfig, DashboardState};
+    use arli_core::kanban::KanbanStore;
+    use arli_core::metrics::Metrics;
+    use std::sync::Arc;
+
+    let metrics = Arc::new(Metrics::new());
+    metrics.mark_ready();
+
+    let config = DashboardConfig { port, title: "ARLI Dashboard".into() };
+    let kanban_path = get_data_dir().join("kanban.db");
+    let kanban = if kanban_path.exists() {
+        Some(Arc::new(KanbanStore::open(kanban_path)?))
+    } else {
+        None
+    };
+
+    let mut state = DashboardState::new(config, metrics);
+    if let Some(k) = kanban {
+        state = state.with_kanban(k);
+    }
+    let state = Arc::new(state);
+    let router = build_router(state);
+
+    let rt = tokio::runtime::Runtime::new()?;
+    println!("Dashboard starting on http://localhost:{}/dashboard", port);
+    println!("Press Ctrl+C to stop.");
+    rt.block_on(async {
+        let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}"))
+            .await
+            .map_err(|e| anyhow::anyhow!("Bind failed: {e}"))?;
+        axum::serve(listener, router).await?;
+        Ok::<_, anyhow::Error>(())
+    })?;
+    Ok(())
+}
+
+fn run_marketplace(cmd: MarketplaceCmd) -> anyhow::Result<()> {
+    use arli_core::enso::marketplace::MarketplaceStore;
+
+    let db_path = get_data_dir().join("marketplace.db");
+    let store = MarketplaceStore::open(db_path)?;
+
+    match cmd {
+        MarketplaceCmd::RfqCreate { title, budget_cents, deadline, capabilities } => {
+            let caps: Vec<String> = capabilities
+                .unwrap_or_default()
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+
+            let rfq = store.create_rfq(
+                "cli-user", &title, "", budget_cents, &deadline,
+                &caps, Some("KernelSandbox"), None, &[],
+            )?;
+            println!("RFQ created: {} ({})", rfq.title, rfq.id);
+            println!("  Budget: {}¢ | Deadline: {} | Status: {}", rfq.budget_cents, rfq.deadline, rfq.status.as_str());
+            if !caps.is_empty() {
+                println!("  Capabilities: {}", caps.join(", "));
+            }
+        }
+        MarketplaceCmd::RfqList { status } => {
+            let rfqs = store.list_rfqs(status.as_deref())?;
+            if rfqs.is_empty() {
+                println!("No RFQs found.");
+            } else {
+                for r in &rfqs {
+                    println!("{} | {} | {}¢ | {} | {}", r.id, r.title, r.budget_cents, r.status.as_str(), r.creator);
+                }
+            }
+        }
+        MarketplaceCmd::RfqShow { id } => {
+            let rfq = store.get_rfq(&id)?;
+            println!("RFQ: {} ({})", rfq.title, rfq.id);
+            println!("  Creator: {} | Budget: {}¢ | Deadline: {}", rfq.creator, rfq.budget_cents, rfq.deadline);
+            println!("  Status: {} | Trust: {:?}", rfq.status.as_str(), rfq.required_trust_model);
+            if !rfq.required_capabilities.is_empty() {
+                println!("  Capabilities: {}", rfq.required_capabilities.join(", "));
+            }
+            let quotes = store.list_quotes_for_rfq(&id)?;
+            if quotes.is_empty() {
+                println!("  No quotes yet.");
+            } else {
+                println!("  Quotes:");
+                for q in &quotes {
+                    let accepted = if q.accepted { " ✅" } else { "" };
+                    println!("    {} | agent:{} | {}¢ | {}s{}", q.id, q.agent_id, q.price_cents, q.estimated_time_secs, accepted);
+                }
+            }
+        }
+        MarketplaceCmd::Quote { rfq_id, agent_id, price_cents, time_secs } => {
+            let quote = store.submit_quote(
+                &rfq_id, &agent_id, price_cents, time_secs,
+                "CLI-submitted quote", "KernelSandbox", None,
+            )?;
+            println!("Quote submitted: {} ({}¢, {}s)", quote.id, quote.price_cents, quote.estimated_time_secs);
+        }
+        MarketplaceCmd::Accept { quote_id } => {
+            let quote = store.accept_quote(&quote_id)?;
+            println!("Quote accepted!");
+            println!("  Contract ID: {}", quote.contract_id.unwrap_or_default());
+            println!("  Agent: {} | Price: {}¢", quote.agent_id, quote.price_cents);
+        }
+        MarketplaceCmd::Stats => {
+            let stats = store.get_stats()?;
+            println!("Marketplace Stats:");
+            println!("  Open RFQs:      {}", stats.open_rfqs);
+            println!("  Total RFQs:     {}", stats.total_rfqs);
+            println!("  Total Quotes:   {}", stats.total_quotes);
+            println!("  Contracted:     {}", stats.contracted);
+            println!("  Open value:     {}¢ (${:.2})", stats.open_value_cents, stats.open_value_cents as f64 / 100.0);
+        }
+    }
     Ok(())
 }

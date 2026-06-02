@@ -99,6 +99,9 @@ pub struct Agent {
     tool_sequences: ToolSequenceTracker,
     /// Rolling window of last N tool names for sequence detection
     last_tool_names: Vec<String>,
+
+    /// Time-traveling stream rules (TTSR) — regex-based response filtering
+    stream_rules: crate::stream_rules::StreamRules,
 }
 
 impl Agent {
@@ -133,11 +136,17 @@ impl Agent {
             tool_history: Vec::new(),
             tool_sequences: HashMap::new(),
             last_tool_names: Vec::new(),
+            stream_rules: crate::stream_rules::StreamRules::default(),
         }
     }
 
     pub fn sender(&self) -> mpsc::Sender<AgentMessage> {
         self.tx.clone()
+    }
+
+    /// Set stream rules (TTSR) for this agent.
+    pub fn set_stream_rules(&mut self, rules: crate::stream_rules::StreamRules) {
+        self.stream_rules = rules;
     }
 
     fn build_system_prompt(name: &str) -> String {
@@ -511,6 +520,65 @@ If you don't need a tool to answer, respond directly without calling tools."#,
 
             // Call LLM
             let response = self.provider.chat(&self.messages, &schemas).await?;
+
+            // --- TTSR CHECK: scan response against stream rules ---
+            let mut rule_retries = 0; // track retries per turn
+            let response = 'ttsr: {
+                let mut resp = response;
+                loop {
+                    // Extract text to scan
+                    let scan_text = match &resp.content {
+                        LlmResponseContent::Text { content } => content.clone(),
+                        LlmResponseContent::ToolCalls { content, .. } => {
+                            content.clone().unwrap_or_default()
+                        }
+                    };
+
+                    if scan_text.is_empty() {
+                        break 'ttsr resp;
+                    }
+
+                    match self.stream_rules.check(&scan_text) {
+                        Some(matched) => {
+                            rule_retries += 1;
+                            if rule_retries > self.stream_rules.max_retries {
+                                warn!(
+                                    "TTSR: max retries ({}) exceeded for rule '{}' — allowing response",
+                                    self.stream_rules.max_retries,
+                                    matched.rule.name,
+                                );
+                                break 'ttsr resp;
+                            }
+
+                            warn!(
+                                "TTSR: rule '{}' triggered by '{}...' — injecting and retrying ({}/{})",
+                                matched.rule.name,
+                                &matched.matched_snippet[..matched.matched_snippet.len().min(50)],
+                                rule_retries,
+                                self.stream_rules.max_retries,
+                            );
+
+                            let injection = crate::stream_rules::StreamRules::build_injection(
+                                &matched.rule,
+                            );
+                            self.messages.push(ChatMessage::user(injection));
+
+                            // Retry the LLM call
+                            match self.provider.chat(&self.messages, &schemas).await {
+                                Ok(new_resp) => {
+                                    resp = new_resp;
+                                    continue;
+                                }
+                                Err(e) => {
+                                    warn!("TTSR retry failed: {} — using original response", e);
+                                    break 'ttsr resp;
+                                }
+                            }
+                        }
+                        None => break 'ttsr resp,
+                    }
+                }
+            };
 
             if let Some(ref usage) = response.usage {
                 self.tokens_consumed += usage.total_tokens as usize;

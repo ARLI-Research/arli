@@ -27,6 +27,10 @@ pub struct Config {
     pub browser: BrowserConfig,
     #[serde(default)]
     pub x402: X402Config,
+
+    /// Time-traveling stream rules — regex-based response filtering.
+    #[serde(default)]
+    pub stream_rules: crate::stream_rules::StreamRules,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -277,6 +281,7 @@ impl Default for Config {
             terminal: TerminalConfig::default(),
             browser: BrowserConfig::default(),
             x402: X402Config::default(),
+            stream_rules: crate::stream_rules::StreamRules::default(),
         }
     }
 }
@@ -357,6 +362,10 @@ impl Config {
                     // x402 agentic wallet
                     if file_config.x402.enabled {
                         config.x402 = file_config.x402;
+                    }
+                    // Stream rules (TTSR)
+                    if let Some(sr) = file_config.stream_rules {
+                        config.stream_rules = sr;
                     }
                     // Feedback loop
                     if !file_config.feedback.enabled {
@@ -909,6 +918,10 @@ struct ConfigFile {
     pub terminal: TerminalConfig,
     #[serde(default)]
     pub x402: X402Config,
+
+    /// Stream rules loaded from config TOML.
+    #[serde(default)]
+    pub stream_rules: Option<crate::stream_rules::StreamRules>,
 }
 
 #[derive(Debug, Deserialize)]

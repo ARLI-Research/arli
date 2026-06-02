@@ -93,3 +93,6 @@ rlp = "0.5"
 grep-regex = "0.1"
 grep-searcher = "0.1"
 ignore = "0.4"
+
+# General regex (for stream rules, validation, etc.)
+regex = "1"

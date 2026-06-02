@@ -210,9 +210,13 @@ fn simple_glob_match(pattern: &str, filename: &str) -> bool {
 mod tests {
     use super::*;
     use std::io::Write;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static TEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
     fn setup_test_dir() -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join("arli_search_test");
+        let id = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!("arli_search_test_{}", id));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 

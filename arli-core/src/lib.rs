@@ -31,6 +31,7 @@ pub mod session;
 pub mod skill_hub;
 pub mod skill_loader;
 pub mod skills;
+pub mod stream_rules;
 pub mod swarm;
 pub mod telemetry;
 pub mod tools;

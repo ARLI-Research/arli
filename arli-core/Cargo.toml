@@ -53,6 +53,9 @@ grep-regex.workspace = true
 grep-searcher.workspace = true
 ignore.workspace = true
 
+# Stream rules (TTSR)
+regex.workspace = true
+
 # ICP client (ENSO canister calls) — optional feature
 ic-agent = { version = "0.37", optional = true }
 candid = { version = "0.10", optional = true }

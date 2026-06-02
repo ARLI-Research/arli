@@ -3,7 +3,6 @@
 //! OpenShell pattern: providers are defined in YAML, not hardcoded.
 //! Adding a new provider = dropping a YAML file in `provider_configs/`.
 
-use crate::providers::Provider;
 use serde::{Deserialize, Serialize};
 
 /// A single provider definition loaded from YAML.

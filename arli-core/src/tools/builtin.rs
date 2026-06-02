@@ -323,7 +323,6 @@ use std::sync::Arc;
 
 use super::browser::BrowserTool;
 
-use crate::x402::X402Client;
 use super::delegate::DelegateTaskTool;
 use super::execute_code::ExecuteCodeTool;
 use super::http_get::HttpGetTool;
@@ -337,6 +336,7 @@ use super::video_gen::VideoGenTool;
 use super::vision::VisionTool;
 use super::voice::VoiceTool;
 use super::web_search::WebSearchTool;
+use crate::x402::X402Client;
 
 /// x402_pay — pay for a premium tool call via the x402 agentic wallet.
 pub struct X402PayTool {
@@ -411,7 +411,7 @@ impl Tool for X402PayTool {
             }
         };
 
-        match self.client.pay(tool_name, cost_cents) {
+        match self.client.pay(tool_name, cost_cents).await {
             Ok(tx_hash) => ToolOutput {
                 success: true,
                 content: format!(

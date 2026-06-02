@@ -42,8 +42,11 @@ users.workspace = true
 # Cryptography (attestation + ENSO integration)
 ed25519-dalek.workspace = true
 sha2.workspace = true
+sha3.workspace = true
 hex.workspace = true
 rand.workspace = true
+k256.workspace = true
+rlp.workspace = true
 
 # ICP client (ENSO canister calls) — optional feature
 ic-agent = { version = "0.37", optional = true }

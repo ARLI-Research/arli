@@ -77,7 +77,7 @@
 | 3 | Python sandbox hardening (wasm isolation, pkg mgmt) | ✅ v0.5.0 |
 | 4 | Auto-optimization (DSPy-like prompt tuning) | ✅ v0.5.0 |
 | 5 | Kanban task boards | ✅ v0.5.0 |
-| 6 | Web UI dashboard (axum + htmx) | ⏳ |
+| 6 | Web UI dashboard (axum + htmx) | ✅ v0.5.0 |
 
 ## 📋 TIER 4 — ECOSYSTEM
 

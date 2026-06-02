@@ -33,6 +33,20 @@ use std::fmt::Write;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
+/// Snapshot of all metric values — serializable for API consumers.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MetricsSnapshot {
+    pub agent_runs: u64,
+    pub tool_calls: u64,
+    pub tool_errors: u64,
+    pub memory_ops: u64,
+    pub attestations: u64,
+    pub sessions: u64,
+    pub platforms: u64,
+    pub trades: u64,
+    pub ready: u64,
+}
+
 /// Global metrics registry — one instance per process.
 #[derive(Clone)]
 pub struct Metrics {
@@ -178,19 +192,35 @@ impl Metrics {
 
         out.push_str("# HELP arli_memory_ops_total Memory operations\n");
         out.push_str("# TYPE arli_memory_ops_total counter\n");
-        let _ = write!(&mut out, "arli_memory_ops_total {}\n", self.memory_ops.load(Ordering::Relaxed));
+        let _ = write!(
+            &mut out,
+            "arli_memory_ops_total {}\n",
+            self.memory_ops.load(Ordering::Relaxed)
+        );
 
         out.push_str("# HELP arli_attestations_total Attestations submitted\n");
         out.push_str("# TYPE arli_attestations_total counter\n");
-        let _ = write!(&mut out, "arli_attestations_total {}\n", self.attestations.load(Ordering::Relaxed));
+        let _ = write!(
+            &mut out,
+            "arli_attestations_total {}\n",
+            self.attestations.load(Ordering::Relaxed)
+        );
 
         out.push_str("# HELP arli_sessions_active Currently active sessions\n");
         out.push_str("# TYPE arli_sessions_active gauge\n");
-        let _ = write!(&mut out, "arli_sessions_active {}\n", self.active_sessions.load(Ordering::Relaxed));
+        let _ = write!(
+            &mut out,
+            "arli_sessions_active {}\n",
+            self.active_sessions.load(Ordering::Relaxed)
+        );
 
         out.push_str("# HELP arli_gateway_platforms Active platform adapters\n");
         out.push_str("# TYPE arli_gateway_platforms gauge\n");
-        let _ = write!(&mut out, "arli_gateway_platforms {}\n", self.platforms.load(Ordering::Relaxed));
+        let _ = write!(
+            &mut out,
+            "arli_gateway_platforms {}\n",
+            self.platforms.load(Ordering::Relaxed)
+        );
 
         out.push_str("# HELP arli_gateway_ready Gateway readiness (1=ready, 0=not)\n");
         out.push_str("# TYPE arli_gateway_ready gauge\n");
@@ -202,9 +232,28 @@ impl Metrics {
 
         out.push_str("# HELP arli_trades_executed_total Trades executed\n");
         out.push_str("# TYPE arli_trades_executed_total counter\n");
-        let _ = write!(&mut out, "arli_trades_executed_total {}\n", self.trades_executed());
+        let _ = write!(
+            &mut out,
+            "arli_trades_executed_total {}\n",
+            self.trades_executed()
+        );
 
         out
+    }
+
+    /// Snapshot of all metric values — for dashboard/API consumption.
+    pub fn snapshot(&self) -> MetricsSnapshot {
+        MetricsSnapshot {
+            agent_runs: self.agent_runs(),
+            tool_calls: self.tool_calls(),
+            tool_errors: self.tool_errors(),
+            memory_ops: self.memory_ops.load(Ordering::Relaxed),
+            attestations: self.attestations.load(Ordering::Relaxed),
+            sessions: self.active_sessions.load(Ordering::Relaxed),
+            platforms: self.platforms.load(Ordering::Relaxed),
+            trades: self.trades_executed(),
+            ready: if self.is_ready() { 1 } else { 0 },
+        }
     }
 }
 

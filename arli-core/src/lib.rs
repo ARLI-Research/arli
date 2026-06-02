@@ -7,6 +7,7 @@ pub mod config;
 pub mod context;
 pub mod credentials;
 pub mod cron;
+pub mod dashboard;
 pub mod enso;
 pub mod error;
 pub mod guardrail;

@@ -44,6 +44,107 @@ pub enum BrokeringError {
 pub type BrokeringResult<T> = std::result::Result<T, BrokeringError>;
 
 // ═════════════════════════════════════════════════════════════════════════════
+// Credential Pool — wholesale API key store for brokering
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Pool of wholesale API keys owned by ARLI. Used by BrokeringRouter
+/// instead of per-user environment variables. Supports multiple keys
+/// per provider with round-robin selection for load distribution.
+pub struct CredentialPool {
+    /// provider_name → list of API keys (round-robin)
+    keys: HashMap<String, Vec<String>>,
+    /// Round-robin cursor per provider
+    cursors: Mutex<HashMap<String, usize>>,
+}
+
+impl CredentialPool {
+    /// Create pool from a map of provider → [keys].
+    pub fn new(keys: HashMap<String, Vec<String>>) -> Self {
+        Self { keys, cursors: Mutex::new(HashMap::new()) }
+    }
+
+    /// Load wholesale keys from environment variables.
+    /// Looks for ARLI_WHOLESALE_{PROVIDER}_KEY (e.g. ARLI_WHOLESALE_DEEPSEEK_KEY).
+    /// Multiple keys per provider: comma-separated in the env var.
+    /// Example: ARLI_WHOLESALE_DEEPSEEK_KEY=sk-aaa,sk-bbb (two keys, round-robin)
+    pub fn from_env() -> Self {
+        let mut keys: HashMap<String, Vec<String>> = HashMap::new();
+        for (env_key, env_val) in std::env::vars() {
+            // Match ARLI_WHOLESALE_*_KEY pattern
+            if let Some(provider_upper) = env_key
+                .strip_prefix("ARLI_WHOLESALE_")
+                .and_then(|s| s.strip_suffix("_KEY"))
+            {
+                let provider_name = provider_upper.to_lowercase();
+                let provider_keys: Vec<String> = env_val
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                if !provider_keys.is_empty() {
+                    tracing::info!(
+                        provider = %provider_name,
+                        key_count = provider_keys.len(),
+                        "loaded wholesale key(s)"
+                    );
+                    keys.insert(provider_name, provider_keys);
+                }
+            }
+        }
+        Self::new(keys)
+    }
+
+    /// Get the next API key for a provider using round-robin.
+    pub fn get_key(&self, provider: &str) -> Option<String> {
+        let keys = self.keys.get(provider)?;
+        if keys.is_empty() {
+            return None;
+        }
+        let mut cursors = self.cursors.lock().unwrap();
+        let cursor = cursors.entry(provider.to_string()).or_insert(0);
+        let key = keys[*cursor].clone();
+        *cursor = (*cursor + 1) % keys.len();
+        Some(key)
+    }
+
+    /// Check if pool has keys for a provider.
+    pub fn has_provider(&self, provider: &str) -> bool {
+        self.keys.get(provider).map(|v| !v.is_empty()).unwrap_or(false)
+    }
+
+    /// List all providers with keys in the pool.
+    pub fn providers(&self) -> Vec<&str> {
+        self.keys.keys().map(|s| s.as_str()).collect()
+    }
+
+    /// Number of providers in the pool.
+    pub fn provider_count(&self) -> usize {
+        self.keys.len()
+    }
+}
+
+impl std::fmt::Debug for CredentialPool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let providers: Vec<_> = self.keys.keys().map(|k| format!("{}({} keys)", k, self.keys[k].len())).collect();
+        f.debug_struct("CredentialPool")
+            .field("providers", &providers)
+            .finish()
+    }
+}
+
+impl BrokeringConfig {
+    /// Load wholesale API keys from environment variables.
+    /// Reads ARLI_WHOLESALE_*_KEY vars and populates wholesale_keys.
+    pub fn load_wholesale_keys_from_env(&mut self) {
+        let pool = CredentialPool::from_env();
+        self.wholesale_keys = pool.keys.clone();
+        if self.wholesale_keys.is_empty() {
+            tracing::warn!("No wholesale API keys found. Set ARLI_WHOLESALE_<PROVIDER>_KEY env vars.");
+        }
+    }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // Configuration
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -63,6 +164,12 @@ pub struct BrokeringConfig {
 
     #[serde(default)]
     pub db_path: Option<String>,
+
+    /// Wholesale API keys per provider. Keys loaded from ARLI_WHOLESALE_* env vars.
+    /// Format: ARLI_WHOLESALE_DEEPSEEK_KEY, ARLI_WHOLESALE_OPENAI_KEY, etc.
+    /// Multiple keys per provider: comma-separated (round-robin for load distribution).
+    #[serde(default)]
+    pub wholesale_keys: HashMap<String, Vec<String>>,
 }
 
 fn default_margin() -> f64 { 0.15 }
@@ -77,6 +184,7 @@ impl Default for BrokeringConfig {
             default_max_tpm: default_max_tpm(),
             tenant_overrides: HashMap::new(),
             db_path: None,
+            wholesale_keys: HashMap::new(),
         }
     }
 }
@@ -504,6 +612,7 @@ pub struct BrokeringRouter {
     rate_limiter: Arc<RateLimiter>,
     usage_tracker: Arc<UsageTracker>,
     inference: InferenceRouter,
+    credential_pool: CredentialPool,
 }
 
 impl std::fmt::Debug for BrokeringRouter {
@@ -511,6 +620,7 @@ impl std::fmt::Debug for BrokeringRouter {
         f.debug_struct("BrokeringRouter")
             .field("rate_limiter", &self.rate_limiter)
             .field("usage_tracker", &self.usage_tracker)
+            .field("credential_pool", &self.credential_pool)
             .finish_non_exhaustive()
     }
 }
@@ -521,7 +631,17 @@ impl BrokeringRouter {
         rate_limiter: Arc<RateLimiter>,
         usage_tracker: Arc<UsageTracker>,
     ) -> Self {
-        Self { tenant_manager, rate_limiter, usage_tracker, inference: InferenceRouter::new() }
+        let credential_pool = CredentialPool::from_env();
+        Self { tenant_manager, rate_limiter, usage_tracker, inference: InferenceRouter::new(), credential_pool }
+    }
+
+    pub fn with_pool(
+        tenant_manager: TenantManager,
+        rate_limiter: Arc<RateLimiter>,
+        usage_tracker: Arc<UsageTracker>,
+        credential_pool: CredentialPool,
+    ) -> Self {
+        Self { tenant_manager, rate_limiter, usage_tracker, inference: InferenceRouter::new(), credential_pool }
     }
 
     pub fn route(
@@ -539,8 +659,15 @@ impl BrokeringRouter {
                 detail: format!("try again after {}", result.reset_at),
             });
         }
-        self.inference.resolve(provider_name, model)
-            .ok_or_else(|| BrokeringError::Config(format!("unknown provider: {provider_name}")))
+        let mut route = self.inference.resolve(provider_name, model)
+            .ok_or_else(|| BrokeringError::Config(format!("unknown provider: {provider_name}")))?;
+
+        // Inject wholesale API key from credential pool (overrides env var)
+        if let Some(pool_key) = self.credential_pool.get_key(provider_name) {
+            route.api_key = Some(pool_key);
+        }
+
+        Ok(route)
     }
 
     pub fn route_with_fallback(

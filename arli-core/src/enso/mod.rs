@@ -217,11 +217,12 @@ impl EnsoClient {
     }
 
     /// Register the ARLI agent with full details on ENSO Registry.
-    /// Required by spec: agent_id, public_key, binary_hash, capabilities, sandbox_config_hash.
+    /// ENSO generates agent_id as `arli_<sha256(caller+name)[:16]>` — ARLI does NOT pass it.
+    /// Args: (public_key, binary_hash, name, capabilities, sandbox_config_hash)
     pub async fn register_arli_agent(
         &self,
-        agent_id: &str,
         binary_hash: &str,
+        name: &str,
         capabilities: &[String],
         sandbox_config_hash: &str,
     ) -> Result<(), String> {
@@ -232,9 +233,9 @@ impl EnsoClient {
             .map_err(|e| format!("parse canister id: {}", e))?;
 
         let args = candid::encode_args((
-            agent_id.to_string(),
             self.config.arli_public_key.clone(),
             binary_hash.to_string(),
+            name.to_string(),
             capabilities.to_vec(),
             sandbox_config_hash.to_string(),
         ))
@@ -248,7 +249,7 @@ impl EnsoClient {
             .map_err(|e| format!("call register_arli_agent: {}", e))?;
 
         tracing::info!(
-            agent_id = %agent_id,
+            name = %name,
             caps = ?capabilities,
             "ARLI agent registered on ENSO"
         );
@@ -341,7 +342,7 @@ impl EnsoClientStub {
     }
 
     pub async fn register_arli_agent(
-        &self, _agent_id: &str, _binary_hash: &str,
+        &self, _binary_hash: &str, _name: &str,
         _capabilities: &[String], _sandbox_config_hash: &str,
     ) -> Result<(), String> {
         Err("ENSO integration not compiled — rebuild with `--features enso`".into())

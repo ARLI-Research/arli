@@ -2539,6 +2539,17 @@ agent_name = "{name}"
                 }
             };
 
+            let sandbox_config_hash = {
+                let policy_path = arli_dir.join("sandbox.yaml");
+                if policy_path.exists() {
+                    let bytes = std::fs::read(&policy_path)?;
+                    let hash = sha2::Sha256::digest(&bytes);
+                    format!("{:x}", hash)
+                } else {
+                    "unknown (sandbox.yaml not found)".into()
+                }
+            };
+
             println!();
             println!("=== ENSO Setup Complete ===");
             println!();
@@ -2546,7 +2557,8 @@ agent_name = "{name}"
             println!();
             println!("To register with ENSO Registry:");
             println!("  dfx canister call {} register_arli_agent \\", registry_id);
-            println!("    '(\"{}\", \"{}\", \"{}\", vec {{\"trading\"}})'", pubkey, binary_hash, name);
+            println!("    '(\\\"{}\\\", \\\"{}\\\", \\\"{}\\\", vec {{\\\"trading\\\"}}, \\\"{}\\\")'",
+                     pubkey, binary_hash, name, sandbox_config_hash);
             println!();
             println!("ENS Contracts canister: {}", contracts_id);
             println!("ICP Gateway:           {}", icp_gateway);

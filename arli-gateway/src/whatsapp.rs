@@ -142,6 +142,9 @@ impl WaState {
         );
 
         let agent_config = AgentConfig {
+            brokering: None,
+            tenant_id: None,
+            provider_name: None,
             name: format!("wa-{}", phone),
             session_id: None,
             system_prompt: Some(

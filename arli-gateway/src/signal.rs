@@ -161,6 +161,9 @@ impl SignalGateway {
         );
 
         let agent_config = AgentConfig {
+            brokering: None,
+            tenant_id: None,
+            provider_name: None,
             name: format!("signal-{}", safe_id),
             session_id: None,
             system_prompt: Some(format!(

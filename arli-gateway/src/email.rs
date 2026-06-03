@@ -274,6 +274,9 @@ impl EmailGateway {
         );
 
         let agent_config = AgentConfig {
+            brokering: None,
+            tenant_id: None,
+            provider_name: None,
             name: format!("email-{}", safe_key),
             session_id: None,
             system_prompt: Some(format!(

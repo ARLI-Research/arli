@@ -106,6 +106,9 @@ impl MatrixBot {
         );
 
         let agent_config = AgentConfig {
+            brokering: None,
+            tenant_id: None,
+            provider_name: None,
             name: format!("matrix-{}", safe_id),
             session_id: None,
             system_prompt: Some(system_prompt),

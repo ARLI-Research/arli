@@ -186,6 +186,9 @@ impl Swarm {
             token_budget: None,
             time_budget_secs: None,
             dollar_budget_cents: None,
+            brokering: None,
+            tenant_id: None,
+            provider_name: None,
         };
 
         let provider = (self.provider_factory)();

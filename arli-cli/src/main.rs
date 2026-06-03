@@ -9,6 +9,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use tokio::sync::mpsc;
 use tracing::info;
+use uuid::Uuid;
 
 #[derive(Parser)]
 #[command(name = "arli", about = "ARLI — Rust-native AI Agent Harness")]
@@ -129,6 +130,17 @@ enum Commands {
     /// Manage ENSO integration (setup/status/pay)
     #[command(subcommand)]
     Enso(EnsoCmd),
+
+    /// Manage AI inference brokering (tenants, billing, reports)
+    #[command(subcommand)]
+    Brokering(BrokeringCmd),
+
+    /// Start the inference brokering API server
+    Api {
+        /// Port to listen on
+        #[arg(short, long, default_value = "8080")]
+        port: u16,
+    },
 }
 
 #[derive(Subcommand)]
@@ -373,6 +385,54 @@ enum EnsoCmd {
     Pay {
         /// Contract ID (e.g. contract_1780372735456935314_4)
         contract_id: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum BrokeringCmd {
+    /// Tenant management
+    Tenant {
+        #[command(subcommand)]
+        cmd: TenantCmd,
+    },
+    /// Generate billing reports
+    Report {
+        /// Tenant ID
+        #[arg(long)]
+        tenant: String,
+        /// Year (default: current)
+        #[arg(long)]
+        year: Option<i32>,
+        /// Month 1-12 (default: current)
+        #[arg(long)]
+        month: Option<u32>,
+    },
+}
+
+#[derive(Subcommand)]
+enum TenantCmd {
+    /// Create a new tenant
+    Create {
+        /// Tenant name
+        name: String,
+        /// Contact email
+        #[arg(long)]
+        email: String,
+    },
+    /// List all tenants
+    List,
+    /// Rotate API key for a tenant
+    RotateKey {
+        /// Tenant ID (UUID)
+        tenant_id: String,
+    },
+    /// Enable a tenant
+    Enable {
+        tenant_id: String,
+    },
+    /// Disable a tenant
+    Disable {
+        tenant_id: String,
     },
 }
 
@@ -1680,6 +1740,9 @@ async fn run_chat(
         token_budget: None,
         time_budget_secs: None,
         dollar_budget_cents: None,
+        brokering: None,
+        tenant_id: None,
+        provider_name: None,
     };
 
     let mut agent = Agent::new(
@@ -2157,6 +2220,33 @@ async fn main() -> anyhow::Result<()> {
         Commands::Enso(cmd) => {
             run_enso(cmd)?;
         }
+
+        Commands::Brokering(cmd) => {
+            run_brokering(cmd)?;
+        }
+
+        Commands::Api { port } => {
+            use arli_core::brokering::{RateLimiter, TenantManager, UsageTracker};
+            use arli_core::brokering_api::BrokeringApiServer;
+            use std::sync::Arc;
+
+            let config = Config::from_env()?;
+            let brokering_config = config.brokering;
+            let db_path = brokering_config
+                .db_path
+                .clone()
+                .unwrap_or_else(|| get_data_dir().join("brokering.db").to_string_lossy().to_string());
+
+            let tm = TenantManager::new(&db_path).map_err(|e| anyhow::anyhow!("{e}"))?;
+            let rl = Arc::new(RateLimiter::new(&brokering_config));
+            let ut = Arc::new(UsageTracker::new(&db_path).map_err(|e| anyhow::anyhow!("{e}"))?);
+
+            let server = BrokeringApiServer::new(brokering_config, tm, rl, ut);
+            println!("Brokering API server starting on port {}", port);
+
+            let rt = tokio::runtime::Runtime::new()?;
+            rt.block_on(server.serve(port));
+        }
     }
 
     Ok(())
@@ -2574,5 +2664,153 @@ agent_name = "{name}"
             println!("Or use the ARLI Bridge: https://7rwvv-hqaaa-aaaaa-qhhfa-cai.icp0.io/#/app");
         }
     }
+    Ok(())
+}
+
+fn run_brokering(cmd: BrokeringCmd) -> anyhow::Result<()> {
+    use arli_core::brokering::{BillingReporter, TenantManager, UsageTracker};
+    use chrono::Datelike;
+
+    let config = Config::from_env()?;
+    let db_path = config
+        .brokering
+        .db_path
+        .clone()
+        .unwrap_or_else(|| get_data_dir().join("brokering.db").to_string_lossy().to_string());
+
+    let brokering_config = config.brokering;
+
+    match cmd {
+        BrokeringCmd::Tenant { cmd } => {
+            let tm = TenantManager::new(&db_path).map_err(|e| anyhow::anyhow!("{e}"))?;
+
+            match cmd {
+                TenantCmd::Create { name, email } => {
+                    let tenant_id = tm
+                        .register_tenant(&name, &email)
+                        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+                    // rotate_api_key gives us a key we can show (register_tenant
+                    // hashes the key internally and doesn't return it)
+                    let api_key = tm
+                        .rotate_api_key(tenant_id)
+                        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+                    println!("== Tenant Created ==");
+                    println!("  Name:     {}", name);
+                    println!("  Email:    {}", email);
+                    println!("  ID:       {}", tenant_id);
+                    println!(
+                        "  API Key:  {}  ⬅ save this now — it cannot be recovered!",
+                        api_key
+                    );
+                    println!();
+                }
+                TenantCmd::List => {
+                    let tenants = tm.list_tenants().map_err(|e| anyhow::anyhow!("{e}"))?;
+                    if tenants.is_empty() {
+                        println!("No tenants found.");
+                    } else {
+                        println!("== Tenants ==\n");
+                        for t in &tenants {
+                            let status = if t.enabled { "enabled" } else { "DISABLED" };
+                            println!(
+                                "  {}  {}  {}  {}  {}",
+                                t.id,
+                                t.name,
+                                t.contact_email,
+                                status,
+                                t.created_at.format("%Y-%m-%d %H:%M")
+                            );
+                        }
+                        println!("\n{} tenant(s)", tenants.len());
+                    }
+                }
+                TenantCmd::RotateKey { tenant_id } => {
+                    let tid = Uuid::parse_str(&tenant_id)
+                        .map_err(|_| anyhow::anyhow!("Invalid tenant UUID: {tenant_id}"))?;
+                    let new_key = tm
+                        .rotate_api_key(tid)
+                        .map_err(|e| anyhow::anyhow!("{e}"))?;
+                    println!("== API Key Rotated ==");
+                    println!("  Tenant:   {tid}");
+                    println!("  New Key:  {new_key}  ⬅ save this now!");
+                }
+                TenantCmd::Enable { tenant_id } => {
+                    let tid = Uuid::parse_str(&tenant_id)
+                        .map_err(|_| anyhow::anyhow!("Invalid tenant UUID: {tenant_id}"))?;
+                    tm.enable_tenant(tid)
+                        .map_err(|e| anyhow::anyhow!("{e}"))?;
+                    println!("Tenant {tid} enabled.");
+                }
+                TenantCmd::Disable { tenant_id } => {
+                    let tid = Uuid::parse_str(&tenant_id)
+                        .map_err(|_| anyhow::anyhow!("Invalid tenant UUID: {tenant_id}"))?;
+                    tm.disable_tenant(tid)
+                        .map_err(|e| anyhow::anyhow!("{e}"))?;
+                    println!("Tenant {tid} disabled.");
+                }
+            }
+        }
+        BrokeringCmd::Report { tenant, year, month } => {
+            let tid = Uuid::parse_str(&tenant)
+                .map_err(|_| anyhow::anyhow!("Invalid tenant UUID: {tenant}"))?;
+
+            let now = chrono::Utc::now();
+            let y = year.unwrap_or(now.year());
+            let m = month.unwrap_or(now.month());
+
+            let tm = TenantManager::new(&db_path).map_err(|e| anyhow::anyhow!("{e}"))?;
+            let tracker = UsageTracker::new(&db_path).map_err(|e| anyhow::anyhow!("{e}"))?;
+            let reporter = BillingReporter::new(tracker, tm, brokering_config);
+
+            let report = reporter
+                .generate_monthly_report(tid, y, m)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+            println!("== Billing Report ==");
+            println!("  Tenant:     {} ({})", report.tenant_name, report.tenant_id);
+            println!("  Period:     {}-{:02}", report.year, report.month);
+            println!("  Requests:   {}", report.total_requests);
+            println!(
+                "  Cost:       ${:.2} ({}¢)",
+                report.total_cost_cents as f64 / 100.0,
+                report.total_cost_cents
+            );
+            println!(
+                "  + Margin:   ${:.2} ({}¢ @ {}%)",
+                report.total_with_margin_cents as f64 / 100.0,
+                report.total_with_margin_cents,
+                (report.margin_percent * 100.0) as u32
+            );
+            println!(
+                "  Generated:  {}",
+                report.generated_at.format("%Y-%m-%d %H:%M:%S UTC")
+            );
+            println!();
+
+            if !report.provider_breakdown.is_empty() {
+                println!("== Provider Breakdown ==");
+                for pb in &report.provider_breakdown {
+                    println!("  ─ {} ─", pb.provider);
+                    println!("    Requests:       {}", pb.requests);
+                    println!("    Tokens in:      {}", pb.tokens_in);
+                    println!("    Tokens out:     {}", pb.tokens_out);
+                    println!(
+                        "    Cost:           ${:.2} ({}¢)",
+                        pb.cost_cents as f64 / 100.0,
+                        pb.cost_cents
+                    );
+                    println!(
+                        "    With margin:    ${:.2} ({}¢)",
+                        pb.with_margin_cents as f64 / 100.0,
+                        pb.with_margin_cents
+                    );
+                    println!();
+                }
+            }
+        }
+    }
+
     Ok(())
 }

@@ -3,6 +3,7 @@ pub mod ast_language;
 pub mod attestation;
 pub mod audit;
 pub mod brokering;
+pub mod brokering_api;
 pub mod checkpoints;
 pub mod compaction;
 pub mod config;

@@ -99,6 +99,9 @@ impl DiscordBot {
         );
 
         let agent_config = AgentConfig {
+            brokering: None,
+            tenant_id: None,
+            provider_name: None,
             name: format!("discord-{}", key),
             session_id: None,
             system_prompt: Some(system_prompt),

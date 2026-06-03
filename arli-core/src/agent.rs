@@ -3,6 +3,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
+use crate::brokering::BrokeringRouter;
 use crate::compaction::Compactor;
 use crate::context::PressureLevel;
 use crate::error::{Error, Result};
@@ -12,6 +13,7 @@ use crate::providers::{ChatMessage, LlmResponseContent, Provider, Role, ToolResu
 use crate::session::SessionStore;
 use crate::skill_loader::{suggest_skill, ToolSequenceTracker};
 use crate::tools::ToolRegistry;
+use uuid::Uuid;
 #[derive(Debug)]
 pub enum AgentMessage {
     UserMessage(String),
@@ -47,6 +49,13 @@ pub struct AgentConfig {
     pub time_budget_secs: Option<u64>,
     /// Dollar budget in USD cents (None = unlimited)
     pub dollar_budget_cents: Option<u64>,
+
+    /// Optional brokering router for multi-tenant rate limiting and usage tracking
+    pub brokering: Option<Arc<BrokeringRouter>>,
+    /// Tenant ID for brokering usage tracking
+    pub tenant_id: Option<Uuid>,
+    /// Provider name for brokering usage records (e.g. "deepseek")
+    pub provider_name: Option<String>,
 }
 
 impl Default for AgentConfig {
@@ -60,6 +69,9 @@ impl Default for AgentConfig {
             token_budget: None,
             time_budget_secs: None,
             dollar_budget_cents: None,
+            brokering: None,
+            tenant_id: None,
+            provider_name: None,
         }
     }
 }
@@ -102,6 +114,13 @@ pub struct Agent {
 
     /// Time-traveling stream rules (TTSR) — regex-based response filtering
     stream_rules: crate::stream_rules::StreamRules,
+
+    /// Optional brokering router for multi-tenant rate limiting and usage tracking
+    brokering: Option<Arc<BrokeringRouter>>,
+    /// Tenant ID for brokering usage tracking
+    tenant_id: Option<Uuid>,
+    /// Provider name for brokering usage records (e.g. "deepseek")
+    provider_name: Option<String>,
 }
 
 impl Agent {
@@ -115,6 +134,10 @@ impl Agent {
         guardrail: Option<Arc<Guardrail>>,
     ) -> Self {
         let (tx, rx) = mpsc::channel(64);
+        // Extract brokering fields before config is moved
+        let brokering = config.brokering.clone();
+        let tenant_id = config.tenant_id;
+        let provider_name = config.provider_name.clone();
         Self {
             config,
             state: AgentState::Idle,
@@ -137,6 +160,9 @@ impl Agent {
             tool_sequences: HashMap::new(),
             last_tool_names: Vec::new(),
             stream_rules: crate::stream_rules::StreamRules::default(),
+            brokering,
+            tenant_id,
+            provider_name,
         }
     }
 
@@ -518,6 +544,35 @@ If you don't need a tool to answer, respond directly without calling tools."#,
                 schemas.len()
             );
 
+            // --- BROKERING: rate-limit check before LLM call ---
+            if let (Some(ref brokering), Some(tenant_id)) =
+                (&self.brokering, self.tenant_id)
+            {
+                let provider_name = self
+                    .provider_name
+                    .as_deref()
+                    .unwrap_or("unknown");
+                let model = "default";
+                let estimated_tokens = tokens as u32;
+                match brokering.route(tenant_id, provider_name, Some(model), estimated_tokens) {
+                    Err(crate::brokering::BrokeringError::RateLimitExceeded { tenant_id, detail }) => {
+                        warn!(
+                            "Rate limit exceeded for tenant {}: {}",
+                            tenant_id, detail
+                        );
+                        return Err(Error::Brokering(
+                            crate::brokering::BrokeringError::RateLimitExceeded { tenant_id, detail },
+                        ));
+                    }
+                    Err(e) => {
+                        warn!("Brokering route check failed (non-fatal): {}", e);
+                    }
+                    Ok(_route) => {
+                        debug!("Brokering route OK for tenant {}", tenant_id);
+                    }
+                }
+            }
+
             // Call LLM
             let response = self.provider.chat(&self.messages, &schemas).await?;
 
@@ -588,6 +643,27 @@ If you don't need a tool to answer, respond directly without calling tools."#,
                     usage.total_tokens,
                     self.tokens_consumed
                 );
+
+                // --- BROKERING: record usage after successful LLM call ---
+                if let (Some(ref brokering), Some(tenant_id)) =
+                    (&self.brokering, self.tenant_id)
+                {
+                    let provider_name = self
+                        .provider_name
+                        .as_deref()
+                        .unwrap_or("unknown");
+                    let model = "default";
+                    let tokens_in = usage.prompt_tokens;
+                    let tokens_out = usage.completion_tokens;
+                    // Reasonable default: 0.1 cents per 1K tokens (combined)
+                    let cost_cents = ((tokens_in + tokens_out) as f64 * 0.1 / 1000.0).ceil() as u64;
+                    if let Err(e) = brokering.record_completion(
+                        tenant_id, provider_name, model,
+                        tokens_in as u64, tokens_out as u64, cost_cents,
+                    ) {
+                        warn!("Brokering record_completion failed: {}", e);
+                    }
+                }
             }
 
             match response.content {

@@ -233,6 +233,7 @@ pub struct RateLimitResult {
     pub reset_at: DateTime<Utc>,
 }
 
+#[derive(Debug)]
 struct TokenBucket {
     tokens: f64,
     last_refill: DateTime<Utc>,
@@ -240,6 +241,7 @@ struct TokenBucket {
     refill_rate_per_sec: f64,
 }
 
+#[derive(Debug)]
 pub struct RateLimiter {
     buckets: Mutex<HashMap<Uuid, TokenBucket>>,
     config: BrokeringConfig,
@@ -329,6 +331,7 @@ pub struct DailyUsage {
     pub cost_cents: u64,
 }
 
+#[derive(Debug)]
 pub struct UsageTracker {
     db: Arc<Mutex<Connection>>,
 }
@@ -501,6 +504,15 @@ pub struct BrokeringRouter {
     rate_limiter: Arc<RateLimiter>,
     usage_tracker: Arc<UsageTracker>,
     inference: InferenceRouter,
+}
+
+impl std::fmt::Debug for BrokeringRouter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BrokeringRouter")
+            .field("rate_limiter", &self.rate_limiter)
+            .field("usage_tracker", &self.usage_tracker)
+            .finish_non_exhaustive()
+    }
 }
 
 impl BrokeringRouter {

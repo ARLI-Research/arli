@@ -107,8 +107,7 @@ impl StreamRules {
         }
 
         // Sort by priority (then index-stable if equal priority)
-        let mut indexed: Vec<(usize, &StreamRule)> =
-            self.rules.iter().enumerate().collect();
+        let mut indexed: Vec<(usize, &StreamRule)> = self.rules.iter().enumerate().collect();
         indexed.sort_by_key(|(i, r)| (r.priority, *i));
 
         for (_idx, rule) in indexed {
@@ -207,8 +206,14 @@ mod tests {
     #[test]
     fn test_no_match_on_safe_text() {
         let mut rules = StreamRules::new();
-        rules.add_rule("no-box-leak", r"Box::leak", "Don't use Box::leak in production.");
-        assert!(rules.check("use std::rc::Rc; let x = Rc::new(42);").is_none());
+        rules.add_rule(
+            "no-box-leak",
+            r"Box::leak",
+            "Don't use Box::leak in production.",
+        );
+        assert!(rules
+            .check("use std::rc::Rc; let x = Rc::new(42);")
+            .is_none());
     }
 
     #[test]

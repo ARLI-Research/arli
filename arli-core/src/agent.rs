@@ -558,9 +558,8 @@ If you don't need a tool to answer, respond directly without calling tools."#,
                                 self.stream_rules.max_retries,
                             );
 
-                            let injection = crate::stream_rules::StreamRules::build_injection(
-                                &matched.rule,
-                            );
+                            let injection =
+                                crate::stream_rules::StreamRules::build_injection(&matched.rule);
                             self.messages.push(ChatMessage::user(injection));
 
                             // Retry the LLM call

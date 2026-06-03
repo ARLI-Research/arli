@@ -149,22 +149,28 @@ pub fn match_anchors(content: &str, anchors: &[Anchor]) -> AnchorResult {
 /// Apply a set of hunks to file content.
 ///
 /// Returns the new content or an error if anchors don't match.
-pub fn apply_hunks(
-    content: &str,
-    hunks: &[Hunk],
-) -> Result<String, String> {
+pub fn apply_hunks(content: &str, hunks: &[Hunk]) -> Result<String, String> {
     let lines: Vec<String> = content.lines().map(|l| l.to_string()).collect();
     let mut deleted: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
-    let mut insertions: std::collections::BTreeMap<usize, Vec<String>> = std::collections::BTreeMap::new();
+    let mut insertions: std::collections::BTreeMap<usize, Vec<String>> =
+        std::collections::BTreeMap::new();
 
     for (hunk_idx, hunk) in hunks.iter().enumerate() {
         // Match before anchors
-        let all_anchors: Vec<Anchor> = hunk.before.iter().chain(hunk.after.iter()).cloned().collect();
+        let all_anchors: Vec<Anchor> = hunk
+            .before
+            .iter()
+            .chain(hunk.after.iter())
+            .cloned()
+            .collect();
         let result = match_anchors(content, &all_anchors);
 
         let (start, end) = match result {
             AnchorResult::Matched { start, end } => (start, end),
-            AnchorResult::Stale { missing, current_hashes } => {
+            AnchorResult::Stale {
+                missing,
+                current_hashes,
+            } => {
                 return Err(format!(
                     "Hunk {}: file has changed — anchors not found: {:?}\n\
                      Current hashes: {:?}\n\
@@ -199,7 +205,10 @@ pub fn apply_hunks(
         // Mark insertions at end position
         if !hunk.insert.is_empty() {
             let insert_at = end + 1;
-            insertions.entry(insert_at).or_default().extend(hunk.insert.clone());
+            insertions
+                .entry(insert_at)
+                .or_default()
+                .extend(hunk.insert.clone());
         }
     }
 
@@ -306,8 +315,14 @@ mod tests {
         let h5 = hash_line("line5");
 
         let anchors = vec![
-            Anchor { hash: h1, line_hint: None },
-            Anchor { hash: h5, line_hint: None },
+            Anchor {
+                hash: h1,
+                line_hint: None,
+            },
+            Anchor {
+                hash: h5,
+                line_hint: None,
+            },
         ];
 
         let result = match_anchors(content, &anchors);
@@ -326,7 +341,10 @@ mod tests {
         let target = hash_line("    let x = 42;");
 
         let hunks = vec![Hunk {
-            before: vec![Anchor { hash: target.clone(), line_hint: None }],
+            before: vec![Anchor {
+                hash: target.clone(),
+                line_hint: None,
+            }],
             after: vec![],
             remove: vec!["    let x = 42;".into()],
             insert: vec!["    let x = 99;".into()],
@@ -344,7 +362,10 @@ mod tests {
     fn test_apply_hunks_stale_anchor() {
         let content = "line one\nline two\n";
         let hunks = vec![Hunk {
-            before: vec![Anchor { hash: "deadbeef".into(), line_hint: None }],
+            before: vec![Anchor {
+                hash: "deadbeef".into(),
+                line_hint: None,
+            }],
             after: vec![],
             remove: vec![],
             insert: vec![],
@@ -362,7 +383,10 @@ mod tests {
         let anchor = hash_line("fn main() {");
 
         let hunks = vec![Hunk {
-            before: vec![Anchor { hash: anchor, line_hint: None }],
+            before: vec![Anchor {
+                hash: anchor,
+                line_hint: None,
+            }],
             after: vec![],
             remove: vec![],
             insert: vec!["    println!(\"hello\");".into()],
@@ -380,7 +404,10 @@ mod tests {
         let target = hash_line("remove me");
 
         let hunks = vec![Hunk {
-            before: vec![Anchor { hash: target.clone(), line_hint: None }],
+            before: vec![Anchor {
+                hash: target.clone(),
+                line_hint: None,
+            }],
             after: vec![],
             remove: vec!["remove me".into()],
             insert: vec![],

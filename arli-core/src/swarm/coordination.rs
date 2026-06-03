@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use super::{AgentId, AgentHandle};
+use super::{AgentHandle, AgentId};
 
 // ── Agent Role / Specialization ──────────────────────────────────────────
 
@@ -153,17 +153,12 @@ impl TaskRouter {
 
         // 2. Role-based routing — least loaded
         if let Some(ref role) = task.target_role {
-            let candidates: Vec<&AgentEntry> = agents
-                .values()
-                .filter(|e| e.role == *role)
-                .collect();
+            let candidates: Vec<&AgentEntry> =
+                agents.values().filter(|e| e.role == *role).collect();
 
             if !candidates.is_empty() {
                 // Pick least-loaded
-                let best = candidates
-                    .iter()
-                    .min_by_key(|e| e.task_count)
-                    .unwrap();
+                let best = candidates.iter().min_by_key(|e| e.task_count).unwrap();
                 return Some(RouteResult {
                     task_id: task.id.clone(),
                     agent_id: best.handle.id.clone(),
@@ -174,10 +169,7 @@ impl TaskRouter {
         }
 
         // 3. Fallback — least-loaded of any role
-        let best = agents
-            .values()
-            .min_by_key(|e| e.task_count)
-            .unwrap();
+        let best = agents.values().min_by_key(|e| e.task_count).unwrap();
 
         Some(RouteResult {
             task_id: task.id.clone(),
@@ -456,11 +448,7 @@ mod tests {
     async fn test_router_load_stats() {
         let router = TaskRouter::new();
         router
-            .register(
-                "a1".into(),
-                make_handle("a1", "agent-1"),
-                AgentRole::Trader,
-            )
+            .register("a1".into(), make_handle("a1", "agent-1"), AgentRole::Trader)
             .await;
         router.task_started(&"a1".into()).await;
         router.task_started(&"a1".into()).await;
@@ -537,25 +525,13 @@ mod tests {
     async fn test_count_by_role() {
         let router = TaskRouter::new();
         router
-            .register(
-                "a1".into(),
-                make_handle("a1", "t1"),
-                AgentRole::Trader,
-            )
+            .register("a1".into(), make_handle("a1", "t1"), AgentRole::Trader)
             .await;
         router
-            .register(
-                "a2".into(),
-                make_handle("a2", "t2"),
-                AgentRole::Trader,
-            )
+            .register("a2".into(), make_handle("a2", "t2"), AgentRole::Trader)
             .await;
         router
-            .register(
-                "a3".into(),
-                make_handle("a3", "r1"),
-                AgentRole::Researcher,
-            )
+            .register("a3".into(), make_handle("a3", "r1"), AgentRole::Researcher)
             .await;
 
         assert_eq!(router.count_by_role(&AgentRole::Trader).await, 2);
@@ -567,11 +543,7 @@ mod tests {
     async fn test_unregister() {
         let router = TaskRouter::new();
         router
-            .register(
-                "a1".into(),
-                make_handle("a1", "agent"),
-                AgentRole::General,
-            )
+            .register("a1".into(), make_handle("a1", "agent"), AgentRole::General)
             .await;
 
         assert_eq!(router.agent_count().await, 1);
@@ -583,25 +555,13 @@ mod tests {
     async fn test_fan_out() {
         let router = Arc::new(TaskRouter::new());
         router
-            .register(
-                "a1".into(),
-                make_handle("a1", "t1"),
-                AgentRole::Trader,
-            )
+            .register("a1".into(), make_handle("a1", "t1"), AgentRole::Trader)
             .await;
         router
-            .register(
-                "a2".into(),
-                make_handle("a2", "t2"),
-                AgentRole::Trader,
-            )
+            .register("a2".into(), make_handle("a2", "t2"), AgentRole::Trader)
             .await;
         router
-            .register(
-                "a3".into(),
-                make_handle("a3", "r1"),
-                AgentRole::Researcher,
-            )
+            .register("a3".into(), make_handle("a3", "r1"), AgentRole::Researcher)
             .await;
 
         let patterns = CoordinationPatterns::new(router);

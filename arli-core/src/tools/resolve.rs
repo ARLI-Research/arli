@@ -138,10 +138,7 @@ impl Tool for ResolveTool {
                     Err(e) => ToolOutput {
                         success: false,
                         content: String::new(),
-                        error: Some(format!(
-                            "Cannot write '{}': {e}",
-                            staged.path
-                        )),
+                        error: Some(format!("Cannot write '{}': {e}", staged.path)),
                     },
                 }
             }
@@ -227,7 +224,11 @@ mod tests {
 
         // Verify file was modified
         let content = std::fs::read_to_string(&file_path).unwrap();
-        assert!(content.contains("let x: i32 = 42"), "File not modified: {}", content);
+        assert!(
+            content.contains("let x: i32 = 42"),
+            "File not modified: {}",
+            content
+        );
     }
 
     #[tokio::test]

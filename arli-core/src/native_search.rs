@@ -221,7 +221,11 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
 
         let mut f1 = std::fs::File::create(dir.join("a.rs")).unwrap();
-        writeln!(f1, "fn main() {{\n    let x = setup_test_dir();\n    println!(\"hello\");\n}}").unwrap();
+        writeln!(
+            f1,
+            "fn main() {{\n    let x = setup_test_dir();\n    println!(\"hello\");\n}}"
+        )
+        .unwrap();
 
         let mut f2 = std::fs::File::create(dir.join("b.py")).unwrap();
         writeln!(f2, "def setup_test_dir():\n    x = setup()\n    print(x)").unwrap();

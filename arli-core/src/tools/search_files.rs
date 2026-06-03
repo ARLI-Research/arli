@@ -100,7 +100,8 @@ impl Tool for SearchFilesTool {
                         }
 
                         let total = files.len();
-                        let mut result = format!("Found {} file(s) matching '{}':\n", total, pattern);
+                        let mut result =
+                            format!("Found {} file(s) matching '{}':\n", total, pattern);
                         for f in &files {
                             result.push_str(&format!("  {}\n", f));
                         }
@@ -120,12 +121,7 @@ impl Tool for SearchFilesTool {
             }
             _ => {
                 // Content search — in-process via grep-regex + grep-searcher
-                match crate::native_search::grep_content(
-                    pattern,
-                    search_path,
-                    file_glob,
-                    limit,
-                ) {
+                match crate::native_search::grep_content(pattern, search_path, file_glob, limit) {
                     Ok(matches) => {
                         if matches.is_empty() {
                             return ToolOutput {
@@ -138,10 +134,7 @@ impl Tool for SearchFilesTool {
                         let total = matches.len();
                         let mut result = String::new();
                         for m in &matches {
-                            result.push_str(&format!(
-                                "{}:{}: {}\n",
-                                m.file, m.line, m.content
-                            ));
+                            result.push_str(&format!("{}:{}: {}\n", m.file, m.line, m.content));
                         }
                         if total >= limit {
                             result.push_str(&format!(

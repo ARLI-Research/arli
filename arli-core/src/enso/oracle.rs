@@ -213,8 +213,8 @@ impl EnsoOracle {
             65534,
         );
 
-        let attestation_json =
-            serde_json::to_string(&attestation).map_err(|e| format!("serialize attestation: {}", e))?;
+        let attestation_json = serde_json::to_string(&attestation)
+            .map_err(|e| format!("serialize attestation: {}", e))?;
 
         tracing::info!(
             "Oracle: submitting payment+attestation for {} (ocsf:{})",

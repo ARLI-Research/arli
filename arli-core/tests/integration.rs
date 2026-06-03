@@ -9,27 +9,45 @@
 //!
 //! Run with: cargo test --test integration
 
-use arli_core::kanban::{KanbanStore, Priority};
 use arli_core::enso::marketplace::{MarketplaceStore, RfqStatus, SlaRequirement};
+use arli_core::kanban::{KanbanStore, Priority};
 use arli_core::swarm::coordination::{AgentRole, SwarmTask, TaskRouter};
-use arli_core::x402::X402Config;
 use arli_core::x402::X402Client;
+use arli_core::x402::X402Config;
 
 #[test]
 fn test_full_workflow_kanban_to_contract() {
     // ── 1. Kanban: project board ──────────────────────────────────────
     let kanban = KanbanStore::open_in_memory().unwrap();
-    let board = kanban.create_board("Sprint: ENSO Integration", "Deploy ENSO marketplace").unwrap();
+    let board = kanban
+        .create_board("Sprint: ENSO Integration", "Deploy ENSO marketplace")
+        .unwrap();
     let cols = kanban.list_columns(&board.id).unwrap();
 
-    let card1 = kanban.add_card(
-        &board.id, &cols[0].id, "Build RFQ pipeline", "Marketplace RFQ creation flow",
-        Priority::Critical, Some("trader-agent"), &["enso".into(), "marketplace".into()], None,
-    ).unwrap();
-    let card2 = kanban.add_card(
-        &board.id, &cols[0].id, "Implement x402 settlement", "USDC on-chain transfers",
-        Priority::High, Some("payment-agent"), &["x402".into()], None,
-    ).unwrap();
+    let card1 = kanban
+        .add_card(
+            &board.id,
+            &cols[0].id,
+            "Build RFQ pipeline",
+            "Marketplace RFQ creation flow",
+            Priority::Critical,
+            Some("trader-agent"),
+            &["enso".into(), "marketplace".into()],
+            None,
+        )
+        .unwrap();
+    let card2 = kanban
+        .add_card(
+            &board.id,
+            &cols[0].id,
+            "Implement x402 settlement",
+            "USDC on-chain transfers",
+            Priority::High,
+            Some("payment-agent"),
+            &["x402".into()],
+            None,
+        )
+        .unwrap();
 
     // Move first card to in_progress
     let moved = kanban.move_card(&card1.id, &cols[2].id).unwrap();
@@ -48,24 +66,30 @@ fn test_full_workflow_kanban_to_contract() {
         let (tx1, _) = tokio::sync::mpsc::channel(1);
         let (tx2, _) = tokio::sync::mpsc::channel(1);
 
-        router.register(
-            "trader-1".into(),
-            arli_core::swarm::AgentHandle {
-                id: "trader-1".into(), name: "Trading Agent".into(),
-                status: arli_core::swarm::SwarmAgentStatus::Running,
-                sender: tx1,
-            },
-            AgentRole::Trader,
-        ).await;
-        router.register(
-            "researcher-1".into(),
-            arli_core::swarm::AgentHandle {
-                id: "researcher-1".into(), name: "Research Agent".into(),
-                status: arli_core::swarm::SwarmAgentStatus::Running,
-                sender: tx2,
-            },
-            AgentRole::Researcher,
-        ).await;
+        router
+            .register(
+                "trader-1".into(),
+                arli_core::swarm::AgentHandle {
+                    id: "trader-1".into(),
+                    name: "Trading Agent".into(),
+                    status: arli_core::swarm::SwarmAgentStatus::Running,
+                    sender: tx1,
+                },
+                AgentRole::Trader,
+            )
+            .await;
+        router
+            .register(
+                "researcher-1".into(),
+                arli_core::swarm::AgentHandle {
+                    id: "researcher-1".into(),
+                    name: "Research Agent".into(),
+                    status: arli_core::swarm::SwarmAgentStatus::Running,
+                    sender: tx2,
+                },
+                AgentRole::Researcher,
+            )
+            .await;
 
         // Route a trading task
         let task = SwarmTask {
@@ -110,23 +134,35 @@ fn test_full_workflow_kanban_to_contract() {
         require_seccomp: true,
     }];
 
-    let rfq = market.create_rfq(
-        "alice", "Backtest SOL strategy", "Need 1Y backtest on SOL/USDC",
-        5000, "2026-07-01T00:00:00Z",
-        &["trading".into(), "python".into(), "backtest".into()],
-        Some("KernelSandbox"), Some("sha256:test-policy-v1"),
-        &sla,
-    ).unwrap();
+    let rfq = market
+        .create_rfq(
+            "alice",
+            "Backtest SOL strategy",
+            "Need 1Y backtest on SOL/USDC",
+            5000,
+            "2026-07-01T00:00:00Z",
+            &["trading".into(), "python".into(), "backtest".into()],
+            Some("KernelSandbox"),
+            Some("sha256:test-policy-v1"),
+            &sla,
+        )
+        .unwrap();
 
     assert_eq!(rfq.status, RfqStatus::Open);
     assert_eq!(rfq.required_capabilities.len(), 3);
 
     // Agent Bob submits quote
-    let quote = market.submit_quote(
-        &rfq.id, "agent-bob", 4000, 7200,
-        "Full match: trading + backtest + KernelSandbox",
-        "KernelSandbox", Some("sha256:test-policy-v1"),
-    ).unwrap();
+    let quote = market
+        .submit_quote(
+            &rfq.id,
+            "agent-bob",
+            4000,
+            7200,
+            "Full match: trading + backtest + KernelSandbox",
+            "KernelSandbox",
+            Some("sha256:test-policy-v1"),
+        )
+        .unwrap();
     assert_eq!(quote.price_cents, 4000);
     assert_eq!(quote.agent_id, "agent-bob");
 
@@ -156,7 +192,8 @@ fn test_full_workflow_kanban_to_contract() {
     let mut x402_config = X402Config::default();
     x402_config.enabled = true;
     x402_config.wallet_address = "0x1234".into();
-    x402_config.private_key = "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".into();
+    x402_config.private_key =
+        "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".into();
     x402_config.total_budget_cents = 1000;
     x402_config.max_spend_per_call_cents = 100;
 
@@ -214,14 +251,38 @@ fn test_error_scenarios() {
     let kanban = KanbanStore::open_in_memory().unwrap();
     let board = kanban.create_board("WIP Test", "").unwrap();
     let col = kanban.add_column(&board.id, "limited", Some(1)).unwrap();
-    kanban.add_card(&board.id, &col.id, "Only card", "", Priority::Medium, None, &[], None).unwrap();
-    let result = kanban.add_card(&board.id, &col.id, "Overflow", "", Priority::Medium, None, &[], None);
+    kanban
+        .add_card(
+            &board.id,
+            &col.id,
+            "Only card",
+            "",
+            Priority::Medium,
+            None,
+            &[],
+            None,
+        )
+        .unwrap();
+    let result = kanban.add_card(
+        &board.id,
+        &col.id,
+        "Overflow",
+        "",
+        Priority::Medium,
+        None,
+        &[],
+        None,
+    );
     assert!(result.is_err());
 
     // Marketplace: quote on contracted RFQ fails
     let market = MarketplaceStore::open_in_memory().unwrap();
-    let rfq = market.create_rfq("a", "T", "", 100, "2026-12-31", &[], None, None, &[]).unwrap();
-    let quote = market.submit_quote(&rfq.id, "b", 50, 30, "", "", None).unwrap();
+    let rfq = market
+        .create_rfq("a", "T", "", 100, "2026-12-31", &[], None, None, &[])
+        .unwrap();
+    let quote = market
+        .submit_quote(&rfq.id, "b", 50, 30, "", "", None)
+        .unwrap();
     market.accept_quote(&quote.id).unwrap();
     market.mark_contracted(&rfq.id).unwrap();
     let result = market.submit_quote(&rfq.id, "c", 40, 30, "", "", None);

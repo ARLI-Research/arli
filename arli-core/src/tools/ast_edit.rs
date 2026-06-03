@@ -199,9 +199,7 @@ impl Tool for AstEditTool {
                         return ToolOutput {
                             success: false,
                             content: String::new(),
-                            error: Some(
-                                "'replacement' is required when action='replace'".into(),
-                            ),
+                            error: Some("'replacement' is required when action='replace'".into()),
                         }
                     }
                 };
@@ -402,7 +400,11 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let stage_dir = dir.path().join("stage");
         let file_path = dir.path().join("test.rs");
-        std::fs::write(&file_path, "fn main() {\n    let x = 42;\n    let y = 99;\n}\n").unwrap();
+        std::fs::write(
+            &file_path,
+            "fn main() {\n    let x = 42;\n    let y = 99;\n}\n",
+        )
+        .unwrap();
 
         let tool = AstEditTool::new(stage_dir);
         let result = tool
@@ -417,7 +419,11 @@ mod tests {
             .await;
 
         assert!(result.success, "{}", result.error.unwrap_or_default());
-        assert!(result.content.contains("2 match"), "Got: {}", result.content);
+        assert!(
+            result.content.contains("2 match"),
+            "Got: {}",
+            result.content
+        );
         assert!(result.content.contains("let x = 42"));
         assert!(result.content.contains("let y = 99"));
     }
@@ -443,11 +449,23 @@ mod tests {
             .await;
 
         assert!(result.success, "{}", result.error.unwrap_or_default());
-        assert!(result.content.contains("(proposed)"), "Got: {}", result.content);
-        assert!(result.content.contains("Staged as"), "Got: {}", result.content);
+        assert!(
+            result.content.contains("(proposed)"),
+            "Got: {}",
+            result.content
+        );
+        assert!(
+            result.content.contains("Staged as"),
+            "Got: {}",
+            result.content
+        );
         // File should NOT be modified yet
         let content = std::fs::read_to_string(&file_path).unwrap();
-        assert!(content.contains("let x = 42"), "File was modified before resolve: {}", content);
+        assert!(
+            content.contains("let x = 42"),
+            "File was modified before resolve: {}",
+            content
+        );
         assert!(!content.contains("let x: i32 = 42"));
     }
 
@@ -471,7 +489,11 @@ mod tests {
             .await;
 
         assert!(result.success, "{}", result.error.unwrap_or_default());
-        assert!(result.content.contains("return a + b"), "Got: {}", result.content);
+        assert!(
+            result.content.contains("return a + b"),
+            "Got: {}",
+            result.content
+        );
     }
 
     #[tokio::test]

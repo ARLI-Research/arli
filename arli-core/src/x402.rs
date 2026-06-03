@@ -282,8 +282,7 @@ impl UsdcTransfer {
             .eth_call(&self.usdc_contract, "0x0", &hex::encode(&data))
             .await?;
         let balance_hex = result.strip_prefix("0x").unwrap_or(&result);
-        u64::from_str_radix(balance_hex, 16)
-            .map_err(|e| format!("parse balance: {e}"))
+        u64::from_str_radix(balance_hex, 16).map_err(|e| format!("parse balance: {e}"))
     }
 
     /// Transfer USDC to a recipient.
@@ -294,8 +293,7 @@ impl UsdcTransfer {
         amount_cents: u64, // USDC has 6 decimals, so 1 USDC = 1_000_000 base units
     ) -> Result<String, String> {
         let to_clean = to_hex.strip_prefix("0x").unwrap_or(to_hex);
-        let to_bytes =
-            hex::decode(to_clean).map_err(|e| format!("invalid recipient: {e}"))?;
+        let to_bytes = hex::decode(to_clean).map_err(|e| format!("invalid recipient: {e}"))?;
         if to_bytes.len() != 20 {
             return Err("recipient must be 20 bytes".into());
         }
@@ -331,7 +329,10 @@ impl UsdcTransfer {
             .unwrap_or(100_000);
 
         // Current fee
-        let (max_fee, max_priority) = self.get_fee_data().await.unwrap_or((1_000_000_000, 100_000_000));
+        let (max_fee, max_priority) = self
+            .get_fee_data()
+            .await
+            .unwrap_or((1_000_000_000, 100_000_000));
 
         // Build and sign
         let raw_tx = self.wallet.sign_eip1559(
@@ -350,7 +351,11 @@ impl UsdcTransfer {
 
     // ── JSON-RPC helpers ──────────────────────────────────────────────
 
-    async fn rpc_call(&self, method: &str, params: &[serde_json::Value]) -> Result<serde_json::Value, String> {
+    async fn rpc_call(
+        &self,
+        method: &str,
+        params: &[serde_json::Value],
+    ) -> Result<serde_json::Value, String> {
         let client = reqwest::Client::new();
         let body = serde_json::json!({
             "jsonrpc": "2.0",
@@ -366,8 +371,7 @@ impl UsdcTransfer {
             .await
             .map_err(|e| format!("RPC call failed: {e}"))?;
 
-        let json: serde_json::Value =
-            resp.json().await.map_err(|e| format!("RPC parse: {e}"))?;
+        let json: serde_json::Value = resp.json().await.map_err(|e| format!("RPC parse: {e}"))?;
 
         if let Some(err) = json.get("error") {
             return Err(format!("RPC error: {err}"));
@@ -382,7 +386,10 @@ impl UsdcTransfer {
         let result = self
             .rpc_call(
                 "eth_getTransactionCount",
-                &[serde_json::json!(self.wallet.address_hex()), serde_json::json!("latest")],
+                &[
+                    serde_json::json!(self.wallet.address_hex()),
+                    serde_json::json!("latest"),
+                ],
             )
             .await?;
         let hex_str = result
@@ -438,9 +445,7 @@ impl UsdcTransfer {
 
     async fn get_fee_data(&self) -> Result<(u64, u64), String> {
         // Try fee history for EIP-1559
-        let result = self
-            .rpc_call("eth_maxPriorityFeePerGas", &[])
-            .await?;
+        let result = self.rpc_call("eth_maxPriorityFeePerGas", &[]).await?;
         let priority_hex = result
             .as_str()
             .unwrap_or("0x0")
@@ -448,9 +453,7 @@ impl UsdcTransfer {
             .unwrap_or("0");
         let priority = u64::from_str_radix(priority_hex, 16).unwrap_or(100_000_000);
 
-        let result = self
-            .rpc_call("eth_gasPrice", &[])
-            .await?;
+        let result = self.rpc_call("eth_gasPrice", &[]).await?;
         let gas_hex = result
             .as_str()
             .unwrap_or("0x0")
@@ -485,9 +488,7 @@ pub struct X402Client {
 impl X402Client {
     /// Create a new client from config.
     pub fn new(config: X402Config) -> Self {
-        let usdc = if config.enabled
-            && !config.private_key.is_empty()
-            && !config.rpc_url.is_empty()
+        let usdc = if config.enabled && !config.private_key.is_empty() && !config.rpc_url.is_empty()
         {
             match UsdcTransfer::new(&config) {
                 Ok(u) => {
@@ -664,14 +665,20 @@ mod tests {
         let key = "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
         let wallet = EthereumWallet::from_hex_key(key, 8453).unwrap();
         // Known address for this key
-        assert_eq!(wallet.address_hex(), "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266");
+        assert_eq!(
+            wallet.address_hex(),
+            "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266"
+        );
     }
 
     #[test]
     fn test_wallet_from_0x_key() {
         let key = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
         let wallet = EthereumWallet::from_hex_key(key, 1).unwrap();
-        assert_eq!(wallet.address_hex(), "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266");
+        assert_eq!(
+            wallet.address_hex(),
+            "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266"
+        );
     }
 
     #[test]

@@ -291,9 +291,33 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Load environment variables from ~/.arli/.env file.
+    /// Simple KEY=VALUE parser — no external dependency.
+    fn load_dotenv() {
+        let env_path = arli_home().join(".env");
+        if let Ok(contents) = std::fs::read_to_string(&env_path) {
+            for line in contents.lines() {
+                let trimmed = line.trim();
+                if trimmed.is_empty() || trimmed.starts_with('#') {
+                    continue;
+                }
+                if let Some((key, value)) = trimmed.split_once('=') {
+                    let key = key.trim();
+                    let value = value.trim().trim_matches('"').trim_matches('\'');
+                    if std::env::var(key).is_err() {
+                        std::env::set_var(key, value);
+                    }
+                }
+            }
+        }
+    }
+
     /// Load config from ~/.arli/config.toml, then override with env vars.
     /// Env vars take precedence over config file.
     pub fn from_env() -> Result<Self, crate::error::Error> {
+        // 0. Load .env file from ~/.arli/.env if it exists
+        Self::load_dotenv();
+
         let mut config = Self::default();
 
         // 1. Load from config.toml if it exists

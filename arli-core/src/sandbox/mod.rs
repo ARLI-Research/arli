@@ -8,6 +8,7 @@
 
 pub mod engine;
 pub mod landlock;
+pub mod macos;
 pub mod policy;
 pub mod privdrop;
 pub mod seccomp;
@@ -60,6 +61,10 @@ pub struct SandboxConfig {
 
     /// Environment variables to pass through
     pub env_passthrough: Vec<String>,
+
+    /// Use macOS Seatbelt sandbox instead of Linux namespaces (macOS only, ignored on Linux).
+    /// When true, `execute_isolated()` uses `MacOSSandbox` via `sandbox-exec`.
+    pub use_macos_sandbox: bool,
 }
 
 impl Default for SandboxConfig {
@@ -77,6 +82,7 @@ impl Default for SandboxConfig {
             timeout_secs: 30,
             workdir: None,
             env_passthrough: vec!["PATH".into(), "HOME".into(), "USER".into()],
+            use_macos_sandbox: false,
         }
     }
 }
@@ -230,12 +236,21 @@ impl Sandbox {
     /// Uses `std::process::Command` with `pre_exec()` hook for isolation,
     /// matching OpenShell's pattern: seccomp → Landlock → privdrop → exec.
     ///
+    /// On macOS, when `config.use_macos_sandbox` is true, routes to
+    /// `MacOSSandbox` via `sandbox-exec` with a generated `.sb` profile.
+    ///
     /// Falls back to `execute()` if isolation fails.
     pub fn execute_isolated(
         command: &str,
         config: &SandboxConfig,
         policy: &policy::SandboxPolicy,
     ) -> SandboxOutput {
+        // Route to macOS Seatbelt sandbox when running on macOS and configured
+        #[cfg(target_os = "macos")]
+        if config.use_macos_sandbox {
+            return Self::execute_macos_isolated(command, config, policy);
+        }
+
         let start = std::time::Instant::now();
 
         let mut cmd = Command::new("sh");
@@ -399,6 +414,96 @@ impl Sandbox {
         }
 
         timeout_cmd.output().ok()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// macOS-specific sandbox execution
+// ---------------------------------------------------------------------------
+
+#[cfg(target_os = "macos")]
+impl Sandbox {
+    /// Execute a command inside a macOS Seatbelt sandbox via `sandbox-exec`.
+    ///
+    /// Generates a `.sb` profile from the policy, writes it to a temp file,
+    /// and wraps the command in `sandbox-exec -f <profile> sh -c "<wrapped>"`.
+    fn execute_macos_isolated(
+        command: &str,
+        config: &SandboxConfig,
+        policy: &policy::SandboxPolicy,
+    ) -> SandboxOutput {
+        use macos::MacOSSandbox;
+
+        let start = std::time::Instant::now();
+
+        // Generate sandbox profile and temp file
+        let sb = match MacOSSandbox::new(policy) {
+            Ok(sb) => sb,
+            Err(e) => {
+                return SandboxOutput {
+                    stdout: String::new(),
+                    stderr: format!("macOS sandbox profile generation failed: {}", e),
+                    exit_code: -1,
+                    success: false,
+                    killed_by_timeout: false,
+                    wall_time_ms: start.elapsed().as_millis() as u64,
+                };
+            }
+        };
+
+        // Build sandbox-exec command with resource limits
+        let wrapped = Self::wrap_command(command, config);
+        let mut cmd = match sb.sandbox_exec_command(&wrapped) {
+            Ok(c) => c,
+            Err(e) => {
+                return SandboxOutput {
+                    stdout: String::new(),
+                    stderr: format!("Failed to build sandbox-exec command: {}", e),
+                    exit_code: -1,
+                    success: false,
+                    killed_by_timeout: false,
+                    wall_time_ms: start.elapsed().as_millis() as u64,
+                };
+            }
+        };
+
+        // Set environment
+        for var in &config.env_passthrough {
+            if let Ok(val) = std::env::var(var) {
+                cmd.env(var, val);
+            }
+        }
+        if let Some(ref dir) = config.workdir {
+            cmd.current_dir(dir);
+        }
+
+        // Execute
+        let result = if config.timeout_secs > 0 {
+            Self::execute_with_timeout(&mut cmd, Duration::from_secs(config.timeout_secs))
+        } else {
+            cmd.output().ok()
+        };
+
+        let wall_time_ms = start.elapsed().as_millis() as u64;
+
+        match result {
+            Some(out) => SandboxOutput {
+                stdout: String::from_utf8_lossy(&out.stdout).to_string(),
+                stderr: String::from_utf8_lossy(&out.stderr).to_string(),
+                exit_code: out.status.code().unwrap_or(-1),
+                success: out.status.success(),
+                killed_by_timeout: false,
+                wall_time_ms,
+            },
+            None => SandboxOutput {
+                stdout: String::new(),
+                stderr: "macOS sandbox execution failed".into(),
+                exit_code: -1,
+                success: false,
+                killed_by_timeout: false,
+                wall_time_ms,
+            },
+        }
     }
 }
 

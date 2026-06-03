@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+pub use crate::brokering::BrokeringConfig;
 pub use crate::x402::X402Config;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,6 +28,8 @@ pub struct Config {
     pub browser: BrowserConfig,
     #[serde(default)]
     pub x402: X402Config,
+    #[serde(default)]
+    pub brokering: BrokeringConfig,
 
     /// Time-traveling stream rules — regex-based response filtering.
     #[serde(default)]
@@ -281,6 +284,7 @@ impl Default for Config {
             terminal: TerminalConfig::default(),
             browser: BrowserConfig::default(),
             x402: X402Config::default(),
+            brokering: BrokeringConfig::default(),
             stream_rules: crate::stream_rules::StreamRules::default(),
         }
     }

@@ -2,6 +2,7 @@ pub mod agent;
 pub mod ast_language;
 pub mod attestation;
 pub mod audit;
+pub mod brokering;
 pub mod checkpoints;
 pub mod compaction;
 pub mod config;
@@ -41,6 +42,11 @@ pub mod webhooks;
 pub mod x402;
 
 pub use agent::{Agent, AgentConfig, AgentMessage, AgentState};
+pub use brokering::{
+    BillingReporter, BrokeringConfig, BrokeringError, BrokeringResult, BrokeringRouter, DailyUsage,
+    MonthlyBillingReport, ProviderBreakdown, RateLimitResult, RateLimiter, TenantInfo,
+    TenantManager, TenantRateLimitOverride, UsageRecord, UsageSummary, UsageTracker,
+};
 pub use config::{
     BrowserConfig, Config, MemoryConfig, ProviderConfig, SearchConfig, SessionResetConfig,
     TerminalConfig, X402Config,

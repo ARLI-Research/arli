@@ -29,6 +29,9 @@ pub enum Error {
     #[error("Configuration error: {0}")]
     Config(String),
 
+    #[error("Brokering error: {0}")]
+    Brokering(#[from] crate::brokering::BrokeringError),
+
     #[error("Budget exceeded: {max_iterations} iterations")]
     BudgetExceeded { max_iterations: usize },
 }

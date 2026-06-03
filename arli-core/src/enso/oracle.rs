@@ -24,11 +24,19 @@
 
 use std::time::Duration;
 
-/// How often to poll for contract state changes.
+/// Base poll interval in seconds.
 const POLL_INTERVAL_SECS: u64 = 30;
 
 /// Maximum number of failed attestation attempts per contract.
 const MAX_RETRIES: u32 = 3;
+
+/// Calculate exponential backoff delay for retry N (0-indexed).
+/// Base: 30s, doubles each retry, capped at 5 minutes.
+pub fn backoff_delay(retry: u32) -> Duration {
+    let base = 30u64;
+    let delay = base * 2u64.pow(retry.min(4)); // 30, 60, 120, 240, 480
+    Duration::from_secs(delay.min(300)) // capped at 5 min
+}
 
 // ============================================================================
 // ALWAYS-AVAILABLE TYPES
@@ -89,6 +97,8 @@ pub struct EnsoOracle {
     sandbox_config_hash: String,
     /// Whether to stop polling
     running: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// SQLite connection for run_id ↔ contract_id persistence
+    db: Option<rusqlite::Connection>,
 }
 
 #[cfg(feature = "enso")]
@@ -110,6 +120,9 @@ impl EnsoOracle {
             agent_id,
         );
 
+        // Initialize SQLite for run_id ↔ contract_id persistence
+        let db = Self::init_db();
+
         Self {
             enso,
             jobs,
@@ -118,6 +131,54 @@ impl EnsoOracle {
             agent_id,
             sandbox_config_hash,
             running: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            db,
+        }
+    }
+
+    /// Initialize SQLite table for attestation traceability.
+    fn init_db() -> Option<rusqlite::Connection> {
+        let db_path = crate::config::arli_home().join("enso_oracle.db");
+        match rusqlite::Connection::open(&db_path) {
+            Ok(conn) => {
+                let _ = conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS attestations (
+                        run_id TEXT PRIMARY KEY,
+                        contract_id TEXT NOT NULL,
+                        agent_id TEXT NOT NULL,
+                        ocsf_event_hash TEXT NOT NULL,
+                        attested_at TEXT NOT NULL,
+                        tx_id TEXT,
+                        status TEXT NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_att_contract ON attestations(contract_id);"
+                );
+                tracing::info!("Oracle DB initialized at {}", db_path.display());
+                Some(conn)
+            }
+            Err(e) => {
+                tracing::warn!("Oracle DB unavailable ({}), run_id mapping not persisted", e);
+                None
+            }
+        }
+    }
+
+    /// Persist run_id ↔ contract_id mapping after successful attestation.
+    fn save_attestation_mapping(&self, run_id: &str, contract_id: &str, ocsf_hash: &str, tx_id: Option<&str>) {
+        if let Some(ref db) = self.db {
+            let status = if tx_id.is_some() { "settled" } else { "verified" };
+            let _ = db.execute(
+                "INSERT OR REPLACE INTO attestations (run_id, contract_id, agent_id, ocsf_event_hash, attested_at, tx_id, status)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![
+                    run_id,
+                    contract_id,
+                    self.agent_id,
+                    ocsf_hash,
+                    chrono::Utc::now().to_rfc3339(),
+                    tx_id.unwrap_or(""),
+                    status,
+                ],
+            );
         }
     }
 
@@ -147,13 +208,16 @@ impl EnsoOracle {
                     }
                     Err(e) => {
                         job.failures += 1;
+                        let delay = backoff_delay(job.failures);
                         tracing::error!(
-                            "Oracle: contract {} attempt {}/{} failed: {}",
+                            "Oracle: contract {} attempt {}/{} failed: {}. Backoff: {:?}",
                             job.contract_id,
                             job.failures,
                             MAX_RETRIES,
                             e,
+                            delay,
                         );
+                        tokio::time::sleep(delay).await;
                     }
                 }
             }
@@ -232,6 +296,16 @@ impl EnsoOracle {
         match result.status {
             SettlementStatus::Verified | SettlementStatus::Settled => {
                 crate::metrics::Metrics::global().inc_attestations();
+
+                // Persist run_id ↔ contract_id for traceability
+                let run_id = format!("oracle-{}", job.contract_id);
+                self.save_attestation_mapping(
+                    &run_id,
+                    &job.contract_id,
+                    &attestation.ocsf_event_hash,
+                    result.tx_id.as_deref(),
+                );
+
                 if let Some(ref tx_id) = result.tx_id {
                     tracing::info!(
                         "Oracle: contract {} settled, payment released. tx={}, amount={}¢",
@@ -314,5 +388,15 @@ mod tests {
         assert_eq!(j.contract_id, "contract_1");
         assert!(!j.attested);
         assert_eq!(j.failures, 0);
+    }
+
+    #[test]
+    fn test_backoff_delay() {
+        assert_eq!(backoff_delay(0).as_secs(), 30);
+        assert_eq!(backoff_delay(1).as_secs(), 60);
+        assert_eq!(backoff_delay(2).as_secs(), 120);
+        assert_eq!(backoff_delay(3).as_secs(), 240);
+        assert_eq!(backoff_delay(4).as_secs(), 300); // capped at 5 min
+        assert_eq!(backoff_delay(10).as_secs(), 300); // stays capped
     }
 }

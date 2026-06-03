@@ -254,7 +254,7 @@ impl Default for BrowserConfig {
     }
 }
 
-fn arli_home() -> PathBuf {
+pub fn arli_home() -> PathBuf {
     std::env::var("ARLI_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {

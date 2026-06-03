@@ -131,6 +131,7 @@ impl ArliAttestation {
 // ============================================================================
 
 /// ARLI signing keypair.
+#[derive(Clone)]
 pub struct ArliKeypair {
     pub signing_key: SigningKey,
     pub verifying_key: VerifyingKey,

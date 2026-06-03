@@ -197,10 +197,7 @@ impl EnsoClient {
 
     /// Register the ARLI public key with ENSO Registry.
     pub async fn register_public_key(&self, agent_id: &str) -> Result<(), String> {
-        let canister_id = self
-            .config
-            .registry_canister_id
-            .parse::<ic_agent::Principal>()
+        let canister_id = ic_agent::export::Principal::from_text(&self.config.registry_canister_id)
             .map_err(|e| format!("parse canister id: {}", e))?;
 
         let args = candid::encode_args((agent_id.to_string(), self.config.arli_public_key.clone()))
@@ -226,10 +223,7 @@ impl EnsoClient {
         capabilities: &[String],
         sandbox_config_hash: &str,
     ) -> Result<(), String> {
-        let canister_id = self
-            .config
-            .registry_canister_id
-            .parse::<ic_agent::Principal>()
+        let canister_id = ic_agent::export::Principal::from_text(&self.config.registry_canister_id)
             .map_err(|e| format!("parse canister id: {}", e))?;
 
         let args = candid::encode_args((
@@ -261,10 +255,7 @@ impl EnsoClient {
         &self,
         attestation: &ArliAttestation,
     ) -> Result<AttestationResponse, String> {
-        let canister_id = self
-            .config
-            .contracts_canister_id
-            .parse::<ic_agent::Principal>()
+        let canister_id = ic_agent::export::Principal::from_text(&self.config.contracts_canister_id)
             .map_err(|e| format!("parse canister id: {}", e))?;
 
         // Serialize attestation to candid-compatible format
@@ -285,7 +276,7 @@ impl EnsoClient {
             .map_err(|e| format!("call submit_arli_attestation: {}", e))?;
 
         // Decode response — expect Result variant
-        let response_str: String = candid::decode_args(&result)
+        let response_str: String = candid::decode_args::<(String,)>(&result)
             .map_err(|e| format!("decode response: {}", e))?
             .0;
 
@@ -301,10 +292,7 @@ impl EnsoClient {
         contract_id: &str,
         attestation_json: &str,
     ) -> Result<ArliPaymentResult, String> {
-        let canister_id = self
-            .config
-            .contracts_canister_id
-            .parse::<ic_agent::Principal>()
+        let canister_id = ic_agent::export::Principal::from_text(&self.config.contracts_canister_id)
             .map_err(|e| format!("parse canister id: {}", e))?;
 
         let args = candid::encode_args((contract_id.to_string(), attestation_json.to_string()))
@@ -319,7 +307,7 @@ impl EnsoClient {
             .map_err(|e| format!("call submit_arli_payment: {}", e))?;
 
         // Decode response — Candid variant { Ok: ArliPaymentResult; Err: text }
-        let response_str: String = candid::decode_args(&result)
+        let response_str: String = candid::decode_args::<(String,)>(&result)
             .map_err(|e| format!("decode response: {}", e))?
             .0;
 

@@ -195,24 +195,31 @@ impl EnsoOracle {
         let mut attested_count = 0;
 
         while self.running.load(std::sync::atomic::Ordering::Relaxed) {
-            for job in &mut self.jobs {
-                if job.attested || job.failures >= MAX_RETRIES {
-                    continue;
-                }
+            // Collect pending job indices to avoid borrow conflict
+            let pending: Vec<usize> = self
+                .jobs
+                .iter()
+                .enumerate()
+                .filter(|(_, j)| !j.attested && j.failures < MAX_RETRIES)
+                .map(|(i, _)| i)
+                .collect();
 
-                match self.process_contract(job).await {
+            for idx in pending {
+                let result = self.process_contract_by_id(&self.jobs[idx].contract_id).await;
+
+                match result {
                     Ok(OracleResult::Attested) => {
-                        job.attested = true;
+                        self.jobs[idx].attested = true;
                         attested_count += 1;
-                        tracing::info!("Oracle: contract {} attested OK", job.contract_id);
+                        tracing::info!("Oracle: contract {} attested OK", self.jobs[idx].contract_id);
                     }
                     Err(e) => {
-                        job.failures += 1;
-                        let delay = backoff_delay(job.failures);
+                        self.jobs[idx].failures += 1;
+                        let delay = backoff_delay(self.jobs[idx].failures);
                         tracing::error!(
                             "Oracle: contract {} attempt {}/{} failed: {}. Backoff: {:?}",
-                            job.contract_id,
-                            job.failures,
+                            self.jobs[idx].contract_id,
+                            self.jobs[idx].failures,
                             MAX_RETRIES,
                             e,
                             delay,
@@ -247,8 +254,8 @@ impl EnsoOracle {
             .store(false, std::sync::atomic::Ordering::Relaxed);
     }
 
-    /// Process a single contract: build attestation, sign, submit payment atomically.
-    async fn process_contract(&self, job: &OracleJob) -> Result<OracleResult, String> {
+    /// Process a single contract by ID: build attestation, sign, submit payment atomically.
+    async fn process_contract_by_id(&self, contract_id: &str) -> Result<OracleResult, String> {
         let keypair = self.keypair.as_ref().unwrap();
 
         let builder =
@@ -258,7 +265,7 @@ impl EnsoOracle {
             "class_uid": 6007,
             "activity_name": "Oracle Attestation",
             "agent_id": self.agent_id,
-            "job_id": job.contract_id,
+            "job_id": contract_id,
             "sandbox": self.sandbox_config_hash,
         });
 
@@ -266,9 +273,9 @@ impl EnsoOracle {
             .map_err(|e| format!("serialize OCSF event: {}", e))?;
 
         let attestation = builder.build(
-            format!("oracle-{}", job.contract_id),
+            format!("oracle-{}", contract_id),
             self.agent_id.clone(),
-            job.contract_id.clone(),
+            contract_id.to_string(),
             &ocsf_json,
             None,
             self.sandbox_config_hash.clone(),
@@ -282,14 +289,14 @@ impl EnsoOracle {
 
         tracing::info!(
             "Oracle: submitting payment+attestation for {} (ocsf:{})",
-            job.contract_id,
+            contract_id,
             &attestation.ocsf_event_hash[..16],
         );
 
         // One ICP call: verify attestation → settle → release payment
         let result = self
             .enso
-            .submit_arli_payment(&job.contract_id, &attestation_json)
+            .submit_arli_payment(&contract_id, &attestation_json)
             .await?;
 
         use crate::enso::SettlementStatus;
@@ -298,10 +305,10 @@ impl EnsoOracle {
                 crate::metrics::Metrics::global().inc_attestations();
 
                 // Persist run_id ↔ contract_id for traceability
-                let run_id = format!("oracle-{}", job.contract_id);
+                let run_id = format!("oracle-{}", contract_id);
                 self.save_attestation_mapping(
                     &run_id,
-                    &job.contract_id,
+                    &contract_id,
                     &attestation.ocsf_event_hash,
                     result.tx_id.as_deref(),
                 );
@@ -309,7 +316,7 @@ impl EnsoOracle {
                 if let Some(ref tx_id) = result.tx_id {
                     tracing::info!(
                         "Oracle: contract {} settled, payment released. tx={}, amount={}¢",
-                        job.contract_id,
+                        contract_id,
                         tx_id,
                         result.amount_cents,
                     );

@@ -141,6 +141,10 @@ pub struct EnsoConfig {
 
     /// ARLI public key (hex encoded) registered with ENSO
     pub arli_public_key: String,
+
+    /// Agent name used for ENSO registration (e.g. "ARLI v0.5")
+    #[serde(default)]
+    pub agent_name: String,
 }
 
 impl Default for EnsoConfig {
@@ -151,6 +155,7 @@ impl Default for EnsoConfig {
             contracts_canister_id: String::new(),
             identity_pem_path: None,
             arli_public_key: String::new(),
+            agent_name: String::new(),
         }
     }
 }
@@ -306,13 +311,31 @@ impl EnsoClient {
             .await
             .map_err(|e| format!("call submit_arli_payment: {}", e))?;
 
-        // Decode response — Candid variant { Ok: ArliPaymentResult; Err: text }
-        let response_str: String = candid::decode_args::<(String,)>(&result)
-            .map_err(|e| format!("decode response: {}", e))?
-            .0;
+        // Decode response — Candid variant { Ok: record { tx_id: text }; Err: text }
+        let decoded: Result<PaymentOk, String> =
+            candid::decode_args::<(Result<PaymentOk, String>,)>(&result)
+                .map_err(|e| format!("decode response: {}", e))?
+                .0;
 
-        serde_json::from_str(&response_str).map_err(|e| format!("parse payment result: {}", e))
+        match decoded {
+            Ok(payment_ok) => Ok(ArliPaymentResult {
+                status: SettlementStatus::Settled,
+                message: format!("Payment settled: {}", payment_ok.tx_id),
+                tx_id: Some(payment_ok.tx_id),
+                amount_cents: 0,
+            }),
+            Err(err_msg) => Err(err_msg),
+        }
     }
+
+}
+
+#[cfg(feature = "enso")]
+/// Candid-compatible OK response from ENSO's submit_arli_payment.
+/// Matches canister type: record { tx_id: text }
+#[derive(candid::CandidType, serde::Deserialize)]
+struct PaymentOk {
+    tx_id: String,
 }
 
 /// Stub client when `enso` feature is not enabled.

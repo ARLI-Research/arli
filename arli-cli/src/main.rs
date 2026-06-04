@@ -364,6 +364,8 @@ enum MarketplaceCmd {
 
 #[derive(Subcommand)]
 enum EnsoCmd {
+    /// One-shot onboarding: keygen → show credentials → ready to run
+    Onboard,
     /// One-shot ENSO setup: keygen + register agent + configure canisters
     Setup {
         /// ICP gateway URL (default: https://icp0.io)
@@ -392,8 +394,13 @@ enum EnsoCmd {
         /// Contract ID (e.g. contract_1780372735456935314_4)
         contract_id: String,
     },
-    /// Run the ENSO compute oracle: poll → execute → attest → settle
-    Oracle,
+    /// Run the ENSO oracle for specific contracts: attest → submit → settle
+    #[command(alias = "oracle")]
+    Run {
+        /// Run once for a specific contract (no polling loop)
+        #[arg(short, long)]
+        contract: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -2493,6 +2500,71 @@ fn run_marketplace(cmd: MarketplaceCmd) -> anyhow::Result<()> {
 fn run_enso(cmd: EnsoCmd) -> anyhow::Result<()> {
     use sha2::Digest;
     match cmd {
+        EnsoCmd::Onboard => {
+            let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+            let arli_dir = std::path::PathBuf::from(&home).join(".arli");
+            std::fs::create_dir_all(&arli_dir)?;
+            let key_path = arli_dir.join("arli_key.pem");
+
+            // 1. Keygen
+            let pubkey = if key_path.exists() {
+                let kp = arli_core::attestation::ArliKeypair::load(&key_path)
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+                kp.public_key_hex()
+            } else {
+                let kp = arli_core::attestation::ArliKeypair::generate();
+                kp.save(&key_path).map_err(|e| anyhow::anyhow!("{e}"))?;
+                kp.public_key_hex()
+            };
+
+            // 2. Binary hash
+            let binary_hash = {
+                let exe = std::env::current_exe().unwrap_or_default();
+                let bytes = std::fs::read(&exe)?;
+                let hash = sha2::Sha256::digest(&bytes);
+                format!("{:x}", hash)
+            };
+
+            // 3. Save config
+            let contracts_id = "5fp3e-cyaaa-aaaae-agtra-cai";
+            let config_toml = format!(
+                r#"# ENSO configuration for ARLI
+icp_gateway = "https://icp0.io"
+registry_canister_id = "ENSO_REGISTRY_CANISTER_ID"
+contracts_canister_id = "{contracts_id}"
+arli_public_key = "{pubkey}"
+agent_name = "ARLI v0.5"
+"#,
+            );
+            std::fs::write(arli_dir.join("enso.toml"), &config_toml)?;
+
+            // 4. Print onboarding block — copy-paste to ENSO
+            println!();
+            println!("═══════════════════════════════════════════");
+            println!("  ARLI ENSO — Onboarding Complete");
+            println!("═══════════════════════════════════════════");
+            println!();
+            println!("  Keys saved:   ~/.arli/arli_key.pem");
+            println!("  Config saved: ~/.arli/enso.toml");
+            println!();
+            println!("  Send this to ENSO to activate your agent:");
+            println!();
+            println!("  ┌─────────────────────────────────────────");
+            println!("  │ Public key:   {pubkey}");
+            println!("  │ Binary hash:  {binary_hash}");
+            println!("  │ Agent name:   ARLI v0.5");
+            println!("  └─────────────────────────────────────────");
+            println!();
+            println!("  Once ENSO confirms, run:");
+            println!();
+            println!("    arli enso run -c <contract-id>");
+            println!();
+            println!("  Or check status:");
+            println!();
+            println!("    arli enso status");
+            println!();
+        }
+
         EnsoCmd::Setup { icp_gateway, registry, contracts, name } => {
             // 1. Keygen
             let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
@@ -2589,7 +2661,7 @@ agent_name = "{name}"
                 println!("Key:    {} (exists)", key_path.display());
                 println!("Pubkey: {}", kp.public_key_hex());
             } else {
-                println!("Key:    NOT FOUND. Run `arli enso setup` first.");
+                println!("Key:    NOT FOUND. Run `arli enso onboard` first.");
             }
 
             // Config
@@ -2602,7 +2674,7 @@ agent_name = "{name}"
                     }
                 }
             } else {
-                println!("\nConfig: NOT FOUND. Run `arli enso setup` first.");
+                println!("\nConfig: NOT FOUND. Run `arli enso onboard` first.");
             }
 
             // Active contracts
@@ -2629,7 +2701,7 @@ agent_name = "{name}"
             let config_path = arli_dir.join("enso.toml");
 
             if !config_path.exists() {
-                anyhow::bail!("No ENSO config found. Run `arli enso setup` first.");
+                anyhow::bail!("No ENSO config found. Run `arli enso onboard` first.");
             }
 
             let config: arli_core::enso::EnsoConfig = toml::from_str(
@@ -2694,7 +2766,7 @@ agent_name = "{name}"
             let key_path = arli_dir.join("arli_key.pem");
 
             if !key_path.exists() {
-                anyhow::bail!("No ARLI key found. Run `arli enso setup` first.");
+                anyhow::bail!("No ARLI key found. Run `arli enso onboard` first.");
             }
 
             let kp = arli_core::attestation::ArliKeypair::load(&key_path)
@@ -2749,14 +2821,14 @@ agent_name = "{name}"
             println!("Or use the ARLI Bridge: https://7rwvv-hqaaa-aaaaa-qhhfa-cai.icp0.io/#/app");
         }
 
-        EnsoCmd::Oracle => {
+        EnsoCmd::Run { contract } => {
             let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
             let arli_dir = std::path::PathBuf::from(&home).join(".arli");
             let key_path = arli_dir.join("arli_key.pem");
             let config_path = arli_dir.join("enso.toml");
 
             if !key_path.exists() {
-                anyhow::bail!("No ARLI key found. Run `arli enso setup` first.");
+                anyhow::bail!("No ARLI key found. Run `arli enso onboard` first.");
             }
 
             let kp = arli_core::attestation::ArliKeypair::load(&key_path)
@@ -2769,10 +2841,18 @@ agent_name = "{name}"
                 arli_core::enso::EnsoConfig::default()
             };
 
-            let contracts = arli_core::enso::oracle::load_contracts_from_env();
-            if contracts.is_empty() {
-                anyhow::bail!("No contracts. Set ENSO_CONTRACTS env var.");
-            }
+            // --contract flag takes priority over ENSO_CONTRACTS env var
+            let contracts: Vec<String> = if let Some(c) = contract {
+                vec![c]
+            } else {
+                let from_env = arli_core::enso::oracle::load_contracts_from_env();
+                if from_env.is_empty() {
+                    anyhow::bail!(
+                        "No contracts. Use `arli enso run -c <contract-id>` or set ENSO_CONTRACTS env var."
+                    );
+                }
+                from_env
+            };
 
             let binary_hash = {
                 let exe = std::env::current_exe().unwrap_or_default();

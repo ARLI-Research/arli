@@ -287,10 +287,15 @@ impl EnsoOracle {
         let attestation_json = serde_json::to_string(&attestation)
             .map_err(|e| format!("serialize attestation: {}", e))?;
 
+        tracing::debug!(
+            "Oracle attestation JSON (first 500 chars): {}",
+            &attestation_json[..attestation_json.len().min(500)]
+        );
         tracing::info!(
-            "Oracle: submitting payment+attestation for {} (ocsf:{})",
+            "Oracle: submitting payment+attestation for {} (ocsf:{}, agent_id={})",
             contract_id,
             &attestation.ocsf_event_hash[..16],
+            self.agent_id,
         );
 
         // One ICP call: verify attestation → settle → release payment

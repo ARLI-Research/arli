@@ -866,6 +866,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "arc-swap"
+version = "1.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a3a1fd6f75306b68087b831f025c712524bcb19aad54e557b1129cfa0a2b207"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "ark-ff"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1467,6 +1476,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "async-watch"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a078faf4e27c0c6cc0efb20e5da59dcccc04968ebf2801d8e0b2195124cdcdb2"
+dependencies = [
+ "event-listener 2.5.3",
 ]
 
 [[package]]
@@ -4247,15 +4265,22 @@ dependencies = [
 
 [[package]]
 name = "ic-agent"
-version = "0.37.1"
+version = "0.39.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fd3fdf5e5c4f4a9fe5ca612f0febd22dcb161d2f2b75b0142326732be5e4978"
+checksum = "820d65a05258f2fdff326c65561b1ddc7ec54e5d43a4b1203b25eb83075c83d4"
 dependencies = [
+ "arc-swap",
+ "async-channel 1.9.0",
  "async-lock",
+ "async-trait",
+ "async-watch",
  "backoff",
  "cached",
  "candid",
+ "der",
+ "ecdsa",
  "ed25519-consensus",
+ "elliptic-curve",
  "futures-util",
  "hex",
  "http 1.4.1",
@@ -4271,8 +4296,6 @@ dependencies = [
  "rand 0.8.6",
  "rangemap",
  "reqwest 0.12.28",
- "ring",
- "rustls-webpki 0.102.8",
  "sec1",
  "serde",
  "serde_bytes",
@@ -4280,17 +4303,19 @@ dependencies = [
  "serde_repr",
  "sha2 0.10.9",
  "simple_asn1",
- "thiserror 1.0.69",
+ "stop-token",
+ "thiserror 2.0.18",
  "time",
  "tokio",
+ "tower-service",
  "url",
 ]
 
 [[package]]
 name = "ic-certification"
-version = "2.6.0"
+version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e64ee3d8b6e81b51f245716d3e0badb63c283c00f3c9fb5d5219afc30b5bf821"
+checksum = "754e3037360152de7e5f2bd0ccf51db8864b6a03c5a2b4ffc6a65286c0e2ffa7"
 dependencies = [
  "hex",
  "serde",
@@ -4300,9 +4325,9 @@ dependencies = [
 
 [[package]]
 name = "ic-transport-types"
-version = "0.37.1"
+version = "0.39.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "875dc4704780383112e8e8b5063a1b98de114321d0c7d3e7f635dcf360a57fba"
+checksum = "979ee7bee5a67150a4c090fb012c93c294a528b4a867bad9a15cc6d01cb4227f"
 dependencies = [
  "candid",
  "hex",
@@ -4310,9 +4335,10 @@ dependencies = [
  "leb128",
  "serde",
  "serde_bytes",
+ "serde_cbor",
  "serde_repr",
  "sha2 0.10.9",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

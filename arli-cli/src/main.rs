@@ -2538,41 +2538,89 @@ agent_name = "ARLI v0.5"
             );
             std::fs::write(arli_dir.join("enso.toml"), &config_toml)?;
 
-            // 4. Print onboarding block — copy-paste to ENSO
-            // Check for dfx identity (needed for ICP signing)
-            let has_dfx = std::path::PathBuf::from(
-                &std::env::var("HOME").unwrap_or_default()
-            ).join(".config/dfx/identity/default/identity.pem").exists();
+            // 4. Print header
+            println!();
+            println!("═══════════════════════════════════════════");
+            println!("  ARLI ENSO — Onboarding");
+            println!("═══════════════════════════════════════════");
+            println!();
+            println!("  Key:      ~/.arli/arli_key.pem");
+            println!("  Config:   ~/.arli/enso.toml");
+            println!("  Pubkey:   {pubkey}");
+            println!("  Bin hash: {binary_hash}");
+            println!();
 
-            println!();
-            println!("═══════════════════════════════════════════");
-            println!("  ARLI ENSO — Onboarding Complete");
-            println!("═══════════════════════════════════════════");
-            println!();
-            println!("  Keys saved:   ~/.arli/arli_key.pem");
-            println!("  Config saved: ~/.arli/enso.toml");
-            if !has_dfx {
-                println!();
-                println!("  ⚠ dfx identity not found. Install dfx first:");
+            // 5. Attempt self-registration on ENSO canister
+            let dfx_id_path = std::path::PathBuf::from(&home)
+                .join(".config/dfx/identity/default/identity.pem");
+
+            if !dfx_id_path.exists() {
+                println!("  ⚠ No dfx identity — install dfx to auto-register:");
                 println!("    sh -ci \"$(curl -fsSL https://internetcomputer.org/install.sh)\"");
+                println!();
+                println!("  Until then, send these to your ENSO operator:");
+                println!();
+                println!("    Public key:   {pubkey}");
+                println!("    Binary hash:  {binary_hash}");
+                println!("    Agent name:   ARLI v0.5");
+                println!();
+                println!("  Once registered, run:");
+                println!("    arli enso run -c <contract-id>");
+                println!();
+                return Ok(());
             }
-            println!();
-            println!("  Send this to ENSO to activate your agent:");
-            println!();
-            println!("  ┌─────────────────────────────────────────");
-            println!("  │ Public key:   {pubkey}");
-            println!("  │ Binary hash:  {binary_hash}");
-            println!("  │ Agent name:   ARLI v0.5");
-            println!("  └─────────────────────────────────────────");
-            println!();
-            println!("  Once ENSO confirms, run:");
-            println!();
-            println!("    arli enso run -c <contract-id>");
-            println!();
-            println!("  Or check status:");
-            println!();
-            println!("    arli enso status");
-            println!();
+
+            // Try self-registration
+            let config = arli_core::enso::EnsoConfig {
+                icp_gateway: "https://icp0.io".into(),
+                contracts_canister_id: contracts_id.into(),
+                registry_canister_id: "ENSO_REGISTRY_CANISTER_ID".into(),
+                identity_pem_path: Some(dfx_id_path.to_string_lossy().to_string()),
+                arli_public_key: pubkey.clone(),
+                agent_name: "ARLI v0.5".into(),
+            };
+
+            println!("  Registering with ENSO canister...");
+
+            let result: Result<(), String> = tokio::task::block_in_place(|| {
+                let rt = tokio::runtime::Handle::current();
+                rt.block_on(async {
+                    use arli_core::enso::EnsoClient;
+                    let enso = EnsoClient::new(config).await?;
+                    enso.register_arli_agent(
+                        &binary_hash,
+                        "ARLI v0.5",
+                        &["attestation".into(), "oracle".into(), "sandbox".into()],
+                        "unknown",
+                    ).await
+                })
+            });
+
+            match result {
+                Ok(()) => {
+                    println!("  ✅ Agent registered on ENSO mainnet.");
+                    println!();
+                    println!("  Ready. When you get a contract:");
+                    println!("    arli enso run -c <contract-id>");
+                    println!();
+                    println!("  Check status:");
+                    println!("    arli enso status");
+                    println!();
+                }
+                Err(e) => {
+                    println!("  ⚠ Auto-registration failed: {e}");
+                    println!();
+                    println!("  Send these to your ENSO operator to complete registration:");
+                    println!();
+                    println!("    Public key:   {pubkey}");
+                    println!("    Binary hash:  {binary_hash}");
+                    println!("    Agent name:   ARLI v0.5");
+                    println!();
+                    println!("  Once registered, run:");
+                    println!("    arli enso run -c <contract-id>");
+                    println!();
+                }
+            }
         }
 
         EnsoCmd::Setup { icp_gateway, registry, contracts, name } => {

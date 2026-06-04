@@ -2539,6 +2539,11 @@ agent_name = "ARLI v0.5"
             std::fs::write(arli_dir.join("enso.toml"), &config_toml)?;
 
             // 4. Print onboarding block — copy-paste to ENSO
+            // Check for dfx identity (needed for ICP signing)
+            let has_dfx = std::path::PathBuf::from(
+                &std::env::var("HOME").unwrap_or_default()
+            ).join(".config/dfx/identity/default/identity.pem").exists();
+
             println!();
             println!("═══════════════════════════════════════════");
             println!("  ARLI ENSO — Onboarding Complete");
@@ -2546,6 +2551,11 @@ agent_name = "ARLI v0.5"
             println!();
             println!("  Keys saved:   ~/.arli/arli_key.pem");
             println!("  Config saved: ~/.arli/enso.toml");
+            if !has_dfx {
+                println!();
+                println!("  ⚠ dfx identity not found. Install dfx first:");
+                println!("    sh -ci \"$(curl -fsSL https://internetcomputer.org/install.sh)\"");
+            }
             println!();
             println!("  Send this to ENSO to activate your agent:");
             println!();

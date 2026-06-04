@@ -46,7 +46,7 @@ echo "Cloning ARLI..."
 git clone --depth 1 "https://github.com/$REPO.git" "$TMPDIR" 2>/dev/null
 cd "$TMPDIR"
 echo "Compiling with ENSO support (this may take a few minutes)..."
-cargo build --release --features arli-core/enso
+cargo build -p arli-cli --features arli-core/enso --release
 cp target/release/arli "$INSTALL_DIR/"
 rm -rf "$TMPDIR"
 echo -e "${GREEN}Installed to $INSTALL_DIR/arli${NC}"

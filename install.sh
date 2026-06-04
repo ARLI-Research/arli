@@ -5,6 +5,7 @@ BOLD="\033[1m"
 GREEN="\033[0;32m"
 YELLOW="\033[0;33m"
 CYAN="\033[0;36m"
+RED="\033[0;31m"
 NC="\033[0m"
 
 REPO="ARLI-Research/arli"
@@ -18,37 +19,45 @@ OS=$(uname -s)
 ARCH=$(uname -m)
 
 case "$OS" in
-    Linux)  PLATFORM="linux" ;;
-    Darwin) PLATFORM="darwin" ;;
-    *)      echo "Unsupported OS: $OS"; exit 1 ;;
+    Linux)  ;;
+    Darwin) ;;
+    *)      echo -e "${RED}Unsupported OS: $OS${NC}"; exit 1 ;;
 esac
 
 case "$ARCH" in
-    x86_64|amd64) ARCH="x86_64" ;;
-    aarch64|arm64) ARCH="arm64" ;;
-    *)            echo "Unsupported arch: $ARCH"; exit 1 ;;
+    x86_64|amd64) ;;
+    aarch64|arm64) ;;
+    *)            echo -e "${RED}Unsupported arch: $ARCH${NC}"; exit 1 ;;
 esac
 
 mkdir -p "$INSTALL_DIR"
 
-# Build from source (ensures ENSO feature is included)
-echo -e "${YELLOW}Building ARLI from source (includes ENSO settlement)...${NC}"
-echo ""
+# Check prerequisites
+if ! command -v git &>/dev/null; then
+    echo -e "${RED}git not found. Install git first: https://git-scm.com/${NC}"
+    exit 1
+fi
 
 if ! command -v cargo &>/dev/null; then
-    echo "Installing Rust toolchain..."
+    echo -e "${YELLOW}Installing Rust toolchain...${NC}"
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
     source "$HOME/.cargo/env"
 fi
 
+echo -e "${YELLOW}Building ARLI from source (includes ENSO settlement)...${NC}"
+echo ""
+
 TMPDIR=$(mktemp -d)
-echo "Cloning ARLI..."
-git clone --depth 1 "https://github.com/$REPO.git" "$TMPDIR" 2>/dev/null
+trap "rm -rf $TMPDIR" EXIT
+
+echo "Cloning ARLI from GitHub..."
+git clone --depth 1 --progress "https://github.com/${REPO}.git" "$TMPDIR" 2>&1 | tail -1
+
 cd "$TMPDIR"
-echo "Compiling with ENSO support (this may take a few minutes)..."
+echo "Compiling with ENSO support (3-8 minutes)..."
 cargo build -p arli-cli --features arli-core/enso --release
+
 cp target/release/arli "$INSTALL_DIR/"
-rm -rf "$TMPDIR"
 echo -e "${GREEN}Installed to $INSTALL_DIR/arli${NC}"
 
 # Add to PATH if needed

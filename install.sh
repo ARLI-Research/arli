@@ -54,6 +54,15 @@ echo "Cloning ARLI from GitHub..."
 git clone --depth 1 --progress "https://github.com/${REPO}.git" "$TMPDIR" 2>&1 | tail -1
 
 cd "$TMPDIR"
+
+# arli-trading requires hypersdk (local path dep not in this repo).
+# Temporarily exclude it from the workspace for a standalone build.
+if [[ "$OS" = "Darwin" ]]; then
+    sed -i '' 's/    "arli-trading",/    #"arli-trading",/' Cargo.toml
+else
+    sed -i 's/    "arli-trading",/    #"arli-trading",/' Cargo.toml
+fi
+
 echo "Compiling with ENSO support (3-8 minutes)..."
 cargo build -p arli-cli --features arli-core/enso --release
 

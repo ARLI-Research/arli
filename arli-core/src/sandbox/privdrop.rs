@@ -5,6 +5,7 @@
 
 use super::policy::ProcessPolicy;
 use nix::unistd::{getgid, getuid, setgid, setuid, Gid, Uid};
+#[cfg(not(target_os = "macos"))]
 use std::ffi::CString;
 
 /// Privilege dropper — ensures sandboxed processes run as unprivileged users.

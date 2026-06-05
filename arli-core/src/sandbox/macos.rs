@@ -151,7 +151,9 @@ mod imp {
             tmp.flush()?;
 
             // Keep the temp file alive (it will be cleaned up on drop)
-            let (_file, path) = tmp.keep()?;
+            let (_file, path) = tmp
+                .keep()
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
             Ok(Self {
                 profile_path: Some(path),

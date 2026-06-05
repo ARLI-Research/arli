@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -eo pipefail
 
 BOLD="\033[1m"
 GREEN="\033[0;32m"
@@ -51,7 +51,28 @@ TMPDIR=$(mktemp -d)
 trap "rm -rf $TMPDIR" EXIT
 
 echo "Cloning ARLI from GitHub..."
-git clone --depth 1 --progress "https://github.com/${REPO}.git" "$TMPDIR" 2>&1 | tail -1
+
+clone_arli() {
+    git clone --depth 1 --progress "https://github.com/${REPO}.git" "$TMPDIR" 2>&1 | tail -1
+}
+
+# Retry up to 3 times for transient network errors (e.g. "expected packfile")
+for attempt in 1 2 3; do
+    if clone_arli && [ -f "$TMPDIR/Cargo.toml" ]; then
+        break
+    fi
+    echo -e "${YELLOW}Clone attempt $attempt failed, retrying...${NC}"
+    rm -rf "$TMPDIR"
+    mkdir "$TMPDIR"
+    sleep 2
+done
+
+if [ ! -f "$TMPDIR/Cargo.toml" ]; then
+    echo -e "${RED}Failed to clone ARLI after 3 attempts.${NC}"
+    echo -e "${YELLOW}Check your network connection or try:${NC}"
+    echo -e "  git clone https://github.com/${REPO}.git"
+    exit 1
+fi
 
 cd "$TMPDIR"
 

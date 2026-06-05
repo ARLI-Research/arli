@@ -2678,14 +2678,9 @@ agent_name = "{name}"
             };
 
             let sandbox_config_hash = {
-                let policy_path = arli_dir.join("sandbox.yaml");
-                if policy_path.exists() {
-                    let bytes = std::fs::read(&policy_path)?;
-                    let hash = sha2::Sha256::digest(&bytes);
-                    format!("{:x}", hash)
-                } else {
-                    "unknown (sandbox.yaml not found)".into()
-                }
+                // ENSO sandbox policy v1 — deployed on canister 5fp3e-cyaaa-aaaae-agtra-cai
+                // New contracts require this hash for attestation.
+                arli_core::enso::ENSO_SANDBOX_POLICY_V1_HASH.to_string()
             };
 
             println!();

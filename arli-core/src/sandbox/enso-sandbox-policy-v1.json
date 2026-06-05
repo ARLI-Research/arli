@@ -1,0 +1,128 @@
+{
+  "type": "KernelSandbox",
+  "version": "1.0.0",
+  "landlock": {
+    "rules": [
+      {
+        "path": "/usr",
+        "access": "ro"
+      },
+      {
+        "path": "/lib",
+        "access": "ro"
+      },
+      {
+        "path": "/lib64",
+        "access": "ro"
+      },
+      {
+        "path": "/etc",
+        "access": "ro"
+      },
+      {
+        "path": "/workspace",
+        "access": "rw"
+      },
+      {
+        "path": "/tmp",
+        "access": "rw"
+      },
+      {
+        "path": "/dev/null",
+        "access": "rw"
+      },
+      {
+        "path": "/dev/zero",
+        "access": "r"
+      },
+      {
+        "path": "/dev/random",
+        "access": "r"
+      },
+      {
+        "path": "/dev/urandom",
+        "access": "r"
+      }
+    ],
+    "default_policy": "deny"
+  },
+  "seccomp": {
+    "default_action": "kill",
+    "allow": [
+      "read",
+      "write",
+      "open",
+      "openat",
+      "close",
+      "stat",
+      "fstat",
+      "lstat",
+      "newfstatat",
+      "mmap",
+      "mprotect",
+      "brk",
+      "munmap",
+      "getpid",
+      "gettid",
+      "getuid",
+      "getgid",
+      "geteuid",
+      "getegid",
+      "nanosleep",
+      "clock_gettime",
+      "exit",
+      "exit_group",
+      "sigaltstack",
+      "rt_sigaction",
+      "rt_sigreturn",
+      "rt_sigprocmask",
+      "futex",
+      "set_tid_address",
+      "set_robust_list",
+      "arch_prctl",
+      "sched_yield",
+      "getrandom"
+    ],
+    "deny": [
+      "fork",
+      "vfork",
+      "clone",
+      "clone3",
+      "execve",
+      "execveat",
+      "ptrace",
+      "mount",
+      "umount2",
+      "chroot",
+      "pivot_root",
+      "setuid",
+      "setgid",
+      "setreuid",
+      "setregid",
+      "chmod",
+      "fchmod",
+      "chown",
+      "fchown",
+      "socket",
+      "connect",
+      "bind",
+      "listen",
+      "accept",
+      "sendto",
+      "recvfrom",
+      "sendmsg",
+      "recvmsg",
+      "getsockname",
+      "getpeername",
+      "socketpair",
+      "setsockopt",
+      "getsockopt",
+      "ioctl",
+      "personality"
+    ]
+  },
+  "network": false,
+  "max_memory_mb": 4096,
+  "max_execution_sec": 300,
+  "uid": 65534
+}

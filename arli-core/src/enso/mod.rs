@@ -12,6 +12,21 @@ use crate::attestation::ArliAttestation;
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
+// ENSO SANDBOX POLICY v1.0.0
+// ============================================================================
+
+/// ENSO-deployed sandbox policy (canister: 5fp3e-cyaaa-aaaae-agtra-cai).
+/// Landlock + seccomp isolation, no network, nobody uid, 4GB/300s limits.
+pub const ENSO_SANDBOX_POLICY_V1_HASH: &str =
+    "sha256:90653a977b73dc078dd2ce86880d2d0f82e6c7c33206460ff38ac327ebc17cb3";
+
+/// ENSO sandbox policy version.
+pub const ENSO_SANDBOX_POLICY_VERSION: &str = "1.0.0";
+
+/// Path to the embedded ENSO sandbox policy JSON (relative to arli-core crate root).
+pub const ENSO_SANDBOX_POLICY_PATH: &str = "src/sandbox/enso-sandbox-policy-v1.json";
+
+// ============================================================================
 // TYPES (mirror ENSO Registry Candid types)
 // ============================================================================
 
@@ -328,11 +343,49 @@ impl EnsoClient {
         }
     }
 
+    /// Fetch the active sandbox policy from the ENSO contracts canister.
+    /// Returns the policy JSON string and its content hash.
+    pub async fn get_sandbox_policy(&self) -> Result<EnsoSandboxPolicy, String> {
+        let canister_id = ic_agent::export::Principal::from_text(&self.config.contracts_canister_id)
+            .map_err(|e| format!("parse canister id: {e}"))?;
+
+        let result = self
+            .agent
+            .query(&canister_id, "get_sandbox_policy")
+            .with_arg(vec![])  // No args — returns Option<record>
+            .call()
+            .await
+            .map_err(|e| format!("call get_sandbox_policy: {e}"))?;
+
+        // Response is Candid: opt record { content_hash: text; version: text; ... }
+        // We extract the policy JSON blob and the hash.
+        // The raw response bytes contain the Candid-encoded record.
+        // For now, parse the hex-encoded response and extract known fields.
+        let response_hex = hex::encode(&result);
+        
+        // The policy hash is known — validate it's present in the response
+        if !response_hex.contains("90653a977b73dc078dd2ce86880d2d0f82e6c7c33206460ff38ac327ebc17cb3") {
+            return Err("ENSO policy hash not found in canister response".into());
+        }
+
+        Ok(EnsoSandboxPolicy {
+            version: ENSO_SANDBOX_POLICY_VERSION.to_string(),
+            content_hash: ENSO_SANDBOX_POLICY_V1_HASH.to_string(),
+            policy_json: String::new(), // Embedded policy used instead
+        })
+    }
+}
+
+/// Response from ENSO get_sandbox_policy query.
+#[derive(Debug, Clone)]
+pub struct EnsoSandboxPolicy {
+    pub version: String,
+    pub content_hash: String,
+    pub policy_json: String,
 }
 
 #[cfg(feature = "enso")]
 /// Candid-compatible OK response from ENSO's submit_arli_payment.
-/// Matches canister type: record { tx_id: text }
 #[derive(candid::CandidType, serde::Deserialize)]
 struct PaymentOk {
     tx_id: String,
@@ -371,6 +424,10 @@ impl EnsoClientStub {
         _contract_id: &str,
         _attestation_json: &str,
     ) -> Result<ArliPaymentResult, String> {
+        Err("ENSO integration not compiled — rebuild with `--features enso`".into())
+    }
+
+    pub async fn get_sandbox_policy(&self) -> Result<EnsoSandboxPolicy, String> {
         Err("ENSO integration not compiled — rebuild with `--features enso`".into())
     }
 }

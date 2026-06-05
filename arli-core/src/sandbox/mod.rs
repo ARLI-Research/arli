@@ -7,10 +7,12 @@
 //! Phase 2 upgrade (OpenShell patterns): Landlock filesystem + seccomp syscalls + privilege drop.
 
 pub mod engine;
+#[cfg(target_os = "linux")]
 pub mod landlock;
 pub mod macos;
 pub mod policy;
 pub mod privdrop;
+#[cfg(target_os = "linux")]
 pub mod seccomp;
 // - PID namespace (can't see host processes)
 // - Optional memory/CPU limits via cgroups
@@ -274,16 +276,22 @@ impl Sandbox {
         unsafe {
             cmd.pre_exec(move || {
                 // 0. Seccomp FIRST (can only be tightened)
-                let filter = seccomp::SeccompSandbox::build_filter();
-                if let Err(e) = seccomp::SeccompSandbox::apply(&filter) {
-                    eprintln!("seccomp: {}", e);
-                    return Err(std::io::Error::new(std::io::ErrorKind::Other, e));
+                #[cfg(target_os = "linux")]
+                {
+                    let filter = seccomp::SeccompSandbox::build_filter();
+                    if let Err(e) = seccomp::SeccompSandbox::apply(&filter) {
+                        eprintln!("seccomp: {}", e);
+                        return Err(std::io::Error::new(std::io::ErrorKind::Other, e));
+                    }
                 }
 
                 // 1. Landlock filesystem
-                if let Err(e) = landlock::LandlockSandbox::enforce(&policy_clone) {
-                    eprintln!("landlock: {}", e);
-                    return Err(std::io::Error::new(std::io::ErrorKind::Other, e));
+                #[cfg(target_os = "linux")]
+                {
+                    if let Err(e) = landlock::LandlockSandbox::enforce(&policy_clone) {
+                        eprintln!("landlock: {}", e);
+                        return Err(std::io::Error::new(std::io::ErrorKind::Other, e));
+                    }
                 }
 
                 // 2. Privilege drop

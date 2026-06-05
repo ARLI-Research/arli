@@ -30,9 +30,12 @@ impl PrivilegeDrop {
         let uid = Uid::from_raw(user.uid());
         let gid = Gid::from_raw(group.gid());
 
-        // Step 1: initgroups — set supplementary group list
-        let c_username = CString::new(username).map_err(|e| format!("CString: {:?}", e))?;
-        nix::unistd::initgroups(&c_username, gid).map_err(|e| format!("initgroups: {}", e))?;
+        // Step 1: initgroups — set supplementary group list (Linux only)
+        #[cfg(not(target_os = "macos"))]
+        {
+            let c_username = CString::new(username).map_err(|e| format!("CString: {:?}", e))?;
+            nix::unistd::initgroups(&c_username, gid).map_err(|e| format!("initgroups: {}", e))?;
+        }
 
         // Step 2: setgid — set real, effective, and saved GID
         setgid(gid).map_err(|e| format!("setgid: {}", e))?;
@@ -80,10 +83,13 @@ impl PrivilegeDrop {
             return Err(format!("setrlimit(RLIMIT_CORE) failed: errno {}", rc));
         }
 
-        // PR_SET_DUMPABLE = 0 (prevent ptrace and core dumps)
-        let rc = unsafe { libc::prctl(libc::PR_SET_DUMPABLE, 0, 0, 0, 0) };
-        if rc != 0 {
-            return Err(format!("prctl(PR_SET_DUMPABLE) failed: errno {}", rc));
+        // PR_SET_DUMPABLE = 0 (prevent ptrace and core dumps) — Linux only
+        #[cfg(target_os = "linux")]
+        {
+            let rc = unsafe { libc::prctl(libc::PR_SET_DUMPABLE, 0, 0, 0, 0) };
+            if rc != 0 {
+                return Err(format!("prctl(PR_SET_DUMPABLE) failed: errno {}", rc));
+            }
         }
 
         Ok(())

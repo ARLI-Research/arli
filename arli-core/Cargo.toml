@@ -32,14 +32,10 @@ image.workspace = true
 axum = "0.7"
 tower = "0.5"
 
-# Sandboxing (OpenShell patterns) — Linux-only
+# Sandboxing (OpenShell patterns)
 serde_yaml.workspace = true
 nix.workspace = true
 users.workspace = true
-
-[target.'cfg(target_os = "linux")'.dependencies]
-landlock.workspace = true
-seccompiler.workspace = true
 
 # Cryptography (attestation + ENSO integration)
 ed25519-dalek.workspace = true
@@ -67,9 +63,16 @@ tree-sitter-typescript.workspace = true
 # Stream rules (TTSR)
 regex.workspace = true
 
+# Temp files (macOS sandbox profile)
+tempfile = "3"
+
 # ICP client (ENSO canister calls) — optional feature
 ic-agent = { version = "0.39", optional = true }
 candid = { version = "0.10", optional = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+landlock.workspace = true
+seccompiler.workspace = true
 
 [features]
 default = []

@@ -55,13 +55,16 @@ git clone --depth 1 --progress "https://github.com/${REPO}.git" "$TMPDIR" 2>&1 |
 
 cd "$TMPDIR"
 
-# arli-trading requires hypersdk (local path dep not in this repo).
-# Temporarily exclude it from the workspace for a standalone build.
-if [[ "$OS" = "Darwin" ]]; then
-    sed -i '' 's/    "arli-trading",/    #"arli-trading",/' Cargo.toml
-else
-    sed -i 's/    "arli-trading",/    #"arli-trading",/' Cargo.toml
-fi
+# arli-trading depends on hypersdk (../../hypersdk) which isn't in this repo.
+# Create a minimal stub so Cargo can parse the workspace.
+mkdir -p "$TMPDIR/../hypersdk/src"
+cat > "$TMPDIR/../hypersdk/Cargo.toml" << 'HYPEREOF'
+[package]
+name = "hypersdk"
+version = "0.1.0"
+edition = "2021"
+HYPEREOF
+echo "" > "$TMPDIR/../hypersdk/src/lib.rs"
 
 echo "Compiling with ENSO support (3-8 minutes)..."
 cargo build -p arli-cli --features arli-core/enso --release

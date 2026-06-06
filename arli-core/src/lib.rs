@@ -45,6 +45,7 @@ pub mod telemetry;
 pub mod tool_compaction;
 pub mod tools;
 pub mod webhooks;
+pub mod workspace_snapshot;
 pub mod x402;
 
 pub use agent::{Agent, AgentConfig, AgentMessage, AgentState};

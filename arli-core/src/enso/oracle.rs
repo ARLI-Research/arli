@@ -101,6 +101,8 @@ pub struct EnsoOracle {
     db: Option<rusqlite::Connection>,
     /// Shared harness state — per-contract execution trail for ENSO visibility (§4.3)
     task_states: std::collections::HashMap<String, crate::task_state::TaskState>,
+    /// Workspace root for fault-tolerant snapshots.
+    workspace_root: Option<std::path::PathBuf>,
 }
 
 #[cfg(feature = "enso")]
@@ -135,6 +137,7 @@ impl EnsoOracle {
             running: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             db,
             task_states: std::collections::HashMap::new(),
+            workspace_root: None,
         }
     }
 
@@ -279,6 +282,13 @@ impl EnsoOracle {
             .store(false, std::sync::atomic::Ordering::Relaxed);
     }
 
+    /// Set workspace root for fault-tolerant snapshots.
+    /// When set, the oracle creates a snapshot before each contract execution
+    /// and rolls back on failure (Fault-Tolerant Sandboxing, 2025).
+    pub fn set_workspace_root(&mut self, path: std::path::PathBuf) {
+        self.workspace_root = Some(path);
+    }
+
     /// Process a single contract by ID: build attestation, sign, submit payment atomically.
     async fn process_contract_by_id(&mut self, contract_id: &str) -> Result<OracleResult, String> {
         // --- Shared Harness State (§4.3): load or create task state ---
@@ -295,6 +305,22 @@ impl EnsoOracle {
 
         task_state.increment_attempts();
         task_state.transition_to(crate::task_state::TaskPhase::Executing);
+
+        // --- Fault-Tolerant Sandbox: snapshot workspace before execution ---
+        let snapshot = if let Some(ref ws_root) = self.workspace_root {
+            match crate::workspace_snapshot::WorkspaceSnapshot::create(ws_root) {
+                Ok(snap) => {
+                    tracing::debug!("Workspace snapshot created for {}", contract_id);
+                    Some(snap)
+                }
+                Err(e) => {
+                    tracing::warn!("Workspace snapshot failed ({}), continuing without rollback safety", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
         let keypair = self.keypair.as_ref().unwrap();
 
@@ -379,6 +405,12 @@ impl EnsoOracle {
                         result.amount_cents,
                     );
                 }
+
+                // Success — commit workspace snapshot
+                if let Some(snap) = snapshot {
+                    let _ = snap.commit();
+                }
+
                 Ok(OracleResult::Attested)
             }
             SettlementStatus::Disputed => {
@@ -386,12 +418,30 @@ impl EnsoOracle {
                 task_state.add_check("enso_settlement", false, None, Some(result.message.clone()));
                 let _ = task_state.save();
                 self.task_states.insert(contract_id.to_string(), task_state);
+
+                // Failure — rollback workspace
+                if let Some(snap) = snapshot {
+                    if let Err(e) = snap.rollback() {
+                        tracing::error!("Workspace rollback failed for {}: {}", contract_id, e);
+                    } else {
+                        tracing::info!("Workspace rolled back for {}", contract_id);
+                    }
+                }
+
                 Err(format!("Disputed: {}", result.message))
             }
             SettlementStatus::Pending => {
                 task_state.add_error(&format!("Pending: {}", result.message));
                 let _ = task_state.save();
                 self.task_states.insert(contract_id.to_string(), task_state);
+
+                // Pending — rollback workspace for clean retry
+                if let Some(snap) = snapshot {
+                    if let Err(e) = snap.rollback() {
+                        tracing::error!("Workspace rollback failed for {}: {}", contract_id, e);
+                    }
+                }
+
                 Err("Pending — may need admin approval".into())
             }
         }

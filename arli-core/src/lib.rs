@@ -19,6 +19,7 @@ pub mod health;
 pub mod hooks;
 pub mod inference;
 pub mod kanban;
+pub mod lessons;
 pub mod mcp;
 pub mod memory;
 pub mod metrics;

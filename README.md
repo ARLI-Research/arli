@@ -3,76 +3,116 @@
   <img src="https://img.shields.io/badge/binary-12MB-22d3ee?style=flat-square" alt="12MB">
   <img src="https://img.shields.io/badge/cold_start-50ms-34d399?style=flat-square" alt="50ms">
   <img src="https://img.shields.io/badge/sandbox-Landlock%2Bseccomp-ef4444?style=flat-square" alt="Landlock+seccomp">
+  <img src="https://img.shields.io/badge/attestation-ENSO%2FICP-8b5cf6?style=flat-square" alt="ENSO">
   <img src="https://img.shields.io/badge/audit-OCSF-blue?style=flat-square" alt="OCSF">
-  <img src="https://img.shields.io/badge/tests-254-green?style=flat-square" alt="254 tests">
+  <img src="https://img.shields.io/badge/tests-448-green?style=flat-square" alt="448 tests">
   <img src="https://img.shields.io/badge/providers-36-fbbf24?style=flat-square" alt="36 providers">
   <img src="https://img.shields.io/badge/platforms-20-a78bfa?style=flat-square" alt="20 platforms">
   <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT">
 </p>
 
 <h1 align="center">ARLI</h1>
-<h3 align="center">Rust-native AI Agent Harness — Production-grade agent infrastructure</h3>
+<h3 align="center">Production-Grade AI Agent Harness — Rust. Kernel Sandbox. On-Chain Settlement.</h3>
 
 <p align="center">
-Single binary. Zero runtime dependencies. Kernel-level sandbox.<br>
-Actor-based agent loop, swarm orchestration, 20-platform messaging gateway,<br>
-Hyperliquid live trading, ENSO/ICP on-chain settlements.
+Single 12MB binary. Zero runtime dependencies beyond the kernel.<br>
+Actor-based agent loop. Swarm orchestration. 20-platform messaging gateway.<br>
+Landlock + seccomp sandbox. OCSF audit trail. ENSO/ICP on-chain attestation.<br>
+Hyperliquid live trading. Self-healing experiential memory. Autonomous oracle loop.
 </p>
+
+---
+
+## What ARLI Is
+
+ARLI is a **complete agent harness** — the infrastructure layer between an LLM and the real world. It doesn't just call models. It:
+
+- **Executes agent actions** inside a kernel-level sandbox (Landlock + seccomp)
+- **Verifies work** before claiming it's done (compile → lint → test → fuzz pipeline)
+- **Attests on-chain** via ENSO/ICP — cryptographic proof of what ran, how, and under what policy
+- **Learns from failures** — experiential memory that remembers fixes and auto-applies them
+- **Survives faults** — workspace snapshots with rollback on failure, clean retries every time
+- **Explains failures** — classifies why something broke (sandbox killed it? agent wrote bad code? ENSO rejected?)
+- **Governs itself** — risk scoring, approval queues, audit trail for every action
+- **Self-analyzes** — `arli harness analyze` reads telemetry and tells you what to fix
+
+Everything is Rust. Everything is local. No Python. No Docker. No cloud dependency.
 
 ---
 
 ## Architecture
 
 ```
-                             ┌─────────────────────────────────────────────┐
-                             │  EXTERNAL — 20 Messaging Platforms           │
-                             │  Telegram  Discord  Slack  WhatsApp  Matrix  │
-                             │  Teams  Email  Signal  LINE  Feishu  WeCom   │
-                             │  QQ  SMS  Google Chat  DingTalk  IRC  ntfy   │
-                             │  SimpleX  Yuanbao  BlueBubbles  Webhooks     │
-                             └──────────────┬──────────────────────────────┘
-                                            │
-                              ┌─────────────▼────────────────┐
-                              │  arli-gateway Daemon          │
-                              │  systemd · auto-restart       │
-                              │  per-chat agent sessions      │
-                              │  Prometheus /metrics          │
-                              └──────┬──────────────┬────────┘
-                                     │              │
-                    ┌────────────────▼──┐   ┌───────▼──────────────┐
-                    │  Agent Actor      │   │  Swarm Orchestrator  │
-                    │  Mailbox-driven   │   │  spawn/steer/kill    │
-                    │  Context pressure │   │  redirect/restart    │
-                    │  Auto-compaction  │   │  TaskRouter          │
-                    │  Policy engine    │   │  fan-out/round-robin │
-                    │  Hook system      │   └──────────────────────┘
-                    └────────┬──────────┘
-                             │              ┌──────────────────────┐
-                             │              │  Cron Scheduler      │
-                             │              │  cron · intervals    │
-                             │              │  skill attachments   │
-                             │              └──────────────────────┘
-                    ┌────────▼──────────────────────────────┐
-                    │  18 BUILT-IN TOOLS                    │
-                    │  terminal  read  write  patch  search │
-                    │  hashedit  ast_edit  resolve  browser │
-                    │  web_search  vision  voice  memory    │
-                    │  image_generate  video_generate       │
-                    │  delegate  execute_code               │
-                    └────────┬──────────────────────────────┘
-                             │
-          ┌──────────────────┼───────────────────┬─────────────────┐
-          │                  │                   │                 │
-  ┌───────▼──────┐  ┌────────▼───────┐  ┌───────▼──────────┐  ┌──▼─────────────┐
-  │ 36 PROVIDERS │  │   STORAGE      │  │  LIVE TRADING    │  │  ENSO / ICP     │
-  │ 3 adapters   │  │   SQLite+WAL   │  │  Hyperliquid SDK │  │  Attestation    │
-  │ OpenAI-compat│  │   FTS5 search  │  │  Perps · Spot    │  │  Payments·Escrow│
-  │ Anthropic    │  │   12 memory    │  │  WS fusion feed  │  │  Marketplace    │
-  │ OpenRouter   │  │   backends     │  │  Metrics·Alerts  │  │  Oracle loop    │
-  └──────────────┘  └────────────────┘  └──────────────────┘  └─────────────────┘
-```
+┌──────────────────────────────────────────────────────────────┐
+│  EXTERNAL — 20 Messaging Platforms                            │
+│  Telegram  Discord  Slack  WhatsApp  Matrix  Teams  Email     │
+│  Signal  LINE  Feishu  WeCom  QQ  SMS  Google Chat  DingTalk  │
+│  IRC  ntfy  SimpleX  Yuanbao  BlueBubbles  Webhooks           │
+└──────────────────────┬───────────────────────────────────────┘
+                       │
+       ┌───────────────▼──────────────────────────┐
+       │  arli-gateway Daemon                      │
+       │  Built-in daemon (no systemd required)    │
+       │  Per-chat agent sessions                  │
+       │  Prometheus /metrics  /healthz  /readyz   │
+       └──────┬──────────────┬─────────────────────┘
+              │              │
+┌─────────────▼──┐  ┌────────▼─────────────────────────┐
+│  Agent Actor   │  │  Swarm Orchestrator               │
+│  Mailbox-driven│  │  spawn/steer/kill/restart         │
+│  Context press.│  │  TaskRouter · fan-out · affinity  │
+│  Auto-compact. │  │  Shared Memory (agent blackboard) │
+│  Hook system   │  │  Agent registry (SQLite)          │
+└───────┬────────┘  └───────────────────────────────────┘
+        │
+        │  ┌──────────────────────────────────────────────┐
+        │  │  HARNESS LAYER — executes BEFORE attestation  │
+        │  │                                               │
+        │  │  ┌──────────────┐  ┌───────────────────────┐ │
+        │  │  │ Verification │  │ Fault-Tolerant         │ │
+        │  │  │ Pipeline     │  │ Sandbox                │ │
+        │  │  │ compile→lint │  │ snapshot→execute→      │ │
+        │  │  │ →test→fuzz   │  │ success=commit         │ │
+        │  │  └──────────────┘  │ failure=rollback        │ │
+        │  │                    └───────────────────────┘ │
+        │  │  ┌──────────────┐  ┌───────────────────────┐ │
+        │  │  │ Governance   │  │ Failure Attribution    │ │
+        │  │  │ Engine       │  │                        │ │
+        │  │  │ risk score→  │  │ SandboxKilled?         │ │
+        │  │  │ approve/deny │  │ EnsoRejected?          │ │
+        │  │  │ /queue       │  │ VerificationFailed?    │ │
+        │  │  └──────────────┘  └───────────────────────┘ │
+        │  └──────────────────────────────────────────────┘
+        │
+┌───────▼──────────────────────────────────────────────────┐
+│  18 BUILT-IN TOOLS                                        │
+│  terminal  read  write  patch  search  hashedit  ast_edit │
+│  resolve  browser  web_search  vision  voice  memory      │
+│  image_generate  video_generate  delegate  execute_code   │
+└───────┬──────────────────────────────────────────────────┘
+        │
+┌───────┼──────────────┬──────────────────┬─────────────────┐
+│       │              │                  │                 │
+│  36 PROVIDERS   STORAGE         LIVE TRADING      ENSO/ICP│
+│  3 adapters     SQLite+WAL      Hyperliquid SDK   Attest. │
+│  OpenAI-compat  FTS5 search     Perps · Spot      Payment │
+│  Anthropic      12 backends     WS fusion feed    Oracle  │
+│  OpenRouter     Skill loader    Cointegration     loop    │
+└───────────────────────────────────────────────────────────┘
 
-[Full interactive diagram — dark-themed SVG](/docs/architecture.html)
+LEARNING LAYER (persisted to ~/.arli/)
+┌───────────────────────────────────────────────────────────┐
+│  Experiential Memory    Harness Telemetry    Task Contracts│
+│  failure→fix lessons    per-tool metrics     upfront work │
+│  auto-apply on retry    failure rates        declarations │
+│  verified/unverified    memory hit rate      SHA-256 hash │
+│  stale pruning          policy violations    in attest.   │
+│                                                           │
+│  Task State             Quality Critic       Evolution CLI│
+│  phased execution       heuristic + LLM     harness       │
+│  trail for ENSO         response review     analyze       │
+└───────────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -82,15 +122,15 @@ Hyperliquid live trading, ENSO/ICP on-chain settlements.
 # Install (Linux / macOS, no Rust toolchain required)
 curl -fsSL https://raw.githubusercontent.com/ARLI-Research/arli/main/install.sh | bash
 
-# Configure — interactive setup for providers, platforms, settings
+# Configure
 arli setup
 
-# Start chatting
+# Chat
 arli chat                     # Interactive TUI
-arli chat -q "Explain Rust"   # Single query
+arli chat -q "Fix this bug"   # Single query
 
-# Start the messaging gateway (20 platforms)
-arli gateway start
+# Gateway
+arli gateway start            # 20-platform messaging daemon
 
 # Self-update
 arli update
@@ -98,83 +138,151 @@ arli update
 
 ---
 
-## Feature Matrix
+## The Harness — What Makes ARLI Different
 
-### LLM Providers — 36
+A harness is not just a tool-calling loop. It's the infrastructure that makes agent execution **verifiable, fault-tolerant, and auditable**. ARLI implements the full stack from the "Code as Agent Harness" survey (458 papers, 2025–2026).
 
-All routed through 3 adapter traits. OpenAI-compatible providers share one adapter. Anthropic has native ephemeral prompt caching.
+### Fault-Tolerant Sandbox
 
-```
-DeepSeek  OpenAI  Anthropic  OpenRouter  Google AI  xAI/Grok  Copilot
-Nous  Novita  Qwen  MiMo  Tencent  NVIDIA  HuggingFace  GLM
-Kimi/Moonshot  StepFun  MiniMax (global + China)  LM Studio  Ollama
-Bedrock  Azure  Arcee  GMI Cloud  Kilo Code  OpenCode Zen/Go
-Alibaba Cloud  Custom endpoint
-```
-
-### Messaging Gateway — 20 Platforms
-
-One daemon. Set env vars, start `arli gateway start`. Prometheus metrics at `/metrics`.
+Before executing a contract, ARLI snapshots the workspace. If anything goes wrong — verification fails, ENSO disputes, sandbox kills the process — the workspace rolls back to a clean state. The next retry starts from the same baseline, not from garbage.
 
 ```
-Telegram  Discord  Slack  WhatsApp  Matrix  Microsoft Teams  Email
-Signal  SMS/Twilio  Google Chat  Feishu  DingTalk  LINE  IRC
-WeCom  QQ  ntfy  SimpleX  Yuanbao  BlueBubbles/iMessage
+Contract received → snapshot workspace → execute → ✓ commit / ✗ rollback
 ```
 
-### Tools — 18
+Git-based when available, tar.gz fallback for non-git workspaces.
 
-| Tool | Description |
-|---|---|
-| `terminal` | Execute shell commands |
-| `read_file` | Read with offset/limit pagination |
-| `write_file` | Create/overwrite files |
-| `patch` | Targeted find-and-replace edits |
-| `hashedit` | Content-hash-anchored edits — zero whitespace battles |
-| `ast_edit` | Structural code edits via AST pattern matching (ast-grep) |
-| `resolve` | Accept/reject staged edits (preview-then-accept workflow) |
-| `search_files` | Ripgrep-backed in-process file search |
-| `web_search` | Search via 8 providers (DuckDuckGo, Brave, etc.) |
-| `browser` | Browser automation (5 backends) |
-| `vision` | Image analysis / OCR |
-| `text_to_speech` | Edge TTS (free) + OpenAI TTS + local engines |
-| `image_generate` | FAL.ai + DALL-E 3 |
-| `video_generate` | Premium feature stub |
-| `session_search` | FTS5 search across past sessions |
-| `memory` | Persistent memory (add/replace/remove/search) |
-| `delegate_task` | Spawn sub-agents in parallel |
-| `execute_code` | Run Python with tool access |
+### Hierarchical Sandbox Profiles
 
-### Edit Engine — 5 Layers
+Not one sandbox — four. Each contract declares what level it needs:
 
-ARLI's editing pipeline eliminates the "string not found" problem entirely through layered precision:
+| Profile | Network | Memory | Timeout | Use |
+|---------|---------|--------|---------|-----|
+| **Build** | No | 1 GB | 5 min | Compile/lint only |
+| **Test** | Yes | 2 GB | 10 min | Build + test fixtures |
+| **Deploy** | Full | 4 GB | 20 min | Integration, staging |
+| **Unsafe** | Full | None | None | Trusted code only |
 
-| Layer | Tool | What it does |
-|---|---|---|
-| **1. In-process search** | `search_files` | Ripgrep linked into the binary — no fork/exec, no external dependency. ~10–100ms saved per search. |
-| **2. Hash-anchored edits** | `hashedit` | Model identifies lines by SHA-256 content hash (8 chars), not by retyping text. Whitespace battles just stop happening. |
-| **3. AST structural edits** | `ast_edit` | tree-sitter grammars for Rust/Python/TypeScript/JavaScript. Pattern `console.log($X)` matches the real AST node — not comments, not strings, not lookalikes. |
-| **4. Preview-then-accept** | `resolve` | Edits are staged, not written. Agent shows a unified diff. You accept or reject. File untouched until approved. |
-| **5. Stream rules (TTSR)** | `stream_rules` | Regex policies sit dormant until violated. No context tax on every turn. Match triggers injection + retry — max 3 retries per turn. |
+The harness enforces that the actual sandbox is **at least as restrictive** as the contract demands. A Build contract cannot run under Unsafe.
 
-### Agent Settings
+### Verification Pipeline
 
-| Setting | Default | Options |
-|---|---|---|
-| Max iterations | 90 | 1–200 |
-| Tool progress | all | off / new / all / verbose |
-| Compression threshold | 0.5 | 0.5–0.95 |
-| Session reset | inactivity_daily | inactivity_daily / inactivity / daily / never |
+Attestation doesn't happen on faith. Before submitting to ENSO, ARLI runs:
 
-### Backend Configuration
+```
+compile → lint → test → fuzz
+```
 
-| Category | Default | Options |
-|---|---|---|
-| **Search** | DuckDuckGo | Brave, SearXNG, Tavily, Firecrawl, Exa, Parallel, xAI |
-| **Memory** | builtin | mem0, ChromaDB, Qdrant, Byterover, Hindsight, Holographic, Honcho, OpenViking, RetainDB, Supermemory, AgentMemory |
-| **Terminal** | local | Docker, SSH, Modal, Daytona, Singularity |
-| **Browser** | local Chromium | Camofox, Browserbase, Firecrawl, Browser Use |
-| **TTS** | Edge (free) | OpenAI, local (espeak/flite/say) |
+Auto-detects commands from the workspace (`Cargo.toml` → `cargo check`, `package.json` → `npm test`, etc.). If compile or test fails — attestation is **blocked**. ENSO never sees a "Verified" on broken code.
+
+### Task Contracts
+
+Upfront declaration of what the agent will do. Before execution, the contract specifies expected artifacts and success checks. After execution, the contract hash is included in the ENSO attestation — cryptographic proof that the agent delivered exactly what it promised.
+
+```rust
+let contract = TaskContract {
+    goal: "Fix compilation error in src/main.rs",
+    expected_artifacts: vec!["src/main.rs"],
+    success_checks: vec!["cargo check", "cargo test"],
+    sandbox_policy: Some("build"),
+};
+// Contract hash: sha256("goal=...&artifacts=...&checks=...")
+// Included in ArliAttestation → ENSO verifies it
+```
+
+### Experiential Memory
+
+The agent learns from failures. When `cargo build` fails with "borrow checker", ARLI records the fix ("clone before move"). Next time the same error appears, it auto-applies the fix without wasting a retry.
+
+- **MemGovern filter**: fixes must be verified to persist. Unverified fixes older than 7 days are auto-pruned.
+- **Memory health**: `arli harness analyze` shows hit rate — is the memory actually helping or just noise?
+
+### Harness Telemetry
+
+Per-tool, per-policy, per-task metrics. Persistent to `~/.arli/telemetry.json`.
+
+```
+$ arli harness analyze
+
+═══ ARLI Harness Analytics ═══
+─── Tools ───
+  Total calls: 1247 | Failures: 89 | Rate: 7.1%
+  Worst: terminal (23% failure, 156 calls)
+
+─── Sandbox Policies ───
+  policy-abc: 12 violations — may be too restrictive
+
+─── Experiential Memory ───
+  Lessons: 47 total | 31 verified | 16 unverified
+  Hit rate: 68% — effective
+
+─── Recommendations ───
+  1. Fix tool 'terminal': fails 23% — check timeout config
+  2. 16 unverified lessons — run verification or prune stale
+```
+
+### Failure Attribution
+
+When a contract fails, ARLI doesn't just say "Disputed". It classifies **why**:
+
+| Category | Example | Retry? |
+|----------|---------|--------|
+| VerificationFailed | `cargo test` returned exit code 1 | No — fix the code |
+| SandboxKilled | Process killed by OOM, SIGKILL | Yes — increase limits |
+| EnsoRejected | agent_id does not match contract | No — fix registration |
+| NetworkError | ICP call timed out | Yes — retry with backoff |
+| InternalError | Failed to serialize attestation | No — investigate |
+
+45+ error patterns matched. Confidence scored. Actionable operator guidance.
+
+### Agent Governance Toolkit
+
+Every agent action flows through a governance checkpoint:
+
+```
+Agent wants to run "deploy" → RiskScore: 80/high
+  → Exceeds approval threshold → Queued for human approval
+  → Ticket gov-0001 created, expires in 5 min
+  → Human approves → Action executes
+  → Audit trail recorded
+```
+
+Risk taxonomy: SAFE(0) → LOW(20) → MEDIUM(50) → HIGH(80) → CRITICAL(100). Per-tool auto-classification. Policy fingerprint included in ENSO attestation — proves governance was active.
+
+### Quality Critic
+
+Two-layer response review before delivery:
+
+1. **Heuristic** (fast, free): catches empty responses, hallucination markers ("as an AI, I cannot..."), repeated sentences, missing code blocks
+2. **LLM Critic** (accurate, cheap model): structured JSON critique — score 1–10, issues with severity/category/suggestion
+
+```json
+{
+  "score": 4,
+  "acceptable": false,
+  "issues": [
+    {
+      "severity": "error",
+      "category": "factual_error",
+      "description": "Claims function returns String but it returns Result<String>",
+      "suggestion": "Check the actual return type in src/lib.rs line 42"
+    }
+  ],
+  "summary": "Response contains a factual error about the return type"
+}
+```
+
+### Multi-Agent Shared Memory
+
+Swarm agents share a common blackboard. Thread-safe, versioned, TTL-aware.
+
+```
+Agent A discovers market signal → writes "market:BTC:signal=BUY"
+Agent B reads "market:BTC:signal" → opens position
+Agent C reads result → reports to ENSO
+```
+
+Namespaced queries: `read_by_prefix("market:")` returns all market data. `read_by_author("agent-2")` returns everything agent-2 discovered. Persisted to `~/.arli/shared_memory.json`.
 
 ---
 
@@ -187,6 +295,8 @@ arli setup             Interactive configuration wizard
 arli model             Change model/provider interactively
 arli doctor            System health check
 arli update            Self-update from GitHub Releases
+
+arli harness analyze   Analyze telemetry + lessons → insights + recommendations
 
 arli gateway start     Start messaging daemon
 arli gateway stop      Stop daemon
@@ -210,13 +320,14 @@ arli key show          Show public key
 arli enso setup        ENSO ICP integration setup
 arli enso status       Key, config, active contracts
 arli enso pay <id>     Build + sign attestation
+arli enso oracle       Autonomous attestation loop (daemon mode)
 
 arli marketplace rfq-create  Create RFQ for ENSO marketplace
 arli marketplace rfq-list    List open RFQs
 arli marketplace stats       Marketplace statistics
 
 arli kanban create     Create task board
-arli kanban add        Add card (backlog…)
+arli kanban add        Add card
 arli kanban show       View board
 arli kanban move       Move card between columns
 
@@ -235,39 +346,37 @@ arli completion bash   Generate shell completions
 Native Rust trading via `hypersdk`. Perpetuals + spot, WebSocket fusion feed, cointegration signals, Prometheus metrics.
 
 ```rust
-// Live trading with OCSF attestation
 use arli_trading::fusion_live::FusionLiveTrader;
 
 let trader = FusionLiveTrader::new(config, metrics).await?;
 trader.run().await; // WebSocket loop + signals + execution
 ```
 
-**Capabilities:**
 - 229 perpetual + 19 spot markets on Hyperliquid mainnet
 - Cointegration signal generation (10 min candles)
-- Fusion backtest integration (Sharpe 3.83 on historical)
 - OCSF event hash embedded in every order for attestation
 - Prometheus metrics: PnL, positions, signal count, execution latency
 
 ---
 
-## ENSO / ICP Integration
+## ENSO — On-Chain Settlement (ICP)
 
-On-chain agent settlements via Internet Computer Protocol. Full attestation loop: contract → execution → attestation → payment release. All atomic in one ICP call.
-
-### Architecture
+Full attestation loop: contract → sandbox execution → verification pipeline → ed25519 attestation → ICP settlement. Single atomic call.
 
 ```
-ARLI Agent                     ENSO Contracts (ICP)             ICP Ledger
-─────                          ────────────────────             ──────────
+ARLI Oracle                    ENSO Contracts (ICP)           ICP Ledger
+─────                          ────────────────────           ──────────
 │                              │
-│ 1. Run job in sandbox        │
-│    Landlock + seccomp        │
-│                              │
-│ 2. Build OCSF attestation    │
+│ 1. Snapshot workspace        │
+│ 2. Verify (compile→test)     │
+│ 3. Execute agent             │
+│ 4. Attribute failures        │
+│ 5. Build OCSF attestation    │
 │    + ed25519 signature       │
+│    + task contract hash      │
+│    + governance fingerprint  │
 │                              │
-│ 3. submit_arli_payment ────→ │
+│ 6. submit_arli_payment ────→ │
 │    (one ICP call)            │  verify attestation
 │                              ├─ ed25519 verify
 │                              ├─ binary hash match
@@ -282,237 +391,52 @@ ARLI Agent                     ENSO Contracts (ICP)             ICP Ledger
 │       status + tx_id + amount│
 ```
 
-### CLI
-
-```bash
-# One-shot setup: keygen + config + registration
-arli enso setup --contracts 7yv6j-ryaaa-aaaaa-qhheq-cai
-
-# Check status
-arli enso status
-
-# Build and sign attestation for a contract
-arli enso pay contract_1780372735456935314_4
-```
-
-### Oracle Mode
-
-```bash
-# Daemon that polls ENSO contracts and auto-attests
-ENSO_CONTRACTS=contract_xxx,contract_yyy arli enso oracle
-```
-
-**ENS Contract endpoints used:**
-- `submit_arli_payment(contract_id, attestation_json)` — atomic verify + settle + release
-- `register_arli_agent(pubkey, binary_hash, name, capabilities)` — agent registration
-- `get_canister_metadata()` — DID version, supported protocols
-
-**Deployed canisters (ICP mainnet):**
-- Contracts: `7yv6j-ryaaa-aaaaa-qhheq-cai`
-- Frontend:  `7rwvv-hqaaa-aaaaa-qhhfa-cai`
-- Bridge UI: `https://7rwvv-hqaaa-aaaaa-qhhfa-cai.icp0.io/#/app`
-
----
-
-## Kanban Task Boards
-
-SQLite-backed kanban boards with WIP limits, priorities, and agent assignment.
-
-```bash
-arli kanban create "Sprint 1" -d "ENSO integration"
-arli kanban add <board_id> backlog "Fix attestation bug" -p critical
-arli kanban show
-arli kanban move <card_id> in_progress
-arli kanban stats
-```
-
-**Features:**
-- 4-column workflow: backlog → in_progress → review → done
-- WIP limits per column (max 3 in_progress)
-- Card priorities: low, medium, high, critical
-- Agent assignment per card
-- Board statistics: counts, blocked cards, cycle time
-
----
-
-## Auto-Optimization (DSPy-like)
-
-Pure Rust prompt and strategy optimization. No Python dependency.
-
-```rust
-use arli_core::optimization::{PromptOptimizer, StrategyOptimizer, AutoFewShot};
-
-// Optimize a prompt against a metric
-let optimizer = PromptOptimizer::new(evaluator);
-let improved = optimizer.optimize(&base_prompt, &metric, 10)?;
-
-// Auto-select few-shot examples from history
-let few_shot = AutoFewShot::from_history(&session_store, "trading analysis", 5)?;
-```
-
-**Optimizers:**
-- PromptOptimizer — iterative refinement against evaluation metric
-- StrategyOptimizer — tool selection and execution order optimization
-- AutoFewShot — automatic example selection from session history
-
----
-
-## Swarm API
-
-```rust
-let swarm = Swarm::new(provider_factory, policy, tools_factory);
-
-let child_id = swarm.spawn(SwarmAgentConfig {
-    name: "research-agent",
-    initial_message: Some("Analyze cointegration for top-50 perps"),
-    max_iterations: 20,
-    restart_policy: Some(3),
-}).await?;
-
-swarm.get(&child_id).await?.pause().await;
-swarm.get(&child_id).await?.send_message(
-    AgentMessage::Redirect("New goal: check BTC orderbook".into())
-).await;
-swarm.kill_all().await;
-```
-
-**Coordination primitives:**
-- TaskRouter — fan-out tasks to available agents
-- AgentRole — researcher, executor, reviewer
-- Round-robin load distribution
-- Task queue with priority
-
----
-
-## Policy Engine
-
-Policy-driven security rules with host glob matching. Define allowed filesystem paths, network targets, and process capabilities in YAML.
-
-```yaml
-# default_policy.yaml (embedded in binary)
-policies:
-  - name: "restricted-agent"
-    filesystem:
-      read_only: ["/workspace", "/tmp"]
-      read_write: ["/tmp/output"]
-      allow_network: false
-    process:
-      disallow_exec: true
-  - name: "network-agent"
-    network:
-      allowed_hosts: ["api.example.com", "*.github.com"]
-      allowed_ports: [443, 80]
-    rate_limits:
-      max_requests_per_minute: 60
-
-# Host glob matching
-# *.example.com    → matches api.example.com, www.example.com
-# 10.0.*           → matches any host in 10.0.0.0/16
-# *                → matches everything
-```
-
-## Sandbox
-
-Kernel-level isolation via Linux Landlock + seccomp BPF. Agent commands run in a restricted environment that physically cannot escape.
-
-```rust
-let sandbox = Sandbox::from_policy(&policy)?;
-
-// Execute a command inside the sandbox
-// Chain: seccomp → Landlock → privilege drop → exec
-let output = sandbox.execute_isolated("ls /workspace")?;
-```
-
-**Enforcement layers (applied in order):**
-
-1. **Seccomp BPF** — syscall whitelist. Blocks dangerous calls (`ptrace`, `mount`, `reboot`, `kexec_load`, etc.)
-2. **Landlock** — filesystem access control at kernel level. White-list directories, deny everything else
-3. **Privilege drop** — `initgroups` → `setgid` → `setuid` before `exec`. Process runs as unprivileged user
-
-All layers activate via `Command::pre_exec()` — attack surface is closed before the child process starts.
-
-## Inference Routing
-
-Smart multi-provider routing with automatic failover:
-
-```rust
-let registry = ProviderRegistry::from_embedded()?;
-
-// Round-robin across providers
-registry.route(RouteStrategy::RoundRobin, &request).await?;
-
-// Fallback chain: primary → secondary → tertiary
-registry.route(RouteStrategy::Fallback, &request).await?;
-
-// Affinity: same provider for same user/session
-registry.route(RouteStrategy::Affinity("user-123"), &request).await?;
-```
-
-11 providers: DeepSeek, OpenAI, Anthropic, Groq, Together, Fireworks, xAI, Google, Mistral, OpenRouter, Perplexity. All defined in YAML, switchable at runtime.
-
-## Audit Logging
-
-All agent actions logged in OCSF (Open Cybersecurity Schema Framework) format — the industry standard for security telemetry.
-
-```json
-{
-  "class_uid": 6007,
-  "class_name": "Agent Activity",
-  "activity_name": "Execute",
-  "activity_id": 1,
-  "time": 1717286400,
-  "agent": {
-    "name": "arli-core",
-    "policy": "restricted-agent"
-  },
-  "command": "ls /workspace",
-  "result": "success",
-  "sandbox": {
-    "landlock_enforced": true,
-    "seccomp_enforced": true,
-    "uid": 65534
-  }
-}
-```
-
-Compatible with SIEM systems, log aggregators, and security monitoring pipelines.
-
-## Cron Jobs
-
-```rust
-scheduler.add_job(CronJob {
-    id: "market-check",
-    schedule_str: "0 */5 * * * *",
-    prompt: "Check funding rates on top perps",
-}).await;
-```
-
 ---
 
 ## Comparison
 
 | | Hermes | Claude Code | ARLI |
 |---|---|---|---|
-| Language | Python | TypeScript | Rust |
-| Binary size | ~200MB | ~150MB | ~12MB |
-| Cold start | 2–5s | 1–3s | ~50ms |
-| LLM providers | 37 | 3 | 36 |
-| Messaging platforms | 21 | — | 20 |
-| Swarm orchestration | Partial | Partial | Native (TaskRouter, fan-out, round-robin) |
-| Cron scheduler | Native | — | Native |
-| MCP server | Native | — | Native |
-| Self-update | — | Native | Native |
-| Live trading | — | — | Native (Hyperliquid, fusion, WS) |
-| On-chain settlement | — | — | Native (ICP, ENSO, attestation loop) |
-| Kanban boards | — | — | Native (SQLite, WIP limits) |
-| Web dashboard | Native | — | Native (axum + htmx) |
-| Auto-optimization | — | — | Native (DSPy-like, pure Rust) |
-| Sandbox | Partial | Partial | Landlock + seccomp (kernel-level) |
-| Audit logging | — | — | OCSF (SIEM-compatible) |
-| Inference routing | — | — | Round-robin, fallback, affinity |
-| TTS | 16 providers | — | 3 providers |
-| Image generation | — | — | 2 providers |
-| Tests | — | — | 254 (0 fail) |
+| Language | Python | TypeScript | **Rust** |
+| Binary size | ~200MB | ~150MB | **12MB** |
+| Cold start | 2–5s | 1–3s | **~50ms** |
+| LLM providers | 37 | 3 | **36** |
+| Messaging platforms | 21 | — | **20** |
+| **Kernel sandbox** | Partial | Partial | **Landlock + seccomp** |
+| **Fault tolerance** | — | — | **Snapshot + rollback** |
+| **Verification pipeline** | — | — | **compile→lint→test→fuzz** |
+| **Task contracts** | — | — | **Upfront declarations + hash** |
+| **Experiential memory** | Partial | — | **Learn from failures, auto-apply** |
+| **Failure attribution** | — | — | **6 categories, 45+ patterns** |
+| **Governance toolkit** | Partial | — | **Risk scoring + approval queue** |
+| **Quality critic** | — | — | **Heuristic + LLM review** |
+| **Shared agent memory** | — | — | **Swarm blackboard** |
+| **Harness analytics** | — | — | **CLI: `arli harness analyze`** |
+| Swarm orchestration | Partial | Partial | **Native (TaskRouter, fan-out)** |
+| Cron scheduler | Native | — | **Native** |
+| MCP server | Native | — | **Native** |
+| Self-update | — | Native | **Native** |
+| **Live trading** | — | — | **Hyperliquid, WebSocket, cointegration** |
+| **On-chain settlement** | — | — | **ENSO/ICP, atomic verify+settle+release** |
+| Kanban boards | — | — | **SQLite, WIP limits** |
+| Web dashboard | Native | — | **axum + htmx** |
+| Audit logging | — | — | **OCSF (SIEM-compatible)** |
+| Tests | — | — | **448 (0 fail)** |
+
+---
+
+## Sandbox
+
+Kernel-level isolation. Three enforcement layers applied before the child process starts:
+
+1. **Seccomp BPF** — syscall whitelist. Blocks `ptrace`, `mount`, `reboot`, `kexec_load`, and 30+ other dangerous calls
+2. **Landlock** — filesystem access control at kernel level. Whitelist directories, deny everything else
+3. **Privilege drop** — `initgroups` → `setgid` → `setuid` before `exec`. Process runs as nobody (UID 65534)
+
+```rust
+let sandbox = Sandbox::from_policy(&policy)?;
+let output = sandbox.execute_isolated("cargo build --release")?;
+```
 
 ---
 
@@ -522,42 +446,20 @@ scheduler.add_job(CronJob {
 # ~/.arli/config.toml
 model = "deepseek-chat"
 max_iterations = 90
-tool_progress = "all"
-compression_threshold = 0.5
 
 [provider]
 name = "deepseek"
 api_key = "sk-..."
-
-[session_reset]
-mode = "inactivity_daily"
-inactivity_minutes = 1440
-daily_reset_hour = 4
-
-[search]
-provider = "duckduckgo"
-
-[memory]
-provider = "builtin"
-
-[terminal]
-backend = "local"
-
-[browser]
-provider = "local"
 
 [gateway]
 telegram_token = "..."
 
 [enso]
 icp_gateway = "https://icp0.io"
-registry_canister_id = "ENSO_REGISTRY_CANISTER_ID"
-contracts_canister_id = "7yv6j-ryaaa-aaaaa-qhheq-cai"
-arli_public_key = "..."
+contracts_canister_id = "..."
 
 [trading]
 hyperliquid_wallet = "..."
-hyperliquid_rpc = "https://api.hyperliquid.xyz"
 ```
 
 ---
@@ -565,19 +467,18 @@ hyperliquid_rpc = "https://api.hyperliquid.xyz"
 ## Install
 
 ```bash
-# One-liner (Linux / macOS)
+# One-liner
 curl -fsSL https://raw.githubusercontent.com/ARLI-Research/arli/main/install.sh | bash
 
 # From source
 git clone https://github.com/ARLI-Research/arli
 cd arli && cargo build --release
-./target/release/arli setup
 ```
 
 ## Tests
 
 ```bash
-cargo test -p arli-core       # 213 tests, 0 fail
+cargo test -p arli-core       # 448 tests, 0 fail
 cargo test --workspace        # all crates
 ```
 

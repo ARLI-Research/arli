@@ -135,6 +135,10 @@ enum Commands {
     #[command(subcommand)]
     Brokering(BrokeringCmd),
 
+    /// Analyze harness telemetry and experiential memory
+    #[command(subcommand)]
+    Harness(HarnessCmd),
+
     /// Start the inference brokering API server
     Api {
         /// Port to listen on
@@ -165,6 +169,12 @@ enum GatewayCmd {
         #[arg(short, long, default_value = "20")]
         lines: usize,
     },
+}
+
+#[derive(Subcommand)]
+enum HarnessCmd {
+    /// Analyze harness telemetry and experiential memory
+    Analyze,
 }
 
 #[derive(Subcommand)]
@@ -2238,6 +2248,15 @@ async fn main() -> anyhow::Result<()> {
 
         Commands::Brokering(cmd) => {
             run_brokering(cmd)?;
+        }
+
+        Commands::Harness(cmd) => match cmd {
+            HarnessCmd::Analyze => {
+                use arli_core::harness_analytics::HarnessAnalyzer;
+                let analyzer = HarnessAnalyzer::default();
+                let report = analyzer.analyze();
+                println!("{}", report.format_text());
+            }
         }
 
         Commands::Api { port } => {

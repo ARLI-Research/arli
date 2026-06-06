@@ -15,6 +15,7 @@ pub mod dashboard;
 pub mod enso;
 pub mod error;
 pub mod guardrail;
+pub mod harness_analytics;
 pub mod harness_telemetry;
 pub mod hashline;
 pub mod health;

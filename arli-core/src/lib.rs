@@ -33,6 +33,7 @@ pub mod profiles;
 pub mod providers;
 pub mod safety;
 pub mod sandbox;
+pub mod sandbox_profile;
 pub mod session;
 pub mod skill_hub;
 pub mod skill_loader;

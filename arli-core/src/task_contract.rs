@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 
+use crate::sandbox_profile::{resolve_profile, SandboxProfile};
+
 // ============================================================================
 // AUTO-DISCOVERED CHECKS
 // ============================================================================
@@ -26,7 +28,10 @@ const KNOWN_TEST_COMMANDS: &[(&str, &[&str])] = &[
     ("setup.cfg", &["pytest"]),
     ("tox.ini", &["tox"]),
     ("go.mod", &["go test ./...", "go vet ./..."]),
-    ("CMakeLists.txt", &["cmake --build build && ctest --test-dir build"]),
+    (
+        "CMakeLists.txt",
+        &["cmake --build build && ctest --test-dir build"],
+    ),
 ];
 
 // ============================================================================
@@ -104,6 +109,15 @@ impl TaskContract {
         }
 
         self.success_checks.len() - before
+    }
+
+    /// Resolve the sandbox policy to a hierarchical profile.
+    ///
+    /// Uses `crate::sandbox_profile::resolve_profile()` which handles
+    /// simple names ("build"), prefixed forms ("enso-build-v1"), and
+    /// defaults to `Build` for None or unknown policies.
+    pub fn resolve_sandbox_profile(&self) -> SandboxProfile {
+        resolve_profile(self.sandbox_policy.as_deref())
     }
 }
 
@@ -232,7 +246,9 @@ mod tests {
         let added = c.discover_checks(&tmp);
         assert!(added >= 2);
         assert!(c.success_checks.contains(&"cargo test".to_string()));
-        assert!(c.success_checks.contains(&"cargo clippy -- -D warnings".to_string()));
+        assert!(c
+            .success_checks
+            .contains(&"cargo clippy -- -D warnings".to_string()));
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
@@ -254,7 +270,10 @@ mod tests {
         let added = c.discover_checks(&tmp);
         assert!(added >= 1); // clippy added, but not duplicate cargo test
         assert_eq!(
-            c.success_checks.iter().filter(|s| *s == "cargo test").count(),
+            c.success_checks
+                .iter()
+                .filter(|s| *s == "cargo test")
+                .count(),
             1
         );
 

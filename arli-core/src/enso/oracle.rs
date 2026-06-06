@@ -103,6 +103,9 @@ pub struct EnsoOracle {
     task_states: std::collections::HashMap<String, crate::task_state::TaskState>,
     /// Workspace root for fault-tolerant snapshots.
     workspace_root: Option<std::path::PathBuf>,
+    /// Verification pipeline (compile→lint→test→fuzz) to run before attestation.
+    /// When set, the pipeline must pass all required steps for attestation to proceed.
+    verification_pipeline: Option<crate::verification_pipeline::VerificationPipeline>,
 }
 
 #[cfg(feature = "enso")]
@@ -138,6 +141,7 @@ impl EnsoOracle {
             db,
             task_states: std::collections::HashMap::new(),
             workspace_root: None,
+            verification_pipeline: None,
         }
     }
 
@@ -226,10 +230,7 @@ impl EnsoOracle {
                 let result = self.process_contract_by_id(&contract_id).await;
 
                 // Find the job index to update
-                let idx = self
-                    .jobs
-                    .iter()
-                    .position(|j| j.contract_id == contract_id);
+                let idx = self.jobs.iter().position(|j| j.contract_id == contract_id);
                 if let Some(idx) = idx {
                     match result {
                         Ok(OracleResult::Attested) => {
@@ -253,9 +254,9 @@ impl EnsoOracle {
                             );
                             tokio::time::sleep(delay).await;
                         }
-                    }  // close match
-                }      // close if let
-            }          // close for contract_id
+                    } // close match
+                } // close if let
+            } // close for contract_id
 
             if self
                 .jobs
@@ -289,19 +290,28 @@ impl EnsoOracle {
         self.workspace_root = Some(path);
     }
 
+    /// Set a verification pipeline to run before attestation.
+    ///
+    /// When set, `process_contract_by_id()` runs compile→lint→test→fuzz
+    /// and blocks attestation if any required step fails.
+    /// Pass `None` to disable verification.
+    pub fn set_verification_pipeline(
+        &mut self,
+        pipeline: Option<crate::verification_pipeline::VerificationPipeline>,
+    ) {
+        self.verification_pipeline = pipeline;
+    }
+
     /// Process a single contract by ID: build attestation, sign, submit payment atomically.
     async fn process_contract_by_id(&mut self, contract_id: &str) -> Result<OracleResult, String> {
         // --- Shared Harness State (§4.3): load or create task state ---
-        let mut task_state = self
-            .task_states
-            .remove(contract_id)
-            .unwrap_or_else(|| {
-                crate::task_state::TaskState::new(
-                    contract_id,
-                    &self.agent_id,
-                    &format!("ENSO contract {}", contract_id),
-                )
-            });
+        let mut task_state = self.task_states.remove(contract_id).unwrap_or_else(|| {
+            crate::task_state::TaskState::new(
+                contract_id,
+                &self.agent_id,
+                &format!("ENSO contract {}", contract_id),
+            )
+        });
 
         task_state.increment_attempts();
         task_state.transition_to(crate::task_state::TaskPhase::Executing);
@@ -314,13 +324,76 @@ impl EnsoOracle {
                     Some(snap)
                 }
                 Err(e) => {
-                    tracing::warn!("Workspace snapshot failed ({}), continuing without rollback safety", e);
+                    tracing::warn!(
+                        "Workspace snapshot failed ({}), continuing without rollback safety",
+                        e
+                    );
                     None
                 }
             }
         } else {
             None
         };
+
+        // --- Verification Pipeline: compile→lint→test→fuzz before attestation ---
+        if let Some(ref pipeline) = self.verification_pipeline {
+            if let Some(ref ws_root) = self.workspace_root {
+                tracing::info!(
+                    "Running verification pipeline for {} in {}",
+                    contract_id,
+                    ws_root.display()
+                );
+                let vr_result = pipeline.run(ws_root);
+
+                // Update task state with verification results
+                task_state.transition_to(crate::task_state::TaskPhase::Verifying);
+                for step_result in &vr_result.steps {
+                    task_state.add_check(
+                        &format!("verify_{}", step_result.step.name()),
+                        step_result.passed,
+                        Some(step_result.exit_code),
+                        Some(format!(
+                            "duration={}ms, passed={}/{}",
+                            step_result.duration_ms,
+                            step_result.commands_passed,
+                            step_result.commands_count
+                        )),
+                    );
+                }
+                let vr_json = serde_json::to_string(&vr_result).unwrap_or_default();
+                task_state.add_artifact(
+                    "verification_pipeline_result.json",
+                    vr_json.len() as u64,
+                    None,
+                );
+
+                if !vr_result.all_required_passed {
+                    let failed = vr_result.failed_steps.join(", ");
+                    let msg = format!(
+                        "Verification pipeline FAILED: {}. Summary: {}",
+                        failed, vr_result.summary
+                    );
+                    tracing::warn!("{}", msg);
+                    task_state.add_error(&msg);
+                    task_state.transition_to(crate::task_state::TaskPhase::Failed);
+                    let _ = task_state.save();
+                    self.task_states.insert(contract_id.to_string(), task_state);
+
+                    // Rollback workspace on verification failure
+                    if let Some(snap) = snapshot {
+                        let _ = snap.rollback();
+                    }
+
+                    return Err(msg);
+                }
+
+                tracing::info!(
+                    "Verification pipeline PASSED for {}: {}",
+                    contract_id,
+                    vr_result.summary
+                );
+            }
+        }
 
         let keypair = self.keypair.as_ref().unwrap();
 

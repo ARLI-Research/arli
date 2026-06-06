@@ -34,6 +34,7 @@ pub mod providers;
 pub mod safety;
 pub mod sandbox;
 pub mod sandbox_profile;
+pub mod verification_pipeline;
 pub mod session;
 pub mod skill_hub;
 pub mod skill_loader;

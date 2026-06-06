@@ -112,6 +112,9 @@ pub struct Agent {
     /// Rolling window of last N tool names for sequence detection
     last_tool_names: Vec<String>,
 
+    /// Output compactor — trims verbose tool outputs before context injection (§3.2.6)
+    compactor: crate::tool_compaction::ToolOutputCompactor,
+
     /// Time-traveling stream rules (TTSR) — regex-based response filtering
     stream_rules: crate::stream_rules::StreamRules,
 
@@ -159,6 +162,7 @@ impl Agent {
             tool_history: Vec::new(),
             tool_sequences: HashMap::new(),
             last_tool_names: Vec::new(),
+            compactor: crate::tool_compaction::ToolOutputCompactor::default(),
             stream_rules: crate::stream_rules::StreamRules::default(),
             brokering,
             tenant_id,
@@ -805,7 +809,27 @@ Try again in {} seconds.",
                                 && !result_content.starts_with("RATE LIMITED"),
                         ));
 
-                        let tool_result = ToolResult::new(tc.id.clone(), result_content);
+                        // Compact tool output before injecting into context (§3.2.6).
+                        // Keeps full output on disk, trims context to errors + summary.
+                        let compacted = self.compactor.compact(
+                            &tc.function.name,
+                            &result_content,
+                            None, // exit_code not available at this level
+                        );
+                        if let Some(ref path) = compacted.full_output_path {
+                            tracing::debug!(
+                                tool = %tc.function.name,
+                                original = compacted.original_size,
+                                compact = compacted.compact_size,
+                                ratio = compacted.compression_ratio,
+                                path = %path.display(),
+                                "Compacted tool output"
+                            );
+                        }
+
+                        let context_content = compacted.compact_text;
+
+                        let tool_result = ToolResult::new(tc.id.clone(), context_content);
                         let result_msg = tool_result.as_message();
                         self.save_message(&result_msg);
                         self.messages.push(result_msg);

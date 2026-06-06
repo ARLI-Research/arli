@@ -41,6 +41,7 @@ pub mod stream_rules;
 pub mod swarm;
 pub mod task_contract;
 pub mod telemetry;
+pub mod tool_compaction;
 pub mod tools;
 pub mod webhooks;
 pub mod x402;

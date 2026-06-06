@@ -1,5 +1,5 @@
-pub mod agent_governance;
 pub mod agent;
+pub mod agent_governance;
 pub mod ast_language;
 pub mod attestation;
 pub mod audit;
@@ -14,6 +14,7 @@ pub mod cron;
 pub mod dashboard;
 pub mod enso;
 pub mod error;
+pub mod failure_attribution;
 pub mod guardrail;
 pub mod harness_analytics;
 pub mod harness_telemetry;

@@ -375,6 +375,22 @@ impl EnsoOracle {
                     );
                     tracing::warn!("{}", msg);
                     task_state.add_error(&msg);
+
+                    // --- Failure Attribution: verification failure ---
+                    let attribution = crate::failure_attribution::classify(&msg);
+                    task_state.add_error(&format!(
+                        "Failure attribution: {} (confidence={:.0}%, pattern='{}')",
+                        attribution.category.name(),
+                        attribution.confidence * 100.0,
+                        attribution.matched_pattern,
+                    ));
+                    tracing::warn!(
+                        "Failure attribution for {}: {:?} (retryable={})",
+                        contract_id,
+                        attribution.category,
+                        attribution.category.is_retryable(),
+                    );
+
                     task_state.transition_to(crate::task_state::TaskPhase::Failed);
                     let _ = task_state.save();
                     self.task_states.insert(contract_id.to_string(), task_state);
@@ -489,6 +505,23 @@ impl EnsoOracle {
             SettlementStatus::Disputed => {
                 task_state.add_error(&result.message);
                 task_state.add_check("enso_settlement", false, None, Some(result.message.clone()));
+
+                // --- Failure Attribution: classify why ENSO rejected ---
+                let attribution =
+                    crate::failure_attribution::classify(&result.message);
+                task_state.add_error(&format!(
+                    "Failure attribution: {} (confidence={:.0}%, pattern='{}')",
+                    attribution.category.name(),
+                    attribution.confidence * 100.0,
+                    attribution.matched_pattern,
+                ));
+                tracing::warn!(
+                    "Failure attribution for {}: {:?} (retryable={})",
+                    contract_id,
+                    attribution.category,
+                    attribution.category.is_retryable(),
+                );
+
                 let _ = task_state.save();
                 self.task_states.insert(contract_id.to_string(), task_state);
 

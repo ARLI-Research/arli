@@ -40,6 +40,7 @@ pub mod skills;
 pub mod stream_rules;
 pub mod swarm;
 pub mod task_contract;
+pub mod task_state;
 pub mod telemetry;
 pub mod tool_compaction;
 pub mod tools;

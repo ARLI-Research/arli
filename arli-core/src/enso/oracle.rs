@@ -99,6 +99,8 @@ pub struct EnsoOracle {
     running: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// SQLite connection for run_id ↔ contract_id persistence
     db: Option<rusqlite::Connection>,
+    /// Shared harness state — per-contract execution trail for ENSO visibility (§4.3)
+    task_states: std::collections::HashMap<String, crate::task_state::TaskState>,
 }
 
 #[cfg(feature = "enso")]
@@ -132,6 +134,7 @@ impl EnsoOracle {
             sandbox_config_hash,
             running: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             db,
+            task_states: std::collections::HashMap::new(),
         }
     }
 
@@ -208,44 +211,48 @@ impl EnsoOracle {
         let mut attested_count = 0;
 
         while self.running.load(std::sync::atomic::Ordering::Relaxed) {
-            // Collect pending job indices to avoid borrow conflict
-            let pending: Vec<usize> = self
+            // Collect pending contract IDs to avoid borrow conflict with &mut self
+            let pending_contracts: Vec<String> = self
                 .jobs
                 .iter()
-                .enumerate()
-                .filter(|(_, j)| !j.attested && j.failures < MAX_RETRIES)
-                .map(|(i, _)| i)
+                .filter(|j| !j.attested && j.failures < MAX_RETRIES)
+                .map(|j| j.contract_id.clone())
                 .collect();
 
-            for idx in pending {
-                let result = self
-                    .process_contract_by_id(&self.jobs[idx].contract_id)
-                    .await;
+            for contract_id in pending_contracts {
+                let result = self.process_contract_by_id(&contract_id).await;
 
-                match result {
-                    Ok(OracleResult::Attested) => {
-                        self.jobs[idx].attested = true;
-                        attested_count += 1;
-                        tracing::info!(
-                            "Oracle: contract {} attested OK",
-                            self.jobs[idx].contract_id
-                        );
-                    }
-                    Err(e) => {
-                        self.jobs[idx].failures += 1;
-                        let delay = backoff_delay(self.jobs[idx].failures);
-                        tracing::error!(
-                            "Oracle: contract {} attempt {}/{} failed: {}. Backoff: {:?}",
-                            self.jobs[idx].contract_id,
-                            self.jobs[idx].failures,
-                            MAX_RETRIES,
-                            e,
-                            delay,
-                        );
-                        tokio::time::sleep(delay).await;
-                    }
-                }
-            }
+                // Find the job index to update
+                let idx = self
+                    .jobs
+                    .iter()
+                    .position(|j| j.contract_id == contract_id);
+                if let Some(idx) = idx {
+                    match result {
+                        Ok(OracleResult::Attested) => {
+                            self.jobs[idx].attested = true;
+                            attested_count += 1;
+                            tracing::info!(
+                                "Oracle: contract {} attested OK",
+                                self.jobs[idx].contract_id
+                            );
+                        }
+                        Err(e) => {
+                            self.jobs[idx].failures += 1;
+                            let delay = backoff_delay(self.jobs[idx].failures);
+                            tracing::error!(
+                                "Oracle: contract {} attempt {}/{} failed: {}. Backoff: {:?}",
+                                self.jobs[idx].contract_id,
+                                self.jobs[idx].failures,
+                                MAX_RETRIES,
+                                e,
+                                delay,
+                            );
+                            tokio::time::sleep(delay).await;
+                        }
+                    }  // close match
+                }      // close if let
+            }          // close for contract_id
 
             if self
                 .jobs
@@ -273,7 +280,22 @@ impl EnsoOracle {
     }
 
     /// Process a single contract by ID: build attestation, sign, submit payment atomically.
-    async fn process_contract_by_id(&self, contract_id: &str) -> Result<OracleResult, String> {
+    async fn process_contract_by_id(&mut self, contract_id: &str) -> Result<OracleResult, String> {
+        // --- Shared Harness State (§4.3): load or create task state ---
+        let mut task_state = self
+            .task_states
+            .remove(contract_id)
+            .unwrap_or_else(|| {
+                crate::task_state::TaskState::new(
+                    contract_id,
+                    &self.agent_id,
+                    &format!("ENSO contract {}", contract_id),
+                )
+            });
+
+        task_state.increment_attempts();
+        task_state.transition_to(crate::task_state::TaskPhase::Executing);
+
         let keypair = self.keypair.as_ref().unwrap();
 
         let builder =
@@ -328,6 +350,18 @@ impl EnsoOracle {
             SettlementStatus::Verified | SettlementStatus::Settled => {
                 crate::metrics::Metrics::global().inc_attestations();
 
+                // --- Update shared harness state ---
+                let run_id_val = format!("oracle-{}", contract_id);
+                task_state.mark_attested(&run_id_val);
+                if result.tx_id.is_some() {
+                    task_state.mark_settled(result.tx_id.as_ref().unwrap());
+                }
+                task_state.add_check("enso_settlement", true, None, Some(result.message.clone()));
+                if let Err(e) = task_state.save() {
+                    tracing::warn!("Failed to save task state for {}: {}", contract_id, e);
+                }
+                self.task_states.insert(contract_id.to_string(), task_state);
+
                 // Persist run_id ↔ contract_id for traceability
                 let run_id = format!("oracle-{}", contract_id);
                 self.save_attestation_mapping(
@@ -347,8 +381,19 @@ impl EnsoOracle {
                 }
                 Ok(OracleResult::Attested)
             }
-            SettlementStatus::Disputed => Err(format!("Disputed: {}", result.message)),
-            SettlementStatus::Pending => Err("Pending — may need admin approval".into()),
+            SettlementStatus::Disputed => {
+                task_state.add_error(&result.message);
+                task_state.add_check("enso_settlement", false, None, Some(result.message.clone()));
+                let _ = task_state.save();
+                self.task_states.insert(contract_id.to_string(), task_state);
+                Err(format!("Disputed: {}", result.message))
+            }
+            SettlementStatus::Pending => {
+                task_state.add_error(&format!("Pending: {}", result.message));
+                let _ = task_state.save();
+                self.task_states.insert(contract_id.to_string(), task_state);
+                Err("Pending — may need admin approval".into())
+            }
         }
     }
 }

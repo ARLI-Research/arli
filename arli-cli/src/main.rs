@@ -372,7 +372,7 @@ enum EnsoCmd {
         #[arg(long, default_value = "https://icp0.io")]
         icp_gateway: String,
         /// Registry canister ID
-        #[arg(long)] 
+        #[arg(long)]
         registry: Option<String>,
         /// Contracts canister ID
         #[arg(long)]
@@ -2856,6 +2856,7 @@ agent_name = "{name}"
                 true,
                 true,
                 65534,
+                None,
             );
 
             let attestation_json = serde_json::to_string(&attestation)?;

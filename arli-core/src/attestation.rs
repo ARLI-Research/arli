@@ -56,6 +56,13 @@ pub struct ArliAttestation {
     /// UID the process ran under (65534 = nobody)
     pub uid: u32,
 
+    /// Optional SHA-256 of the TaskContract this execution fulfilled.
+    ///
+    /// When present, proves the agent declared its work scope upfront
+    /// and ENSO can verify the contract hash against expected artifacts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_contract_hash: Option<String>,
+
     /// ed25519 signature over SHA-256 of attestation fields
     pub signature: String,
 
@@ -69,6 +76,7 @@ impl ArliAttestation {
     /// Covers: run_id || job_id || timestamp_ns || ocsf_event_hash
     ///       || sandbox_config_hash || arli_binary_hash
     ///       || landlock_enforced || seccomp_enforced || uid
+    ///       || task_contract_hash (if present)
     ///
     /// This ensures the signature cannot be replayed for a different job
     /// or at a different time, even with the same sandbox config.
@@ -91,6 +99,13 @@ impl ArliAttestation {
         hasher.update(&[self.seccomp_enforced as u8]);
         hasher.update(b"|");
         hasher.update(self.uid.to_le_bytes());
+        // Task contract hash — if present, binds the execution to a specific
+        // declared work scope. Prevents re-attesting the same sandbox run
+        // for a different set of promised outputs.
+        if let Some(ref contract_hash) = self.task_contract_hash {
+            hasher.update(b"|");
+            hasher.update(contract_hash.as_bytes());
+        }
         hasher.finalize().to_vec()
     }
 
@@ -265,6 +280,7 @@ impl AttestationBuilder {
         landlock_enforced: bool,
         seccomp_enforced: bool,
         uid: u32,
+        task_contract_hash: Option<String>,
     ) -> ArliAttestation {
         let ocsf_event_hash = hex::encode(Sha256::digest(ocsf_event_json.as_bytes()));
         let timestamp_ns = std::time::SystemTime::now()
@@ -284,6 +300,7 @@ impl AttestationBuilder {
             landlock_enforced,
             seccomp_enforced,
             uid,
+            task_contract_hash,
             signature: String::new(),
             public_key: String::new(),
         };
@@ -320,6 +337,7 @@ mod tests {
             landlock_enforced: true,
             seccomp_enforced: true,
             uid: 65534,
+            task_contract_hash: None,
             signature: String::new(),
             public_key: String::new(),
         }
@@ -445,6 +463,7 @@ mod tests {
             true,
             true,
             65534,
+            Some("sha256:contract-abc123".into()),
         );
 
         assert_eq!(att.run_id, "run-001");
@@ -455,6 +474,90 @@ mod tests {
         assert_eq!(att.arli_binary_hash, "sha256:binary-v1");
         assert!(!att.ocsf_event_hash.is_empty());
         assert!(!att.signature.is_empty());
+        assert_eq!(
+            att.task_contract_hash,
+            Some("sha256:contract-abc123".into())
+        );
         assert!(att.verify());
+    }
+
+    #[test]
+    fn test_attestation_without_contract_hash() {
+        let kp = ArliKeypair::generate();
+        let builder = AttestationBuilder::new(kp, "sha256:binary-v1".into());
+
+        let att = builder.build(
+            "run-002".into(),
+            "agent-abc".into(),
+            "job-xyz".into(),
+            r#"{"event":"test"}"#,
+            None,
+            "sha256:policy-v1".into(),
+            true,
+            true,
+            65534,
+            None,
+        );
+
+        assert_eq!(att.task_contract_hash, None);
+        assert!(att.verify());
+    }
+
+    #[test]
+    fn test_contract_hash_changes_message_hash() {
+        let kp = ArliKeypair::generate();
+        let builder = AttestationBuilder::new(kp, "sha256:binary-v1".into());
+
+        let att1 = builder.build(
+            "run-003".into(),
+            "agent-abc".into(),
+            "job-xyz".into(),
+            r#"{"event":"test"}"#,
+            None,
+            "sha256:policy-v1".into(),
+            true,
+            true,
+            65534,
+            Some("sha256:contract-A".into()),
+        );
+
+        let att2 = builder.build(
+            "run-003".into(),
+            "agent-abc".into(),
+            "job-xyz".into(),
+            r#"{"event":"test"}"#,
+            None,
+            "sha256:policy-v1".into(),
+            true,
+            true,
+            65534,
+            Some("sha256:contract-B".into()),
+        );
+
+        assert_ne!(att1.message_hash(), att2.message_hash());
+    }
+
+    #[test]
+    fn test_contract_hash_tamper_rejection() {
+        let kp = ArliKeypair::generate();
+        let builder = AttestationBuilder::new(kp, "sha256:binary-v1".into());
+
+        let mut att = builder.build(
+            "run-004".into(),
+            "agent-abc".into(),
+            "job-xyz".into(),
+            r#"{"event":"test"}"#,
+            None,
+            "sha256:policy-v1".into(),
+            true,
+            true,
+            65534,
+            Some("sha256:contract-A".into()),
+        );
+        assert!(att.verify());
+
+        // Tamper with contract hash
+        att.task_contract_hash = Some("sha256:contract-evil".into());
+        assert!(!att.verify());
     }
 }

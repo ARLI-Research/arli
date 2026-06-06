@@ -150,22 +150,35 @@ impl EnsoOracle {
                         tx_id TEXT,
                         status TEXT NOT NULL
                     );
-                    CREATE INDEX IF NOT EXISTS idx_att_contract ON attestations(contract_id);"
+                    CREATE INDEX IF NOT EXISTS idx_att_contract ON attestations(contract_id);",
                 );
                 tracing::info!("Oracle DB initialized at {}", db_path.display());
                 Some(conn)
             }
             Err(e) => {
-                tracing::warn!("Oracle DB unavailable ({}), run_id mapping not persisted", e);
+                tracing::warn!(
+                    "Oracle DB unavailable ({}), run_id mapping not persisted",
+                    e
+                );
                 None
             }
         }
     }
 
     /// Persist run_id ↔ contract_id mapping after successful attestation.
-    fn save_attestation_mapping(&self, run_id: &str, contract_id: &str, ocsf_hash: &str, tx_id: Option<&str>) {
+    fn save_attestation_mapping(
+        &self,
+        run_id: &str,
+        contract_id: &str,
+        ocsf_hash: &str,
+        tx_id: Option<&str>,
+    ) {
         if let Some(ref db) = self.db {
-            let status = if tx_id.is_some() { "settled" } else { "verified" };
+            let status = if tx_id.is_some() {
+                "settled"
+            } else {
+                "verified"
+            };
             let _ = db.execute(
                 "INSERT OR REPLACE INTO attestations (run_id, contract_id, agent_id, ocsf_event_hash, attested_at, tx_id, status)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -205,13 +218,18 @@ impl EnsoOracle {
                 .collect();
 
             for idx in pending {
-                let result = self.process_contract_by_id(&self.jobs[idx].contract_id).await;
+                let result = self
+                    .process_contract_by_id(&self.jobs[idx].contract_id)
+                    .await;
 
                 match result {
                     Ok(OracleResult::Attested) => {
                         self.jobs[idx].attested = true;
                         attested_count += 1;
-                        tracing::info!("Oracle: contract {} attested OK", self.jobs[idx].contract_id);
+                        tracing::info!(
+                            "Oracle: contract {} attested OK",
+                            self.jobs[idx].contract_id
+                        );
                     }
                     Err(e) => {
                         self.jobs[idx].failures += 1;
@@ -282,6 +300,7 @@ impl EnsoOracle {
             true,
             true,
             65534,
+            None, // task_contract_hash — oracle can't know contract upfront
         );
 
         let attestation_json = serde_json::to_string(&attestation)

@@ -26,6 +26,7 @@ fn demo_real_attestation() {
         true,
         true,
         65534,
+        None,
     );
 
     assert!(att.verify());

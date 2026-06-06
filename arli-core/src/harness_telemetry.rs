@@ -50,6 +50,18 @@ pub struct HarnessTelemetryReport {
 
     /// Total retries across all task types.
     pub total_retries: u64,
+
+    /// Experiential memory lookups (find_fix calls).
+    #[serde(default)]
+    pub memory_lookups: u64,
+
+    /// Experiential memory hits (find_fix returned a fix).
+    #[serde(default)]
+    pub memory_hits: u64,
+
+    /// Memory hit rate (0.0–1.0).
+    #[serde(default)]
+    pub memory_hit_rate: f64,
 }
 
 // ============================================================================
@@ -71,6 +83,8 @@ struct HarnessTelemetryInner {
     tool_failures: HashMap<String, u64>,
     policy_violations: HashMap<String, u64>,
     task_retries: HashMap<String, u64>,
+    memory_lookups: u64,
+    memory_hits: u64,
 }
 
 impl HarnessTelemetry {
@@ -122,6 +136,37 @@ impl HarnessTelemetry {
             .or_insert(0) += 1;
     }
 
+    /// Record a memory lookup (find_fix call).
+    pub fn record_memory_lookup(&self) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.memory_lookups += 1;
+    }
+
+    /// Record a memory hit (find_fix returned a fix).
+    pub fn record_memory_hit(&self) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.memory_hits += 1;
+    }
+
+    /// Record a memory lookup with hit/miss in one lock.
+    pub fn record_memory_lookup_result(&self, hit: bool) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.memory_lookups += 1;
+        if hit {
+            inner.memory_hits += 1;
+        }
+    }
+
+    /// Memory hit rate (0.0–1.0).
+    pub fn memory_hit_rate(&self) -> f64 {
+        let inner = self.inner.lock().unwrap();
+        if inner.memory_lookups == 0 {
+            0.0
+        } else {
+            inner.memory_hits as f64 / inner.memory_lookups as f64
+        }
+    }
+
     // --- Reporting ---
 
     /// Generate a snapshot report of all telemetry data.
@@ -143,6 +188,13 @@ impl HarnessTelemetry {
             total_tool_calls,
             total_tool_failures,
             total_retries,
+            memory_lookups: inner.memory_lookups,
+            memory_hits: inner.memory_hits,
+            memory_hit_rate: if inner.memory_lookups > 0 {
+                inner.memory_hits as f64 / inner.memory_lookups as f64
+            } else {
+                0.0
+            },
         }
     }
 
@@ -192,6 +244,8 @@ impl HarnessTelemetry {
         inner.tool_failures.clear();
         inner.policy_violations.clear();
         inner.task_retries.clear();
+        inner.memory_lookups = 0;
+        inner.memory_hits = 0;
     }
 }
 

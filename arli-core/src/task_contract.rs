@@ -11,6 +11,25 @@ use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 
 // ============================================================================
+// AUTO-DISCOVERED CHECKS
+// ============================================================================
+
+/// Known test runner configurations for auto-discovery.
+const KNOWN_TEST_COMMANDS: &[(&str, &[&str])] = &[
+    // (marker file, [test commands])
+    ("Cargo.toml", &["cargo test", "cargo clippy -- -D warnings"]),
+    ("package.json", &["npm test"]),
+    ("pnpm-lock.yaml", &["pnpm test"]),
+    ("yarn.lock", &["yarn test"]),
+    ("Makefile", &["make test"]),
+    ("pyproject.toml", &["pytest", "ruff check ."]),
+    ("setup.cfg", &["pytest"]),
+    ("tox.ini", &["tox"]),
+    ("go.mod", &["go test ./...", "go vet ./..."]),
+    ("CMakeLists.txt", &["cmake --build build && ctest --test-dir build"]),
+];
+
+// ============================================================================
 // TASK CONTRACT
 // ============================================================================
 
@@ -60,6 +79,31 @@ impl TaskContract {
     /// Returns true if all validation checks pass.
     pub fn is_satisfied(&self, workspace_root: &PathBuf) -> bool {
         self.validate_artifacts(workspace_root).is_empty()
+    }
+
+    /// Auto-discover success checks from the workspace.
+    ///
+    /// Scans for known test runner config files (Cargo.toml, package.json, etc.)
+    /// and generates appropriate `success_checks` entries.
+    /// Appends to existing checks — never removes manual ones.
+    ///
+    /// From "Learning to generate unit tests for automated debugging" (COLM 2025):
+    /// if the user doesn't specify checks, the harness should discover them.
+    pub fn discover_checks(&mut self, workspace_root: &PathBuf) -> usize {
+        let before = self.success_checks.len();
+
+        for (marker, commands) in KNOWN_TEST_COMMANDS {
+            if workspace_root.join(marker).exists() {
+                for cmd in *commands {
+                    let cmd_str = cmd.to_string();
+                    if !self.success_checks.contains(&cmd_str) {
+                        self.success_checks.push(cmd_str);
+                    }
+                }
+            }
+        }
+
+        self.success_checks.len() - before
     }
 }
 
@@ -167,5 +211,73 @@ mod tests {
         let c2: TaskContract = serde_json::from_str(&json).unwrap();
         assert_eq!(c, c2);
         assert_eq!(c.hash(), c2.hash());
+    }
+
+    // --- Auto-discovery tests ---
+
+    #[test]
+    fn test_discover_checks_rust_project() {
+        let tmp = std::env::temp_dir().join("arli_test_rust_workspace");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("Cargo.toml"), "[package]\nname = \"test\"").unwrap();
+
+        let mut c = TaskContract {
+            goal: "fix rust bug".into(),
+            expected_artifacts: vec![],
+            success_checks: vec![],
+            sandbox_policy: None,
+        };
+
+        let added = c.discover_checks(&tmp);
+        assert!(added >= 2);
+        assert!(c.success_checks.contains(&"cargo test".to_string()));
+        assert!(c.success_checks.contains(&"cargo clippy -- -D warnings".to_string()));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_discover_checks_no_duplicates() {
+        let tmp = std::env::temp_dir().join("arli_test_dup_workspace");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("Cargo.toml"), "[package]").unwrap();
+
+        let mut c = TaskContract {
+            goal: "fix".into(),
+            expected_artifacts: vec![],
+            success_checks: vec!["cargo test".to_string()], // already present
+            sandbox_policy: None,
+        };
+
+        let added = c.discover_checks(&tmp);
+        assert!(added >= 1); // clippy added, but not duplicate cargo test
+        assert_eq!(
+            c.success_checks.iter().filter(|s| *s == "cargo test").count(),
+            1
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_discover_checks_empty_workspace() {
+        let tmp = std::env::temp_dir().join("arli_test_empty_workspace");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let mut c = TaskContract {
+            goal: "fix".into(),
+            expected_artifacts: vec![],
+            success_checks: vec![],
+            sandbox_policy: None,
+        };
+
+        let added = c.discover_checks(&tmp);
+        assert_eq!(added, 0);
+        assert!(c.success_checks.is_empty());
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

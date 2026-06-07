@@ -106,7 +106,10 @@ impl HarnessTelemetry {
     /// Record a tool failure.
     pub fn record_tool_failure(&self, tool_name: &str) {
         let mut inner = self.inner.lock().unwrap();
-        *inner.tool_failures.entry(tool_name.to_string()).or_insert(0) += 1;
+        *inner
+            .tool_failures
+            .entry(tool_name.to_string())
+            .or_insert(0) += 1;
     }
 
     /// Record both a call and a failure in one lock acquisition.
@@ -114,7 +117,10 @@ impl HarnessTelemetry {
         let mut inner = self.inner.lock().unwrap();
         *inner.tool_calls.entry(tool_name.to_string()).or_insert(0) += 1;
         if !success {
-            *inner.tool_failures.entry(tool_name.to_string()).or_insert(0) += 1;
+            *inner
+                .tool_failures
+                .entry(tool_name.to_string())
+                .or_insert(0) += 1;
         }
     }
 
@@ -130,10 +136,7 @@ impl HarnessTelemetry {
     /// Record a retry for a task type.
     pub fn record_retry(&self, task_type: &str) {
         let mut inner = self.inner.lock().unwrap();
-        *inner
-            .task_retries
-            .entry(task_type.to_string())
-            .or_insert(0) += 1;
+        *inner.task_retries.entry(task_type.to_string()).or_insert(0) += 1;
     }
 
     /// Record a memory lookup (find_fix call).
@@ -276,8 +279,7 @@ impl HarnessTelemetry {
         if !path.exists() {
             return Ok(Self::new());
         }
-        let data =
-            std::fs::read_to_string(path).map_err(|e| format!("read telemetry: {}", e))?;
+        let data = std::fs::read_to_string(path).map_err(|e| format!("read telemetry: {}", e))?;
         let report: HarnessTelemetryReport =
             serde_json::from_str(&data).map_err(|e| format!("parse telemetry: {}", e))?;
 

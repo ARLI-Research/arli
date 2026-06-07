@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod agent_governance;
+pub mod agent_profile;
 pub mod ast_language;
 pub mod attestation;
 pub mod audit;

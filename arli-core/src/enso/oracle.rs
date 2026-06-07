@@ -507,8 +507,7 @@ impl EnsoOracle {
                 task_state.add_check("enso_settlement", false, None, Some(result.message.clone()));
 
                 // --- Failure Attribution: classify why ENSO rejected ---
-                let attribution =
-                    crate::failure_attribution::classify(&result.message);
+                let attribution = crate::failure_attribution::classify(&result.message);
                 task_state.add_error(&format!(
                     "Failure attribution: {} (confidence={:.0}%, pattern='{}')",
                     attribution.category.name(),

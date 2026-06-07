@@ -185,7 +185,11 @@ async fn chat_completions(
     let api_key = match extract_bearer_token(&headers) {
         Some(k) => k,
         None => {
-            return json_error(StatusCode::UNAUTHORIZED, "invalid_request_error", "Missing Authorization header. Use: Bearer <api_key>");
+            return json_error(
+                StatusCode::UNAUTHORIZED,
+                "invalid_request_error",
+                "Missing Authorization header. Use: Bearer <api_key>",
+            );
         }
     };
 
@@ -226,7 +230,11 @@ async fn chat_completions(
             );
         }
         Err(BrokeringError::RateLimitExceeded { detail, .. }) => {
-            return json_error(StatusCode::TOO_MANY_REQUESTS, "rate_limit_exceeded", &detail);
+            return json_error(
+                StatusCode::TOO_MANY_REQUESTS,
+                "rate_limit_exceeded",
+                &detail,
+            );
         }
         Err(e) => {
             error!("Routing failed: {}", e);
@@ -284,17 +292,21 @@ async fn chat_completions(
             total_tokens: llm.total_tokens,
         },
     };
-    (StatusCode::OK, Json(serde_json::to_value(response).unwrap()))
+    (
+        StatusCode::OK,
+        Json(serde_json::to_value(response).unwrap()),
+    )
 }
 
-async fn get_usage(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> (StatusCode, Json<Value>) {
+async fn get_usage(State(state): State<AppState>, headers: HeaderMap) -> (StatusCode, Json<Value>) {
     let api_key = match extract_bearer_token(&headers) {
         Some(k) => k,
         None => {
-            return json_error(StatusCode::UNAUTHORIZED, "invalid_request_error", "Missing Authorization header");
+            return json_error(
+                StatusCode::UNAUTHORIZED,
+                "invalid_request_error",
+                "Missing Authorization header",
+            );
         }
     };
 
@@ -314,7 +326,11 @@ async fn get_usage(
         .expect("midnight is always valid")
         .and_utc();
 
-    match state.router.get_usage_tracker().get_usage(tenant.id, month_start, now) {
+    match state
+        .router
+        .get_usage_tracker()
+        .get_usage(tenant.id, month_start, now)
+    {
         Ok(summary) => {
             let response = UsageResponse {
                 tenant_name: tenant.name,
@@ -324,7 +340,10 @@ async fn get_usage(
                 total_tokens_out: summary.total_tokens_out,
                 total_cost_cents: summary.total_cost_cents,
             };
-            (StatusCode::OK, Json(serde_json::to_value(response).unwrap()))
+            (
+                StatusCode::OK,
+                Json(serde_json::to_value(response).unwrap()),
+            )
         }
         Err(e) => {
             error!("Usage query failed: {}", e);
@@ -343,7 +362,10 @@ async fn health() -> (StatusCode, Json<Value>) {
         version: env!("CARGO_PKG_VERSION").into(),
         timestamp: Utc::now().to_rfc3339(),
     };
-    (StatusCode::OK, Json(serde_json::to_value(response).unwrap()))
+    (
+        StatusCode::OK,
+        Json(serde_json::to_value(response).unwrap()),
+    )
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -460,11 +482,7 @@ fn estimate_cost(provider: &str, tokens_in: u64, tokens_out: u64) -> u64 {
 }
 
 /// Build a JSON error response with the proper status code.
-fn json_error(
-    status: StatusCode,
-    type_: &str,
-    message: &str,
-) -> (StatusCode, Json<Value>) {
+fn json_error(status: StatusCode, type_: &str, message: &str) -> (StatusCode, Json<Value>) {
     let body = json!({
         "error": {
             "message": message,

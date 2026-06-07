@@ -182,10 +182,8 @@ impl TaskState {
     /// Transition to a new phase, recording the timestamp.
     pub fn transition_to(&mut self, phase: TaskPhase) {
         self.phase = phase.clone();
-        self.phase_timestamps.insert(
-            phase.as_str().to_string(),
-            chrono::Utc::now().to_rfc3339(),
-        );
+        self.phase_timestamps
+            .insert(phase.as_str().to_string(), chrono::Utc::now().to_rfc3339());
     }
 
     /// Record a produced artifact.
@@ -198,7 +196,13 @@ impl TaskState {
     }
 
     /// Record a check result.
-    pub fn add_check(&mut self, check: &str, passed: bool, exit_code: Option<i32>, output: Option<String>) {
+    pub fn add_check(
+        &mut self,
+        check: &str,
+        passed: bool,
+        exit_code: Option<i32>,
+        output: Option<String>,
+    ) {
         self.check_results.push(CheckResult {
             check: check.to_string(),
             passed,
@@ -291,7 +295,9 @@ impl TaskState {
             return Ok(None);
         }
         let data = std::fs::read_to_string(&path).map_err(|e| format!("read task state: {}", e))?;
-        serde_json::from_str(&data).map(Some).map_err(|e| format!("parse task state: {}", e))
+        serde_json::from_str(&data)
+            .map(Some)
+            .map_err(|e| format!("parse task state: {}", e))
     }
 }
 
@@ -336,7 +342,12 @@ mod tests {
         ts.add_artifact("src/main.rs", 1024, None);
         ts.add_artifact("tests/test.rs", 512, Some("abc123".into()));
         ts.add_check("cargo test", true, Some(0), None);
-        ts.add_check("cargo clippy", false, Some(1), Some("warning: unused".into()));
+        ts.add_check(
+            "cargo clippy",
+            false,
+            Some(1),
+            Some("warning: unused".into()),
+        );
 
         assert_eq!(ts.artifacts.len(), 2);
         assert_eq!(ts.check_results.len(), 2);

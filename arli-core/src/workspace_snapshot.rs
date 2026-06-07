@@ -111,7 +111,13 @@ impl WorkspaceSnapshot {
     fn create_git_stash(path: &Path) -> Result<String, String> {
         // Stash everything including untracked files
         let output = Command::new("git")
-            .args(["stash", "push", "--include-untracked", "-m", "arli-fault-tolerance"])
+            .args([
+                "stash",
+                "push",
+                "--include-untracked",
+                "-m",
+                "arli-fault-tolerance",
+            ])
             .current_dir(path)
             .output()
             .map_err(|e| format!("git stash: {}", e))?;
@@ -174,13 +180,9 @@ impl WorkspaceSnapshot {
 
     fn create_tar(path: &Path) -> Result<PathBuf, String> {
         // Use unique subdirectory per workspace to avoid cross-test conflicts
-        let workspace_name = path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy();
+        let workspace_name = path.file_name().unwrap_or_default().to_string_lossy();
         let temp_dir = std::env::temp_dir().join(format!("arli_snapshots_{}", workspace_name));
-        std::fs::create_dir_all(&temp_dir)
-            .map_err(|e| format!("create snapshot dir: {}", e))?;
+        std::fs::create_dir_all(&temp_dir).map_err(|e| format!("create snapshot dir: {}", e))?;
 
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
         let tar_name = format!("arli_snapshot_{}.tar.gz", timestamp);
@@ -213,9 +215,7 @@ impl WorkspaceSnapshot {
                 .output();
         } else {
             // Remove all files except the snapshot
-            for entry in std::fs::read_dir(&self.path)
-                .map_err(|e| format!("read dir: {}", e))?
-            {
+            for entry in std::fs::read_dir(&self.path).map_err(|e| format!("read dir: {}", e))? {
                 let entry = entry.map_err(|e| format!("dir entry: {}", e))?;
                 let entry_path = entry.path();
                 if entry_path.is_dir() {

@@ -32,3 +32,6 @@ axum = "0.7"
 tower = "0.5"
 sha2 = "0.10"
 serde_json.workspace = true
+ed25519-dalek.workspace = true
+rand.workspace = true
+hex.workspace = true

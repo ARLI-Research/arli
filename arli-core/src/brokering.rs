@@ -60,7 +60,10 @@ pub struct CredentialPool {
 impl CredentialPool {
     /// Create pool from a map of provider → [keys].
     pub fn new(keys: HashMap<String, Vec<String>>) -> Self {
-        Self { keys, cursors: Mutex::new(HashMap::new()) }
+        Self {
+            keys,
+            cursors: Mutex::new(HashMap::new()),
+        }
     }
 
     /// Load wholesale keys from environment variables.
@@ -109,7 +112,10 @@ impl CredentialPool {
 
     /// Check if pool has keys for a provider.
     pub fn has_provider(&self, provider: &str) -> bool {
-        self.keys.get(provider).map(|v| !v.is_empty()).unwrap_or(false)
+        self.keys
+            .get(provider)
+            .map(|v| !v.is_empty())
+            .unwrap_or(false)
     }
 
     /// List all providers with keys in the pool.
@@ -125,7 +131,11 @@ impl CredentialPool {
 
 impl std::fmt::Debug for CredentialPool {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let providers: Vec<_> = self.keys.keys().map(|k| format!("{}({} keys)", k, self.keys[k].len())).collect();
+        let providers: Vec<_> = self
+            .keys
+            .keys()
+            .map(|k| format!("{}({} keys)", k, self.keys[k].len()))
+            .collect();
         f.debug_struct("CredentialPool")
             .field("providers", &providers)
             .finish()
@@ -139,7 +149,9 @@ impl BrokeringConfig {
         let pool = CredentialPool::from_env();
         self.wholesale_keys = pool.keys.clone();
         if self.wholesale_keys.is_empty() {
-            tracing::warn!("No wholesale API keys found. Set ARLI_WHOLESALE_<PROVIDER>_KEY env vars.");
+            tracing::warn!(
+                "No wholesale API keys found. Set ARLI_WHOLESALE_<PROVIDER>_KEY env vars."
+            );
         }
     }
 }
@@ -172,9 +184,15 @@ pub struct BrokeringConfig {
     pub wholesale_keys: HashMap<String, Vec<String>>,
 }
 
-fn default_margin() -> f64 { 0.15 }
-fn default_max_rpm() -> u32 { 60 }
-fn default_max_tpm() -> u32 { 200_000 }
+fn default_margin() -> f64 {
+    0.15
+}
+fn default_max_rpm() -> u32 {
+    60
+}
+fn default_max_tpm() -> u32 {
+    200_000
+}
 
 impl Default for BrokeringConfig {
     fn default() -> Self {
@@ -229,7 +247,9 @@ impl TenantManager {
                 created_at TEXT NOT NULL
             );",
         )?;
-        Ok(Self { db: Arc::new(Mutex::new(conn)) })
+        Ok(Self {
+            db: Arc::new(Mutex::new(conn)),
+        })
     }
 
     pub fn register_tenant(&self, name: &str, contact_email: &str) -> BrokeringResult<Uuid> {
@@ -240,7 +260,13 @@ impl TenantManager {
         db.execute(
             "INSERT INTO tenants (id, name, contact_email, api_key_hash, enabled, created_at)
              VALUES (?1, ?2, ?3, ?4, 1, ?5)",
-            params![id.to_string(), name, contact_email, api_key_hash, Utc::now().to_rfc3339()],
+            params![
+                id.to_string(),
+                name,
+                contact_email,
+                api_key_hash,
+                Utc::now().to_rfc3339()
+            ],
         )?;
         debug!(tenant_id = %id, tenant_name = name, "tenant registered");
         Ok(id)
@@ -265,18 +291,20 @@ impl TenantManager {
         let mut stmt = db.prepare(
             "SELECT id, name, contact_email, api_key_hash, enabled, created_at FROM tenants ORDER BY name",
         )?;
-        let tenants = stmt.query_map([], |row| {
-            Ok(TenantInfo {
-                id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
-                name: row.get(1)?,
-                contact_email: row.get(2)?,
-                api_key_hash: row.get(3)?,
-                enabled: row.get::<_, i32>(4)? != 0,
-                created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(5)?)
-                    .unwrap()
-                    .with_timezone(&Utc),
-            })
-        })?.collect::<std::result::Result<Vec<_>, _>>()?;
+        let tenants = stmt
+            .query_map([], |row| {
+                Ok(TenantInfo {
+                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+                    name: row.get(1)?,
+                    contact_email: row.get(2)?,
+                    api_key_hash: row.get(3)?,
+                    enabled: row.get::<_, i32>(4)? != 0,
+                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(5)?)
+                        .unwrap()
+                        .with_timezone(&Utc),
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(tenants)
     }
 
@@ -296,7 +324,8 @@ impl TenantManager {
                     .unwrap()
                     .with_timezone(&Utc),
             })
-        }).map_err(|_| BrokeringError::TenantNotFound(tenant_id))
+        })
+        .map_err(|_| BrokeringError::TenantNotFound(tenant_id))
     }
 
     pub fn enable_tenant(&self, tenant_id: Uuid) -> BrokeringResult<()> {
@@ -326,7 +355,9 @@ impl TenantManager {
 
 impl Clone for TenantManager {
     fn clone(&self) -> Self {
-        Self { db: Arc::clone(&self.db) }
+        Self {
+            db: Arc::clone(&self.db),
+        }
     }
 }
 
@@ -374,16 +405,27 @@ impl RateLimiter {
     }
 
     fn get_rate_limits(&self, tenant_name: &str) -> (u32, u32) {
-        let rpm = self.config.tenant_overrides.get(tenant_name)
+        let rpm = self
+            .config
+            .tenant_overrides
+            .get(tenant_name)
             .and_then(|o| o.max_rpm)
             .unwrap_or(self.config.default_max_rpm);
-        let tpm = self.config.tenant_overrides.get(tenant_name)
+        let tpm = self
+            .config
+            .tenant_overrides
+            .get(tenant_name)
             .and_then(|o| o.max_tpm)
             .unwrap_or(self.config.default_max_tpm);
         (rpm, tpm)
     }
 
-    pub fn check_rate(&self, tenant_id: Uuid, tenant_name: &str, estimated_tokens: u32) -> RateLimitResult {
+    pub fn check_rate(
+        &self,
+        tenant_id: Uuid,
+        tenant_name: &str,
+        estimated_tokens: u32,
+    ) -> RateLimitResult {
         let (rpm, tpm) = self.get_rate_limits(tenant_name);
         let mut buckets = self.buckets.lock().unwrap();
         Self::get_or_create_bucket(&mut buckets, tenant_id, rpm);
@@ -391,19 +433,26 @@ impl RateLimiter {
         let bucket = buckets.get_mut(&tenant_id).unwrap();
         let now = Utc::now();
         let elapsed = (now - bucket.last_refill).num_milliseconds() as f64 / 1000.0;
-        bucket.tokens = (bucket.tokens + elapsed * bucket.refill_rate_per_sec).min(bucket.max_tokens);
+        bucket.tokens =
+            (bucket.tokens + elapsed * bucket.refill_rate_per_sec).min(bucket.max_tokens);
         bucket.last_refill = now;
 
-        let cost = (1.0 + (estimated_tokens as f64 / tpm as f64) * bucket.max_tokens * 0.1).min(bucket.max_tokens);
+        let cost = (1.0 + (estimated_tokens as f64 / tpm as f64) * bucket.max_tokens * 0.1)
+            .min(bucket.max_tokens);
         let allowed = bucket.tokens >= cost;
         if allowed {
             bucket.tokens -= cost;
         }
 
         let remaining = bucket.tokens.floor() as u32;
-        let reset_at = now + chrono::Duration::seconds((bucket.max_tokens / bucket.refill_rate_per_sec) as i64);
+        let reset_at = now
+            + chrono::Duration::seconds((bucket.max_tokens / bucket.refill_rate_per_sec) as i64);
 
-        RateLimitResult { allowed, remaining, reset_at }
+        RateLimitResult {
+            allowed,
+            remaining,
+            reset_at,
+        }
     }
 }
 
@@ -463,12 +512,19 @@ impl UsageTracker {
             );
             CREATE INDEX IF NOT EXISTS idx_usage_tenant ON usage_records(tenant_id, recorded_at);",
         )?;
-        Ok(Self { db: Arc::new(Mutex::new(conn)) })
+        Ok(Self {
+            db: Arc::new(Mutex::new(conn)),
+        })
     }
 
     pub fn record_usage(
-        &self, tenant_id: Uuid, provider: &str, model: &str,
-        tokens_in: u64, tokens_out: u64, cost_cents: u64,
+        &self,
+        tenant_id: Uuid,
+        provider: &str,
+        model: &str,
+        tokens_in: u64,
+        tokens_out: u64,
+        cost_cents: u64,
     ) -> BrokeringResult<()> {
         let db = self.db.lock().unwrap();
         db.execute(
@@ -480,21 +536,34 @@ impl UsageTracker {
         Ok(())
     }
 
-    pub fn get_usage(&self, tenant_id: Uuid, from: DateTime<Utc>, to: DateTime<Utc>) -> BrokeringResult<UsageSummary> {
+    pub fn get_usage(
+        &self,
+        tenant_id: Uuid,
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+    ) -> BrokeringResult<UsageSummary> {
         let db = self.db.lock().unwrap();
         let sql = "SELECT COUNT(*), COALESCE(SUM(tokens_in),0), COALESCE(SUM(tokens_out),0), COALESCE(SUM(cost_cents),0) FROM usage_records WHERE tenant_id = ?1 AND recorded_at >= ?2 AND recorded_at <= ?3";
         let mut stmt = db.prepare(sql)?;
-        stmt.query_row(params![tenant_id.to_string(), from.to_rfc3339(), to.to_rfc3339()], |row| {
-            Ok(UsageSummary {
-                total_requests: row.get::<_, i64>(0)? as u64,
-                total_tokens_in: row.get::<_, i64>(1)? as u64,
-                total_tokens_out: row.get::<_, i64>(2)? as u64,
-                total_cost_cents: row.get::<_, i64>(3)? as u64,
-            })
-        }).map_err(Into::into)
+        stmt.query_row(
+            params![tenant_id.to_string(), from.to_rfc3339(), to.to_rfc3339()],
+            |row| {
+                Ok(UsageSummary {
+                    total_requests: row.get::<_, i64>(0)? as u64,
+                    total_tokens_in: row.get::<_, i64>(1)? as u64,
+                    total_tokens_out: row.get::<_, i64>(2)? as u64,
+                    total_cost_cents: row.get::<_, i64>(3)? as u64,
+                })
+            },
+        )
+        .map_err(Into::into)
     }
 
-    pub fn get_daily_usage(&self, tenant_id: Uuid, since: DateTime<Utc>) -> BrokeringResult<Vec<DailyUsage>> {
+    pub fn get_daily_usage(
+        &self,
+        tenant_id: Uuid,
+        since: DateTime<Utc>,
+    ) -> BrokeringResult<Vec<DailyUsage>> {
         let db = self.db.lock().unwrap();
         let sql = "SELECT date(recorded_at) as d, COUNT(*), COALESCE(SUM(tokens_in),0), COALESCE(SUM(tokens_out),0), COALESCE(SUM(cost_cents),0) FROM usage_records WHERE tenant_id = ?1 AND recorded_at >= ?2 GROUP BY d ORDER BY d ASC";
         let mut stmt = db.prepare(sql)?;
@@ -514,7 +583,9 @@ impl UsageTracker {
 
 impl Clone for UsageTracker {
     fn clone(&self) -> Self {
-        Self { db: Arc::clone(&self.db) }
+        Self {
+            db: Arc::clone(&self.db),
+        }
     }
 }
 
@@ -553,12 +624,23 @@ pub struct BillingReporter {
 }
 
 impl BillingReporter {
-    pub fn new(tracker: UsageTracker, tenant_manager: TenantManager, config: BrokeringConfig) -> Self {
-        Self { tracker, tenant_manager, config }
+    pub fn new(
+        tracker: UsageTracker,
+        tenant_manager: TenantManager,
+        config: BrokeringConfig,
+    ) -> Self {
+        Self {
+            tracker,
+            tenant_manager,
+            config,
+        }
     }
 
     pub fn generate_monthly_report(
-        &self, tenant_id: Uuid, year: i32, month: u32,
+        &self,
+        tenant_id: Uuid,
+        year: i32,
+        month: u32,
     ) -> BrokeringResult<MonthlyBillingReport> {
         let tenant = self.tenant_manager.get_tenant(tenant_id)?;
         let from: DateTime<Utc> = Utc.with_ymd_and_hms(year, month, 1, 0, 0, 0).unwrap();
@@ -572,27 +654,33 @@ impl BillingReporter {
         let db = self.tracker.db.lock().unwrap();
         let sql = "SELECT provider, COUNT(*), COALESCE(SUM(tokens_in),0), COALESCE(SUM(tokens_out),0), COALESCE(SUM(cost_cents),0) FROM usage_records WHERE tenant_id = ?1 AND recorded_at >= ?2 AND recorded_at <= ?3 GROUP BY provider ORDER BY provider";
         let mut stmt = db.prepare(sql)?;
-        let breakdown = stmt.query_map(
-            params![tenant_id.to_string(), from.to_rfc3339(), to.to_rfc3339()],
-            |row| {
-                let cost: i64 = row.get(4)?;
-                let cost_u64 = cost as u64;
-                let margin = (cost_u64 as f64 * (1.0 + self.config.margin_percent)) as u64;
-                Ok(ProviderBreakdown {
-                    provider: row.get(0)?,
-                    requests: row.get::<_, i64>(1)? as u64,
-                    tokens_in: row.get::<_, i64>(2)? as u64,
-                    tokens_out: row.get::<_, i64>(3)? as u64,
-                    cost_cents: cost_u64,
-                    with_margin_cents: margin,
-                })
-            },
-        )?.collect::<std::result::Result<Vec<_>, _>>()?;
+        let breakdown = stmt
+            .query_map(
+                params![tenant_id.to_string(), from.to_rfc3339(), to.to_rfc3339()],
+                |row| {
+                    let cost: i64 = row.get(4)?;
+                    let cost_u64 = cost as u64;
+                    let margin = (cost_u64 as f64 * (1.0 + self.config.margin_percent)) as u64;
+                    Ok(ProviderBreakdown {
+                        provider: row.get(0)?,
+                        requests: row.get::<_, i64>(1)? as u64,
+                        tokens_in: row.get::<_, i64>(2)? as u64,
+                        tokens_out: row.get::<_, i64>(3)? as u64,
+                        cost_cents: cost_u64,
+                        with_margin_cents: margin,
+                    })
+                },
+            )?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
 
-        let total_with_margin = (summary.total_cost_cents as f64 * (1.0 + self.config.margin_percent)) as u64;
+        let total_with_margin =
+            (summary.total_cost_cents as f64 * (1.0 + self.config.margin_percent)) as u64;
 
         Ok(MonthlyBillingReport {
-            tenant_id, tenant_name: tenant.name, year, month,
+            tenant_id,
+            tenant_name: tenant.name,
+            year,
+            month,
             total_requests: summary.total_requests,
             total_cost_cents: summary.total_cost_cents,
             total_with_margin_cents: total_with_margin,
@@ -632,7 +720,13 @@ impl BrokeringRouter {
         usage_tracker: Arc<UsageTracker>,
     ) -> Self {
         let credential_pool = CredentialPool::from_env();
-        Self { tenant_manager, rate_limiter, usage_tracker, inference: InferenceRouter::new(), credential_pool }
+        Self {
+            tenant_manager,
+            rate_limiter,
+            usage_tracker,
+            inference: InferenceRouter::new(),
+            credential_pool,
+        }
     }
 
     pub fn with_pool(
@@ -641,25 +735,38 @@ impl BrokeringRouter {
         usage_tracker: Arc<UsageTracker>,
         credential_pool: CredentialPool,
     ) -> Self {
-        Self { tenant_manager, rate_limiter, usage_tracker, inference: InferenceRouter::new(), credential_pool }
+        Self {
+            tenant_manager,
+            rate_limiter,
+            usage_tracker,
+            inference: InferenceRouter::new(),
+            credential_pool,
+        }
     }
 
     pub fn route(
-        &self, tenant_id: Uuid, provider_name: &str,
-        model: Option<&str>, estimated_tokens: u32,
+        &self,
+        tenant_id: Uuid,
+        provider_name: &str,
+        model: Option<&str>,
+        estimated_tokens: u32,
     ) -> BrokeringResult<InferenceRoute> {
         let tenant = self.tenant_manager.get_tenant(tenant_id)?;
         if !tenant.enabled {
             return Err(BrokeringError::TenantDisabled(tenant_id));
         }
-        let result = self.rate_limiter.check_rate(tenant_id, &tenant.name, estimated_tokens);
+        let result = self
+            .rate_limiter
+            .check_rate(tenant_id, &tenant.name, estimated_tokens);
         if !result.allowed {
             return Err(BrokeringError::RateLimitExceeded {
                 tenant_id,
                 detail: format!("try again after {}", result.reset_at),
             });
         }
-        let mut route = self.inference.resolve(provider_name, model)
+        let mut route = self
+            .inference
+            .resolve(provider_name, model)
             .ok_or_else(|| BrokeringError::Config(format!("unknown provider: {provider_name}")))?;
 
         // Inject wholesale API key from credential pool (overrides env var)
@@ -671,8 +778,12 @@ impl BrokeringRouter {
     }
 
     pub fn route_with_fallback(
-        &self, tenant_id: Uuid, primary: &str, fallbacks: &[&str],
-        model: Option<&str>, estimated_tokens: u32,
+        &self,
+        tenant_id: Uuid,
+        primary: &str,
+        fallbacks: &[&str],
+        model: Option<&str>,
+        estimated_tokens: u32,
     ) -> BrokeringResult<InferenceRoute> {
         let mut last_err = None;
         let all_providers = std::iter::once(&primary).chain(fallbacks.iter());
@@ -694,14 +805,25 @@ impl BrokeringRouter {
     }
 
     pub fn record_completion(
-        &self, tenant_id: Uuid, provider: &str, model: &str,
-        tokens_in: u64, tokens_out: u64, cost_cents: u64,
+        &self,
+        tenant_id: Uuid,
+        provider: &str,
+        model: &str,
+        tokens_in: u64,
+        tokens_out: u64,
+        cost_cents: u64,
     ) -> BrokeringResult<()> {
-        self.usage_tracker.record_usage(tenant_id, provider, model, tokens_in, tokens_out, cost_cents)
+        self.usage_tracker.record_usage(
+            tenant_id, provider, model, tokens_in, tokens_out, cost_cents,
+        )
     }
 
-    pub fn get_tenant_manager(&self) -> &TenantManager { &self.tenant_manager }
-    pub fn get_usage_tracker(&self) -> &UsageTracker { &self.usage_tracker }
+    pub fn get_tenant_manager(&self) -> &TenantManager {
+        &self.tenant_manager
+    }
+    pub fn get_usage_tracker(&self) -> &UsageTracker {
+        &self.usage_tracker
+    }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -716,7 +838,11 @@ mod tests {
 
     fn setup_db_path() -> (String, TempDir) {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("brokering.db").to_string_lossy().to_string();
+        let path = dir
+            .path()
+            .join("brokering.db")
+            .to_string_lossy()
+            .to_string();
         (path, dir)
     }
 
@@ -760,7 +886,9 @@ mod tests {
     #[test]
     fn test_api_key_rotation() {
         let (tm, _cfg, _dir) = setup();
-        let id = tm.register_tenant("rotate-me", "rotate@example.com").unwrap();
+        let id = tm
+            .register_tenant("rotate-me", "rotate@example.com")
+            .unwrap();
         let original = tm.get_tenant(id).unwrap().api_key_hash;
         let new_key = tm.rotate_api_key(id).unwrap();
         assert!(!new_key.is_empty());
@@ -791,7 +919,13 @@ mod tests {
     fn test_rate_limiter_per_tenant_override() {
         let (tm, mut cfg, _dir) = setup();
         cfg.default_max_rpm = 60;
-        cfg.tenant_overrides.insert("vip-tenant".into(), TenantRateLimitOverride { max_rpm: Some(1000), max_tpm: None });
+        cfg.tenant_overrides.insert(
+            "vip-tenant".into(),
+            TenantRateLimitOverride {
+                max_rpm: Some(1000),
+                max_tpm: None,
+            },
+        );
         let id = tm.register_tenant("vip-tenant", "vip@example.com").unwrap();
         let rl = RateLimiter::new(&cfg);
         let result = rl.check_rate(id, "vip-tenant", 1000);
@@ -805,8 +939,10 @@ mod tests {
         let (tm, _cfg, _dir2) = setup();
         let ut = UsageTracker::new(&path).unwrap();
         let id = tm.register_tenant("usage-co", "usage@example.com").unwrap();
-        ut.record_usage(id, "openai", "gpt-4o", 500, 200, 700).unwrap();
-        ut.record_usage(id, "deepseek", "deepseek-chat", 300, 100, 50).unwrap();
+        ut.record_usage(id, "openai", "gpt-4o", 500, 200, 700)
+            .unwrap();
+        ut.record_usage(id, "deepseek", "deepseek-chat", 300, 100, 50)
+            .unwrap();
         let from = Utc::now() - chrono::Duration::hours(1);
         let to = Utc::now() + chrono::Duration::hours(1);
         let summary = ut.get_usage(id, from, to).unwrap();
@@ -821,12 +957,17 @@ mod tests {
         let (tm, _cfg, _dir2) = setup();
         let ut = UsageTracker::new(&path).unwrap();
         let id = tm.register_tenant("daily-co", "daily@example.com").unwrap();
-        ut.record_usage(id, "openai", "gpt-4o", 100, 50, 30).unwrap();
-        ut.record_usage(id, "openai", "gpt-4o", 200, 100, 60).unwrap();
+        ut.record_usage(id, "openai", "gpt-4o", 100, 50, 30)
+            .unwrap();
+        ut.record_usage(id, "openai", "gpt-4o", 200, 100, 60)
+            .unwrap();
         let since = Utc::now() - chrono::Duration::hours(1);
         let daily = ut.get_daily_usage(id, since).unwrap();
         assert!(!daily.is_empty());
-        let today = daily.iter().find(|d| d.date == Utc::now().date_naive()).unwrap();
+        let today = daily
+            .iter()
+            .find(|d| d.date == Utc::now().date_naive())
+            .unwrap();
         assert_eq!(today.requests, 2);
         assert_eq!(today.cost_cents, 90);
     }
@@ -836,12 +977,18 @@ mod tests {
         let (path, _dir) = setup_db_path();
         let tm = TenantManager::new(&path).unwrap();
         let ut = UsageTracker::new(&path).unwrap();
-        let id = tm.register_tenant("billing-co", "billing@example.com").unwrap();
-        ut.record_usage(id, "openai", "gpt-4o", 1000, 500, 100).unwrap();
-        ut.record_usage(id, "deepseek", "deepseek-chat", 500, 200, 10).unwrap();
+        let id = tm
+            .register_tenant("billing-co", "billing@example.com")
+            .unwrap();
+        ut.record_usage(id, "openai", "gpt-4o", 1000, 500, 100)
+            .unwrap();
+        ut.record_usage(id, "deepseek", "deepseek-chat", 500, 200, 10)
+            .unwrap();
         let reporter = BillingReporter::new(ut, tm, BrokeringConfig::default());
         let now = Utc::now();
-        let report = reporter.generate_monthly_report(id, now.date_naive().year(), now.date_naive().month()).unwrap();
+        let report = reporter
+            .generate_monthly_report(id, now.date_naive().year(), now.date_naive().month())
+            .unwrap();
         assert_eq!(report.total_requests, 2);
         assert_eq!(report.total_cost_cents, 110);
         assert!(report.total_with_margin_cents > report.total_cost_cents);
@@ -854,7 +1001,9 @@ mod tests {
         let (path, _dir) = setup_db_path();
         let tm = TenantManager::new(&path).unwrap();
         let cfg = BrokeringConfig::default();
-        let id = tm.register_tenant("router-co", "router@example.com").unwrap();
+        let id = tm
+            .register_tenant("router-co", "router@example.com")
+            .unwrap();
         let rl = Arc::new(RateLimiter::new(&cfg));
         let ut = Arc::new(UsageTracker::new(&path).unwrap());
         let router = BrokeringRouter::new(tm, rl, ut);
@@ -867,7 +1016,9 @@ mod tests {
         let (path, _dir) = setup_db_path();
         let tm = TenantManager::new(&path).unwrap();
         let cfg = BrokeringConfig::default();
-        let id = tm.register_tenant("disabled-co", "disabled@example.com").unwrap();
+        let id = tm
+            .register_tenant("disabled-co", "disabled@example.com")
+            .unwrap();
         tm.disable_tenant(id).unwrap();
         let rl = Arc::new(RateLimiter::new(&cfg));
         let ut = Arc::new(UsageTracker::new(&path).unwrap());
@@ -885,8 +1036,13 @@ mod tests {
         let rl = Arc::new(RateLimiter::new(&cfg));
         let ut = Arc::new(UsageTracker::new(&path).unwrap());
         let router = BrokeringRouter::new(tm, rl, ut);
-        let err = router.route_with_fallback(id, "nope", &["also-nope"], None, 10).unwrap_err();
-        assert!(matches!(err, BrokeringError::Config(_)) || matches!(err, BrokeringError::AllProvidersExhausted(_)));
+        let err = router
+            .route_with_fallback(id, "nope", &["also-nope"], None, 10)
+            .unwrap_err();
+        assert!(
+            matches!(err, BrokeringError::Config(_))
+                || matches!(err, BrokeringError::AllProvidersExhausted(_))
+        );
     }
 
     #[test]
@@ -898,7 +1054,9 @@ mod tests {
         let rl = Arc::new(RateLimiter::new(&cfg));
         let ut = Arc::new(UsageTracker::new(&path).unwrap());
         let router = BrokeringRouter::new(tm.clone(), rl, ut.clone());
-        router.record_completion(id, "openai", "gpt-4o", 500, 200, 700).unwrap();
+        router
+            .record_completion(id, "openai", "gpt-4o", 500, 200, 700)
+            .unwrap();
         let from = Utc::now() - chrono::Duration::minutes(5);
         let to = Utc::now() + chrono::Duration::minutes(5);
         let summary = ut.get_usage(id, from, to).unwrap();

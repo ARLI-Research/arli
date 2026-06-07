@@ -67,8 +67,10 @@ regex.workspace = true
 tempfile = "3"
 
 # ICP client (ENSO canister calls) — optional feature
-ic-agent = { version = "0.39", optional = true }
+ic-agent = { version = "0.39", optional = true, features = ["ring"] }
 candid = { version = "0.10", optional = true }
+base64 = { version = "0.22", optional = true }
+ring = { version = "0.17", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 landlock.workspace = true
@@ -76,7 +78,7 @@ seccompiler.workspace = true
 
 [features]
 default = []
-enso = ["ic-agent", "candid"]
+enso = ["ic-agent", "candid", "base64", "ring"]
 
 [dev-dependencies]
 tokio-test = "0.4"

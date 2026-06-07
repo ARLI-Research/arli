@@ -81,7 +81,8 @@ impl ToolOutputCompactor {
         let original_size = output.len();
 
         // If output is already small, don't compact
-        if output.len() <= self.config.max_chars && output.lines().count() <= self.config.max_lines {
+        if output.len() <= self.config.max_chars && output.lines().count() <= self.config.max_lines
+        {
             return CompactionResult {
                 compact_text: output.to_string(),
                 full_output_path: None,

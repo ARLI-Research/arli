@@ -549,23 +549,21 @@ If you don't need a tool to answer, respond directly without calling tools."#,
             );
 
             // --- BROKERING: rate-limit check before LLM call ---
-            if let (Some(ref brokering), Some(tenant_id)) =
-                (&self.brokering, self.tenant_id)
-            {
-                let provider_name = self
-                    .provider_name
-                    .as_deref()
-                    .unwrap_or("unknown");
+            if let (Some(ref brokering), Some(tenant_id)) = (&self.brokering, self.tenant_id) {
+                let provider_name = self.provider_name.as_deref().unwrap_or("unknown");
                 let model = "default";
                 let estimated_tokens = tokens as u32;
                 match brokering.route(tenant_id, provider_name, Some(model), estimated_tokens) {
-                    Err(crate::brokering::BrokeringError::RateLimitExceeded { tenant_id, detail }) => {
-                        warn!(
-                            "Rate limit exceeded for tenant {}: {}",
-                            tenant_id, detail
-                        );
+                    Err(crate::brokering::BrokeringError::RateLimitExceeded {
+                        tenant_id,
+                        detail,
+                    }) => {
+                        warn!("Rate limit exceeded for tenant {}: {}", tenant_id, detail);
                         return Err(Error::Brokering(
-                            crate::brokering::BrokeringError::RateLimitExceeded { tenant_id, detail },
+                            crate::brokering::BrokeringError::RateLimitExceeded {
+                                tenant_id,
+                                detail,
+                            },
                         ));
                     }
                     Err(e) => {
@@ -649,21 +647,20 @@ If you don't need a tool to answer, respond directly without calling tools."#,
                 );
 
                 // --- BROKERING: record usage after successful LLM call ---
-                if let (Some(ref brokering), Some(tenant_id)) =
-                    (&self.brokering, self.tenant_id)
-                {
-                    let provider_name = self
-                        .provider_name
-                        .as_deref()
-                        .unwrap_or("unknown");
+                if let (Some(ref brokering), Some(tenant_id)) = (&self.brokering, self.tenant_id) {
+                    let provider_name = self.provider_name.as_deref().unwrap_or("unknown");
                     let model = "default";
                     let tokens_in = usage.prompt_tokens;
                     let tokens_out = usage.completion_tokens;
                     // Reasonable default: 0.1 cents per 1K tokens (combined)
                     let cost_cents = ((tokens_in + tokens_out) as f64 * 0.1 / 1000.0).ceil() as u64;
                     if let Err(e) = brokering.record_completion(
-                        tenant_id, provider_name, model,
-                        tokens_in as u64, tokens_out as u64, cost_cents,
+                        tenant_id,
+                        provider_name,
+                        model,
+                        tokens_in as u64,
+                        tokens_out as u64,
+                        cost_cents,
                     ) {
                         warn!("Brokering record_completion failed: {}", e);
                     }

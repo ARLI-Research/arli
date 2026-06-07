@@ -288,7 +288,10 @@ mod tests {
         let _ = std::fs::remove_file(&tmp);
 
         let mut mem = ExperientialMemory::default();
-        mem.record("sandbox policy too strict", "Relax Landlock rules for /proc");
+        mem.record(
+            "sandbox policy too strict",
+            "Relax Landlock rules for /proc",
+        );
         mem.save(&tmp).unwrap();
 
         let mut loaded = ExperientialMemory::load(&tmp).unwrap();

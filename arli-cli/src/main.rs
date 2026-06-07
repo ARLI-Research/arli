@@ -483,6 +483,7 @@ fn dirs_next() -> Option<PathBuf> {
     std::env::var("HOME").ok().map(PathBuf::from)
 }
 
+#[cfg(feature = "enso")]
 fn run_setup_ii(name: &str, icp_gateway: &str) -> anyhow::Result<()> {
     println!("=== ARLI Setup — Internet Identity ===\n");
 
@@ -2020,9 +2021,17 @@ async fn main() -> anyhow::Result<()> {
         }
 
         Commands::Setup { ii, name, icp_gateway } => {
+            #[cfg(feature = "enso")]
             if ii {
                 run_setup_ii(&name, &icp_gateway)?;
             } else {
+                run_setup()?;
+            }
+            #[cfg(not(feature = "enso"))]
+            {
+                if ii {
+                    anyhow::bail!("Internet Identity setup requires the 'enso' feature. Rebuild with: cargo build --features enso");
+                }
                 run_setup()?;
             }
         }
@@ -2372,12 +2381,22 @@ async fn main() -> anyhow::Result<()> {
             run_dashboard(port)?;
         }
 
+        #[cfg(feature = "enso")]
         Commands::Marketplace(cmd) => {
             run_marketplace(cmd)?;
         }
 
+        #[cfg(feature = "enso")]
         Commands::Enso(cmd) => {
             run_enso(cmd)?;
+        }
+        #[cfg(not(feature = "enso"))]
+        Commands::Marketplace(_) => {
+            anyhow::bail!("Marketplace requires the 'enso' feature. Rebuild with: cargo build --features enso");
+        }
+        #[cfg(not(feature = "enso"))]
+        Commands::Enso(_) => {
+            anyhow::bail!("ENSO requires the 'enso' feature. Rebuild with: cargo build --features enso");
         }
 
         Commands::Brokering(cmd) => {
@@ -2610,6 +2629,7 @@ fn run_dashboard(port: u16) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "enso")]
 fn run_marketplace(cmd: MarketplaceCmd) -> anyhow::Result<()> {
     use arli_core::enso::marketplace::MarketplaceStore;
 
@@ -2744,6 +2764,7 @@ fn run_marketplace(cmd: MarketplaceCmd) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "enso")]
 fn run_enso(cmd: EnsoCmd) -> anyhow::Result<()> {
     use sha2::Digest;
     match cmd {

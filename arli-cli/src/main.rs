@@ -1115,7 +1115,7 @@ fn run_setup_finish(
         let gateway_config = format!("\n[gateway]\ntelegram_token = \"{}\"\n", telegram_token);
         std::fs::write(
             &config_path,
-            std::fs::read_to_string(&config_path)? + &gateway_config,
+            std::fs::read_to_string(&config_path)? + "\n" + gateway_config.as_str(),
         )?;
     }
 
@@ -1135,7 +1135,7 @@ fn run_setup_finish(
         println!("  Microsoft Teams — env MS_TEAMS_APP_ID + MS_TEAMS_APP_PASSWORD");
         println!("  Email     — env EMAIL_IMAP_SERVER + EMAIL_USER + EMAIL_PASSWORD");
         println!("\nTo start daemon:  arli gateway start");
-        println!("To run foreground: arli-gateway");
+        println!("To run foreground: arli --__gateway-daemon");
 
         // Check for ambiguous service state (both user + system installed)
         let user_svc = dirs_next()
@@ -1179,18 +1179,10 @@ fn run_setup_finish(
         io::stdout().flush()?;
         io::stdin().read_line(&mut start_daemon)?;
         if start_daemon.trim().eq_ignore_ascii_case("y") {
-            let status = std::process::Command::new("arli")
-                .arg("gateway")
-                .arg("start")
-                .status();
-            match status {
-                Ok(s) if s.success() => println!("Gateway daemon started."),
-                Ok(s) => eprintln!(
-                    "Gateway start failed (exit: {:?}). Run 'arli gateway start' manually.",
-                    s.code()
-                ),
+            match run_gateway(GatewayCmd::Start) {
+                Ok(()) => println!("Gateway daemon started."),
                 Err(e) => eprintln!(
-                    "Could not start gateway: {}. Run 'arli gateway start' manually.",
+                    "Gateway start failed: {}. Run 'arli gateway start' manually.",
                     e
                 ),
             }
@@ -1221,7 +1213,7 @@ fn install_gateway_user_service() -> anyhow::Result<()> {
          EnvironmentFile={}/gateway.env\n\
          Environment=ARLI_HOME={}\n\
          Environment=ARLI_LOG=info,arli_gateway=debug\n\
-         ExecStart={}/arli-gateway --daemon --pid-file {} --log-file {}\n\
+         ExecStart={}/arli --__gateway-daemon\n\\
          Restart=always\n\
          RestartSec=10\n\
          StandardOutput=journal\n\
@@ -1233,11 +1225,7 @@ fn install_gateway_user_service() -> anyhow::Result<()> {
         data_dir.display(),
         std::env::current_exe()
             .unwrap_or_else(|_| std::path::PathBuf::from("arli"))
-            .parent()
-            .unwrap_or_else(|| std::path::Path::new("/usr/local/bin"))
             .display(),
-        pid_file.display(),
-        log_file.display(),
     );
 
     let service_path = service_dir.join("arli-gateway.service");
@@ -1275,7 +1263,7 @@ fn install_gateway_system_service() -> anyhow::Result<()> {
          EnvironmentFile={}/gateway.env\n\
          Environment=ARLI_HOME={}\n\
          Environment=ARLI_LOG=info,arli_gateway=debug\n\
-         ExecStart={}/arli-gateway --daemon --pid-file {} --log-file {}\n\
+         ExecStart={}/arli --__gateway-daemon\n\\
          Restart=always\n\
          RestartSec=10\n\
          StandardOutput=journal\n\
@@ -1290,11 +1278,7 @@ fn install_gateway_system_service() -> anyhow::Result<()> {
         data_dir.display(),
         std::env::current_exe()
             .unwrap_or_else(|_| std::path::PathBuf::from("arli"))
-            .parent()
-            .unwrap_or_else(|| std::path::Path::new("/usr/local/bin"))
             .display(),
-        pid_file.display(),
-        log_file.display(),
     );
 
     let tmp_path = data_dir.join("arli-gateway.service");
@@ -1689,21 +1673,11 @@ fn run_gateway(cmd: GatewayCmd) -> anyhow::Result<()> {
     let pid_file = data_dir.join("gateway.pid");
     let log_file = data_dir.join("gateway.log");
 
-    // Find the gateway binary — prefer release build next to arli, then PATH
-    let gateway_bin = {
-        let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("arli"));
-        let sibling = exe.parent().map(|p| p.join("arli-gateway"));
-        sibling
-            .filter(|p| p.exists())
-            .unwrap_or_else(|| PathBuf::from("arli-gateway"))
-    };
-
     match cmd {
         GatewayCmd::Start => {
             if pid_file.exists() {
                 let pid_str = std::fs::read_to_string(&pid_file)?;
                 if let Ok(pid) = pid_str.trim().parse::<i32>() {
-                    // Check if process is still running
                     unsafe {
                         if libc::kill(pid, 0) == 0 {
                             println!("Gateway is already running (PID: {})", pid);
@@ -1712,25 +1686,16 @@ fn run_gateway(cmd: GatewayCmd) -> anyhow::Result<()> {
                         }
                     }
                 }
-                // PID file exists but process is dead — remove stale PID
                 std::fs::remove_file(&pid_file)?;
             }
 
-            if !gateway_bin.exists() {
-                anyhow::bail!(
-                    "Gateway binary not found at {}. Build it: cargo build --release -p arli-gateway",
-                    gateway_bin.display()
-                );
-            }
-
-            let status = std::process::Command::new(&gateway_bin)
-                .arg("--daemon")
-                .arg("--pid-file")
-                .arg(pid_file.to_str().unwrap())
-                .arg("--log-file")
-                .arg(log_file.to_str().unwrap())
-                .env("ARLI_HOME", &data_dir)
-                .status()?;
+            // Spawn our own binary as gateway daemon
+            let status = std::process::Command::new(
+                std::env::current_exe().unwrap_or_else(|_| PathBuf::from("arli")),
+            )
+            .arg("--__gateway-daemon")
+            .env("ARLI_HOME", &data_dir)
+            .status()?;
 
             if !status.success() {
                 anyhow::bail!("Gateway failed to start (exit code: {:?})", status.code());
@@ -2007,13 +1972,19 @@ fn run_update(check_only: bool) -> anyhow::Result<()> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // ── Gateway daemon mode (spawned by 'arli gateway start') ──
+    // Check raw args before clap parsing (--__gateway-daemon has no subcommand)
+    if std::env::args().any(|a| a == "--__gateway-daemon") {
+        return arli_gateway::run(true, "", "");
+    }
+
+    let cli = Cli::parse();
+
     tracing_subscriber::fmt()
         .with_env_filter(
             std::env::var("ARLI_LOG").unwrap_or_else(|_| "info,arli_core=debug".to_string()),
         )
         .init();
-
-    let cli = Cli::parse();
 
     match cli.command {
         Commands::Version => {

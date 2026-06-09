@@ -6,6 +6,10 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[lib]
+name = "arli_gateway"
+path = "src/lib.rs"
+
 [[bin]]
 name = "arli-gateway"
 path = "src/main.rs"

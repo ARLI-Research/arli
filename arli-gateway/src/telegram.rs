@@ -14,6 +14,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 
+use crate::pairing;
+
 // ── Telegram API types ──
 
 #[derive(Debug, Deserialize)]
@@ -83,20 +85,23 @@ struct TelegramGateway {
     provider_api_key: String,
     provider_base_url: Option<String>,
     model: String,
+    allowed_users: Mutex<pairing::AllowedUsers>,
 }
 
 impl TelegramGateway {
     fn new(token: String, data_dir: PathBuf) -> anyhow::Result<Self> {
         let config = Config::from_env()?;
+        let allowed = pairing::AllowedUsers::load(&data_dir);
         Ok(Self {
             api_url: format!("https://api.telegram.org/bot{}", token),
             agents: Mutex::new(HashMap::new()),
             pending_approvals: Mutex::new(HashMap::new()),
             last_update_id: Mutex::new(0),
-            data_dir,
+            data_dir: data_dir.clone(),
             provider_api_key: config.provider.api_key,
             provider_base_url: config.provider.base_url,
             model: config.model,
+            allowed_users: Mutex::new(allowed),
         })
     }
 
@@ -412,6 +417,41 @@ pub async fn run(data_dir: PathBuf) -> anyhow::Result<()> {
                     }
                     if let Some(ref msg) = update.message {
                         if let Some(ref text) = msg.text {
+                            // ── Authorisation gate ──
+                            let is_allowed = gateway.allowed_users.lock().await.is_allowed(msg.chat.id);
+
+                            if !is_allowed {
+                                // Check for pairing command: "arli pair <code>"
+                                let pair_prefix = "arli pair ";
+                                if let Some(code) = text.strip_prefix(pair_prefix) {
+                                    let code = code.trim();
+                                    if pairing::verify(code, &gateway.data_dir) {
+                                        gateway.allowed_users
+                                            .lock()
+                                            .await
+                                            .add(msg.chat.id, &gateway.data_dir)?;
+                                        info!("Chat {} paired successfully", msg.chat.id);
+                                        let _ = gateway.send_message(
+                                            msg.chat.id,
+                                            "Paired successfully! ARLI at your service. Send me any message to begin.",
+                                        ).await;
+                                    } else {
+                                        let _ = gateway.send_message(
+                                            msg.chat.id,
+                                            "Invalid or expired pairing code. Run `arli pair generate` on the server to get a new code.",
+                                        ).await;
+                                    }
+                                } else {
+                                    let _ = gateway.send_message(
+                                        msg.chat.id,
+                                        "Unauthorized. Run `arli pair generate` on the server and send the code:\n\narli pair <code>",
+                                    ).await;
+                                }
+                                continue;
+                            }
+
+                            // ── Allowed user — dispatch normally ──
+
                             if text == "/start" {
                                 let _ = gateway
                                     .send_message(

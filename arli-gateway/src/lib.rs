@@ -14,6 +14,7 @@ mod irc;
 mod line;
 mod matrix;
 mod ntfy;
+pub mod pairing;
 mod qq;
 mod signal;
 mod simplex;

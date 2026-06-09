@@ -5,7 +5,7 @@ use arli_core::{
     create_provider, Agent, AgentConfig, ChatMessage, Config, CronEvent, CronJob, CronScheduler,
     PolicyEngine, SessionStore, ToolRegistry,
 };
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 use tokio::sync::mpsc;
 use tracing::info;
@@ -155,6 +155,21 @@ enum Commands {
         #[arg(short, long, default_value = "8080")]
         port: u16,
     },
+
+    /// Generate pairing code for Telegram gateway access
+    Pair(PairArgs),
+}
+
+#[derive(Args)]
+struct PairArgs {
+    #[command(subcommand)]
+    cmd: PairCmd,
+}
+
+#[derive(Subcommand)]
+enum PairCmd {
+    /// Generate a new pairing code (valid for 10 minutes)
+    Generate,
 }
 
 #[derive(Subcommand)]
@@ -2344,6 +2359,10 @@ fn main() -> anyhow::Result<()> {
             run_gateway(cmd)?;
         }
 
+        Commands::Pair(args) => {
+            run_pair(args)?;
+        }
+
         Commands::Key(cmd) => {
             run_key(cmd)?;
         }
@@ -3368,5 +3387,32 @@ fn run_brokering(cmd: BrokeringCmd) -> anyhow::Result<()> {
         }
     }
 
+    Ok(())
+}
+
+// ── Pairing code ──
+
+fn run_pair(args: PairArgs) -> anyhow::Result<()> {
+    match args.cmd {
+        PairCmd::Generate => {
+            let data_dir = get_data_dir();
+            std::fs::create_dir_all(&data_dir)?;
+
+            let code = arli_gateway::pairing::generate_code();
+            let expires_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_secs()
+                + arli_gateway::pairing::PAIRING_CODE_VALIDITY_SECS;
+
+            let pairing_file = data_dir.join("pairing_code");
+            std::fs::write(&pairing_file, format!("{code}\n{expires_at}"))?;
+
+            println!(
+                "Pairing code: {code}\n\
+                 Valid for 10 minutes.\n\n\
+                 Send this to the bot in Telegram:\n  arli pair {code}"
+            );
+        }
+    }
     Ok(())
 }

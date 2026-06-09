@@ -57,7 +57,7 @@ pub async fn serve(state: HealthState) -> anyhow::Result<()> {
     let port: u16 = std::env::var("HEALTH_PORT")
         .ok()
         .and_then(|p| p.parse().ok())
-        .unwrap_or(8080);
+        .unwrap_or(8090);
 
     let state_ready = state.clone();
     let state_metrics = state.clone();

@@ -2774,7 +2774,7 @@ fn run_enso(cmd: EnsoCmd) -> anyhow::Result<()> {
             let config_toml = format!(
                 r#"# ENSO configuration for ARLI
 icp_gateway = "https://icp0.io"
-registry_canister_id = "ENSO_REGISTRY_CANISTER_ID"
+registry_canister_id = "bmo7h-iiaaa-aaaab-qhama-cai"
 contracts_canister_id = "{contracts_id}"
 arli_public_key = "{pubkey}"
 agent_name = "ARLI v0.5"

@@ -1970,23 +1970,27 @@ fn run_update(check_only: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     // ── Gateway daemon mode (spawned by 'arli gateway start') ──
-    // Check raw args before clap parsing (--__gateway-daemon has no subcommand)
+    // Must exit BEFORE tokio runtime starts — gateway creates its own.
     if std::env::args().any(|a| a == "--__gateway-daemon") {
         return arli_gateway::run(true, "", "");
     }
 
-    let cli = Cli::parse();
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
 
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            std::env::var("ARLI_LOG").unwrap_or_else(|_| "info,arli_core=debug".to_string()),
-        )
-        .init();
+    rt.block_on(async {
+        let cli = Cli::parse();
 
-    match cli.command {
+        tracing_subscriber::fmt()
+            .with_env_filter(
+                std::env::var("ARLI_LOG").unwrap_or_else(|_| "info,arli_core=debug".to_string()),
+            )
+            .init();
+
+        match cli.command {
         Commands::Version => {
             println!("ARLI v{}", env!("CARGO_PKG_VERSION"));
         }
@@ -2410,6 +2414,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+    })
 }
 
 fn run_key(cmd: KeyCmd) -> anyhow::Result<()> {

@@ -20,3 +20,4 @@ ulid.workspace = true
 rust_decimal = { version = "1", features = ["macros", "maths", "serde"] }
 sha2.workspace = true
 hex.workspace = true
+rust_decimal_macros = "1.40.0"

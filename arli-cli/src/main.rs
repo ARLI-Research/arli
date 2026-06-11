@@ -3202,8 +3202,9 @@ agent_name = "{name}"
                 }
             };
 
-            // ENSO agent ID from registry: agent_cae6abd1c316f0279d0260a3de0de297 (owner = ARLI principal)
-            let agent_id = "agent_cae6abd1c316f0279d0260a3de0de297".to_string();
+            // ENSO agent ID from registry — obtained via `arli enso register` or `register_arli_agent`
+            let agent_id = std::env::var("ENSO_AGENT_ID")
+                .unwrap_or_else(|_| "arli_cae6abd1c316f027".to_string());
 
             // Build ENSO client with ICP identity — use current tokio handle
             use arli_core::enso::EnsoClient;

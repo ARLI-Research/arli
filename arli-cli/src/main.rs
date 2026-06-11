@@ -3126,6 +3126,7 @@ agent_name = "{name}"
                 true,
                 65534,
                 None,
+                None,
             );
 
             let attestation_json = serde_json::to_string(&attestation)?;

@@ -459,6 +459,37 @@ impl EnsoClient {
             None => Err(format!("No job details for contract {contract_id}")),
         }
     }
+
+    /// Check SLA compliance for an attestation against contract thresholds.
+    ///
+    /// Calls ENSO's `check_sla` endpoint: parses metrics from the attestation JSON
+    /// and compares them against the contract's SLA thresholds.
+    /// Returns a human-readable compliance report.
+    pub async fn check_sla(
+        &self,
+        contract_id: &str,
+        attestation_json: &str,
+    ) -> Result<String, String> {
+        let canister_id =
+            ic_agent::export::Principal::from_text(&self.config.contracts_canister_id)
+                .map_err(|e| format!("parse canister id: {e}"))?;
+
+        let args = candid::encode_args((contract_id.to_string(), attestation_json.to_string()))
+            .map_err(|e| format!("encode args: {e}"))?;
+
+        let result = self
+            .agent
+            .query(&canister_id, "check_sla")
+            .with_arg(args)
+            .call()
+            .await
+            .map_err(|e| format!("call check_sla: {e}"))?;
+
+        let report: String =
+            candid::decode_one(&result).map_err(|e| format!("decode: {e}"))?;
+
+        Ok(report)
+    }
 }
 
 /// Candid-compatible JobDetail for decoding ENSO canister responses.
@@ -569,6 +600,14 @@ impl EnsoClientStub {
     }
 
     pub async fn get_job_details(&self, _contract_id: &str) -> Result<JobDetail, String> {
+        Err("ENSO integration not compiled — rebuild with `--features enso`".into())
+    }
+
+    pub async fn check_sla(
+        &self,
+        _contract_id: &str,
+        _attestation_json: &str,
+    ) -> Result<String, String> {
         Err("ENSO integration not compiled — rebuild with `--features enso`".into())
     }
 }

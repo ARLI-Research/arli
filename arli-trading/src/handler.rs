@@ -112,6 +112,7 @@ impl ExecutionHandler for TradingHandler {
             ));
         }
 
+        let start = std::time::Instant::now();
         let params = Self::parse_params(job)?;
 
         tracing::info!(
@@ -130,6 +131,8 @@ impl ExecutionHandler for TradingHandler {
             .strategy_registry
             .build(&params.strategy)
             .ok_or_else(|| format!("Unknown strategy: {}", params.strategy))?;
+
+        let elapsed_ms = start.elapsed().as_millis() as u64;
 
         // Build OCSF event with execution parameters
         let ocsf_event = serde_json::json!({
@@ -156,10 +159,29 @@ impl ExecutionHandler for TradingHandler {
             ),
         });
 
+        // Build execution metrics for ENSO SLA enforcement
+        let metrics = serde_json::json!({
+            "execution_latency_ms": elapsed_ms,
+            "strategy": params.strategy,
+            "coins": params.coins.len(),
+            "leverage": params.leverage,
+            "capital_usd": params.capital.to_string(),
+            "ticks_evaluated": params.ticks,
+            "trades_executed": 0,
+            "mode": if params.live { "live" } else { "paper" },
+        });
+
+        tracing::info!(
+            "TradingHandler: execution complete in {}ms, metrics={}",
+            elapsed_ms,
+            serde_json::to_string(&metrics).unwrap_or_default()
+        );
+
         Ok(ExecutionResult {
             ocsf_event,
             artifacts: vec![],
             success: true,
+            metrics: Some(metrics),
         })
     }
 }

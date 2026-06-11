@@ -63,6 +63,15 @@ pub struct ArliAttestation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_contract_hash: Option<String>,
 
+    /// Optional execution metrics for ENSO SLA enforcement (§5.4).
+    ///
+    /// Populated by the execution handler with measured values
+    /// (e.g., execution_latency_ms, trades_evaluated, pnl_usd).
+    /// ENSO's `check_sla` compares these against contract thresholds.
+    /// Backward-compatible: absent for old attestations, present for new ones.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metrics: Option<serde_json::Value>,
+
     /// ed25519 signature over SHA-256 of attestation fields
     pub signature: String,
 
@@ -105,6 +114,12 @@ impl ArliAttestation {
         if let Some(ref contract_hash) = self.task_contract_hash {
             hasher.update(b"|");
             hasher.update(contract_hash.as_bytes());
+        }
+        // Execution metrics — if present, binds the attestation
+        // to measured SLA values. Prevents re-signing with forged metrics.
+        if let Some(ref metrics) = self.metrics {
+            hasher.update(b"|");
+            hasher.update(serde_json::to_string(metrics).unwrap_or_default().as_bytes());
         }
         hasher.finalize().to_vec()
     }
@@ -281,6 +296,7 @@ impl AttestationBuilder {
         seccomp_enforced: bool,
         uid: u32,
         task_contract_hash: Option<String>,
+        metrics: Option<serde_json::Value>,
     ) -> ArliAttestation {
         let ocsf_event_hash = hex::encode(Sha256::digest(ocsf_event_json.as_bytes()));
         let timestamp_ns = std::time::SystemTime::now()
@@ -301,6 +317,7 @@ impl AttestationBuilder {
             seccomp_enforced,
             uid,
             task_contract_hash,
+            metrics,
             signature: String::new(),
             public_key: String::new(),
         };
@@ -338,6 +355,7 @@ mod tests {
             seccomp_enforced: true,
             uid: 65534,
             task_contract_hash: None,
+            metrics: None,
             signature: String::new(),
             public_key: String::new(),
         }
@@ -464,6 +482,7 @@ mod tests {
             true,
             65534,
             Some("sha256:contract-abc123".into()),
+            None,
         );
 
         assert_eq!(att.run_id, "run-001");
@@ -497,6 +516,7 @@ mod tests {
             true,
             65534,
             None,
+            None,
         );
 
         assert_eq!(att.task_contract_hash, None);
@@ -519,6 +539,7 @@ mod tests {
             true,
             65534,
             Some("sha256:contract-A".into()),
+            None,
         );
 
         let att2 = builder.build(
@@ -532,6 +553,7 @@ mod tests {
             true,
             65534,
             Some("sha256:contract-B".into()),
+            None,
         );
 
         assert_ne!(att1.message_hash(), att2.message_hash());
@@ -553,6 +575,7 @@ mod tests {
             true,
             65534,
             Some("sha256:contract-A".into()),
+            None,
         );
         assert!(att.verify());
 

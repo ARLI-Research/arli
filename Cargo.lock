@@ -1070,6 +1070,7 @@ dependencies = [
  "anyhow",
  "arli-core",
  "arli-gateway",
+ "arli-trading",
  "axum 0.7.9",
  "chrono",
  "clap",

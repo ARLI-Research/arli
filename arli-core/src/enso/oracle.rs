@@ -86,6 +86,12 @@ pub struct ExecutionResult {
     pub artifacts: Vec<String>,
     /// Whether execution was successful.
     pub success: bool,
+    /// Optional execution metrics for ENSO SLA enforcement.
+    ///
+    /// Populated by the execution handler with measured values
+    /// (e.g., execution_latency_ms, trades_evaluated, pnl_usd).
+    /// ENSO's `check_sla` compares these against contract thresholds.
+    pub metrics: Option<serde_json::Value>,
 }
 
 /// Pluggable contract execution handler.
@@ -513,7 +519,7 @@ impl EnsoOracle {
             crate::attestation::AttestationBuilder::new(keypair.clone(), self.binary_hash.clone());
 
         // --- Execute contract via pluggable handler (or fall back to dummy) ---
-        let (ocsf_event, artifacts) = if let Some(ref handler) = self.execution_handler {
+        let (ocsf_event, artifacts, handler_metrics) = if let Some(ref handler) = self.execution_handler {
             // Fetch job details from ENSO canister
             let job = self.enso.get_job_details(contract_id).await?;
             tracing::info!(
@@ -540,7 +546,7 @@ impl EnsoOracle {
                     if !result.success {
                         task_state.add_error("Handler reported execution failure");
                     }
-                    (result.ocsf_event, result.artifacts)
+                    (result.ocsf_event, result.artifacts, result.metrics)
                 }
                 Err(e) => {
                     tracing::error!("Oracle: handler failed for {}: {}", contract_id, e);
@@ -552,6 +558,7 @@ impl EnsoOracle {
             (
                 dummy_ocsf_event(contract_id, &self.agent_id, &self.sandbox_config_hash),
                 Vec::new(),
+                None,
             )
         };
 
@@ -569,6 +576,7 @@ impl EnsoOracle {
             true,
             65534,
             None, // task_contract_hash — oracle can't know contract upfront
+            handler_metrics,
         );
 
         let attestation_json = serde_json::to_string(&attestation)

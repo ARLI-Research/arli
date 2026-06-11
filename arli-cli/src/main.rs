@@ -3167,17 +3167,13 @@ agent_name = "{name}"
                 arli_core::enso::EnsoConfig::default()
             };
 
-            // --contract flag takes priority over ENSO_CONTRACTS env var
+            // --contract flag takes priority over ENSO_CONTRACTS env var.
+            // Oracle auto-discovers contracts from ENSO canister on each poll cycle,
+            // so an empty initial list is fine.
             let contracts: Vec<String> = if let Some(c) = contract {
                 vec![c]
             } else {
-                let from_env = arli_core::enso::oracle::load_contracts_from_env();
-                if from_env.is_empty() {
-                    anyhow::bail!(
-                        "No contracts. Use `arli enso run -c <contract-id>` or set ENSO_CONTRACTS env var."
-                    );
-                }
-                from_env
+                arli_core::enso::oracle::load_contracts_from_env()
             };
 
             let binary_hash = {

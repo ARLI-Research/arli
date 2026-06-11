@@ -379,6 +379,110 @@ impl EnsoClient {
             policy_json: String::new(), // Embedded policy used instead
         })
     }
+
+    /// List active contracts assigned to this agent.
+    ///
+    /// Calls `list_active_contracts_for_agent` on the ENSO contracts canister.
+    /// Returns contract IDs where provider_agent == agent_id and status == Active.
+    pub async fn list_active_contracts_for_agent(
+        &self,
+        agent_id: &str,
+    ) -> Result<Vec<String>, String> {
+        let canister_id =
+            ic_agent::export::Principal::from_text(&self.config.contracts_canister_id)
+                .map_err(|e| format!("parse canister id: {e}"))?;
+
+        let args = candid::encode_args((agent_id.to_string(),))
+            .map_err(|e| format!("encode args: {e}"))?;
+
+        let result = self
+            .agent
+            .query(&canister_id, "list_active_contracts_for_agent")
+            .with_arg(args)
+            .call()
+            .await
+            .map_err(|e| format!("call list_active_contracts_for_agent: {e}"))?;
+
+        let contract_ids: Vec<String> =
+            candid::decode_one(&result).map_err(|e| format!("decode: {e}"))?;
+
+        tracing::debug!(
+            agent_id = %agent_id,
+            count = contract_ids.len(),
+            "ENSO: active contracts for agent"
+        );
+
+        Ok(contract_ids)
+    }
+
+    /// Get full job details for a contract.
+    ///
+    /// Calls `get_job_details` on the ENSO contracts canister.
+    /// Returns job_type, job_params, SLA, sandbox config hash, payment info.
+    pub async fn get_job_details(&self, contract_id: &str) -> Result<JobDetail, String> {
+        let canister_id =
+            ic_agent::export::Principal::from_text(&self.config.contracts_canister_id)
+                .map_err(|e| format!("parse canister id: {e}"))?;
+
+        let args = candid::encode_args((contract_id.to_string(),))
+            .map_err(|e| format!("encode args: {e}"))?;
+
+        let result = self
+            .agent
+            .query(&canister_id, "get_job_details")
+            .with_arg(args)
+            .call()
+            .await
+            .map_err(|e| format!("call get_job_details: {e}"))?;
+
+        // Response: opt JobDetail. Decode as Option<JobDetail>.
+        let maybe_job: Option<JobDetailCandid> =
+            candid::decode_one(&result).map_err(|e| format!("decode: {e}"))?;
+
+        match maybe_job {
+            Some(j) => Ok(JobDetail {
+                contract_id: j.contract_id,
+                job_type: j.job_type,
+                job_params: j.job_params,
+                sla: j.sla.map(|s| SlaMetric {
+                    name: s.name,
+                    target: s.target,
+                    verifier_canister: s.verifier_canister,
+                    required_sandbox_config_hash: s.required_sandbox_config_hash,
+                    require_landlock: s.require_landlock,
+                    require_seccomp: s.require_seccomp,
+                }),
+                sandbox_config_hash: j.sandbox_config_hash,
+                payment_amount: j.payment_amount,
+                payment_token: j.payment_token,
+            }),
+            None => Err(format!("No job details for contract {contract_id}")),
+        }
+    }
+}
+
+/// Candid-compatible JobDetail for decoding ENSO canister responses.
+#[cfg(feature = "enso")]
+#[derive(candid::CandidType, serde::Deserialize)]
+struct JobDetailCandid {
+    contract_id: String,
+    job_type: String,
+    job_params: String,
+    sla: Option<SlaMetricCandid>,
+    sandbox_config_hash: String,
+    payment_amount: u64,
+    payment_token: String,
+}
+
+#[cfg(feature = "enso")]
+#[derive(candid::CandidType, serde::Deserialize)]
+struct SlaMetricCandid {
+    name: String,
+    target: String,
+    verifier_canister: Option<String>,
+    required_sandbox_config_hash: Option<String>,
+    require_landlock: bool,
+    require_seccomp: bool,
 }
 
 /// Response from ENSO get_sandbox_policy query.
@@ -387,6 +491,24 @@ pub struct EnsoSandboxPolicy {
     pub version: String,
     pub content_hash: String,
     pub policy_json: String,
+}
+
+/// Job detail returned by `get_job_details` — everything ARLI needs to execute a contract.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JobDetail {
+    pub contract_id: String,
+    /// "trading" | "code_execution" | "ml_training" | ...
+    pub job_type: String,
+    /// JSON blob with type-specific parameters
+    pub job_params: String,
+    /// SLA requirements
+    pub sla: Option<SlaMetric>,
+    /// Sandbox config hash for attestation
+    pub sandbox_config_hash: String,
+    /// Payment amount in smallest token unit
+    pub payment_amount: u64,
+    /// Payment token symbol
+    pub payment_token: String,
 }
 
 #[cfg(feature = "enso")]
@@ -436,6 +558,17 @@ impl EnsoClientStub {
     }
 
     pub async fn get_sandbox_policy(&self) -> Result<EnsoSandboxPolicy, String> {
+        Err("ENSO integration not compiled — rebuild with `--features enso`".into())
+    }
+
+    pub async fn list_active_contracts_for_agent(
+        &self,
+        _agent_id: &str,
+    ) -> Result<Vec<String>, String> {
+        Err("ENSO integration not compiled — rebuild with `--features enso`".into())
+    }
+
+    pub async fn get_job_details(&self, _contract_id: &str) -> Result<JobDetail, String> {
         Err("ENSO integration not compiled — rebuild with `--features enso`".into())
     }
 }

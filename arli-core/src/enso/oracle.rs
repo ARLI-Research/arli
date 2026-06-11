@@ -105,10 +105,13 @@ pub struct ExecutionResult {
 /// and may process multiple contracts concurrently.
 pub trait ExecutionHandler: Send + Sync {
     /// Execute the contract and return an OCSF attestation event.
+    ///
+    /// `job` contains the full job specification from ENSO (job_type, job_params, SLA, etc.).
     fn execute(
         &self,
         contract_id: &str,
         agent_id: &str,
+        job: &crate::enso::JobDetail,
     ) -> Result<ExecutionResult, String>;
 }
 
@@ -256,7 +259,11 @@ impl EnsoOracle {
         }
     }
 
-    /// Run the oracle loop — polls contracts, executes, attests.
+    /// Run the oracle loop — auto-discovers contracts from ENSO, executes, attests.
+    ///
+    /// On each poll cycle, calls `list_active_contracts_for_agent` on the ENSO canister
+    /// to discover new contracts. Already-known contracts from `ENSO_CONTRACTS` env var
+    /// are also monitored.
     ///
     /// Blocks until `stop()` is called or all jobs complete.
     /// Returns the number of contracts that were successfully attested.
@@ -269,6 +276,30 @@ impl EnsoOracle {
         let mut attested_count = 0;
 
         while self.running.load(std::sync::atomic::Ordering::Relaxed) {
+            // --- Auto-discover new contracts from ENSO canister ---
+            match self
+                .enso
+                .list_active_contracts_for_agent(&self.agent_id)
+                .await
+            {
+                Ok(active_ids) => {
+                    for cid in &active_ids {
+                        if !self.jobs.iter().any(|j| &j.contract_id == cid) {
+                            tracing::info!("Oracle: discovered new contract {}", cid);
+                            self.jobs.push(OracleJob::new(cid.clone()));
+                        }
+                    }
+                    tracing::debug!(
+                        "Oracle: {} total jobs ({} active on ENSO)",
+                        self.jobs.len(),
+                        active_ids.len(),
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!("Oracle: failed to list active contracts: {e}");
+                }
+            }
+
             // Collect pending contract IDs to avoid borrow conflict with &mut self
             let pending_contracts: Vec<String> = self
                 .jobs
@@ -483,7 +514,15 @@ impl EnsoOracle {
 
         // --- Execute contract via pluggable handler (or fall back to dummy) ---
         let (ocsf_event, artifacts) = if let Some(ref handler) = self.execution_handler {
-            match handler.execute(contract_id, &self.agent_id) {
+            // Fetch job details from ENSO canister
+            let job = self.enso.get_job_details(contract_id).await?;
+            tracing::info!(
+                "Oracle: executing {} — type={}, params_len={}",
+                contract_id,
+                job.job_type,
+                job.job_params.len(),
+            );
+            match handler.execute(contract_id, &self.agent_id, &job) {
                 Ok(result) => {
                     tracing::info!(
                         "Oracle: handler executed {} — success={}, artifacts={}",

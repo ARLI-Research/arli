@@ -1,8 +1,8 @@
 //! ENSO Compute Oracle — automated job execution + attestation loop.
 //!
 //! The oracle monitors ENSO Contracts for active jobs assigned to this ARLI
-//! agent, executes them in a kernel sandbox, and automatically submits
-//! ed25519-signed attestations for settlement.
+//! agent, executes them via a pluggable [ExecutionHandler], and automatically
+//! submits ed25519-signed attestations for settlement.
 //!
 //! ## Architecture
 //!
@@ -10,7 +10,7 @@
 //! ENSO Contracts (ICP)          ARLI Oracle (this module)
 //! ┌─────────────────┐           ┌────────────────────────┐
 //! │ Contract Active  │──poll──→ │ OracleLoop             │
-//! │ job_id = "..."   │          │  ├─ agent.run(job)     │
+//! │ job_id = "..."   │          │  ├─ handler.execute()  │ ← pluggable
 //! │ sandbox reqs     │          │  ├─ build_attestation  │
 //! └─────────────────┘          │  └─ submit → Verified  │
 //!                               └────────────────────────┘
@@ -76,6 +76,53 @@ pub fn load_contracts_from_env() -> Vec<String> {
         .collect()
 }
 
+/// Result of executing a contract — returned by [ExecutionHandler].
+#[derive(Debug, Clone)]
+pub struct ExecutionResult {
+    /// OCSF event JSON (the attestation payload).
+    /// Must contain at minimum: class_uid, activity_name, agent_id, job_id.
+    pub ocsf_event: serde_json::Value,
+    /// Optional artifacts produced by execution (paths to output files).
+    pub artifacts: Vec<String>,
+    /// Whether execution was successful.
+    pub success: bool,
+}
+
+/// Pluggable contract execution handler.
+///
+/// The ENSO oracle calls `execute()` for each active contract
+/// to produce a real OCSF attestation event instead of a dummy one.
+///
+/// # Implementations
+///
+/// - **Trading agent**: runs a trading strategy, returns trade log as OCSF event.
+/// - **Code agent**: compiles/runs code in sandbox, returns test results.
+/// - **ML agent**: trains/evaluates a model, returns metrics.
+///
+/// # Thread safety
+///
+/// Handlers must be `Send + Sync` — the oracle runs in an async context
+/// and may process multiple contracts concurrently.
+pub trait ExecutionHandler: Send + Sync {
+    /// Execute the contract and return an OCSF attestation event.
+    fn execute(
+        &self,
+        contract_id: &str,
+        agent_id: &str,
+    ) -> Result<ExecutionResult, String>;
+}
+
+/// Helper: build a minimal OCSF event when no execution handler is configured.
+pub fn dummy_ocsf_event(contract_id: &str, agent_id: &str, sandbox_hash: &str) -> serde_json::Value {
+    serde_json::json!({
+        "class_uid": 6007,
+        "activity_name": "Oracle Attestation",
+        "agent_id": agent_id,
+        "job_id": contract_id,
+        "sandbox": sandbox_hash,
+    })
+}
+
 // ============================================================================
 // ENSO ORACLE (requires `enso` feature for full functionality)
 // ============================================================================
@@ -106,6 +153,9 @@ pub struct EnsoOracle {
     /// Verification pipeline (compile→lint→test→fuzz) to run before attestation.
     /// When set, the pipeline must pass all required steps for attestation to proceed.
     verification_pipeline: Option<crate::verification_pipeline::VerificationPipeline>,
+    /// Pluggable execution handler — produces real OCSF events instead of dummy ones.
+    /// When [None], the oracle uses [dummy_ocsf_event] for attestation.
+    execution_handler: Option<Box<dyn ExecutionHandler>>,
 }
 
 #[cfg(feature = "enso")]
@@ -142,6 +192,7 @@ impl EnsoOracle {
             task_states: std::collections::HashMap::new(),
             workspace_root: None,
             verification_pipeline: None,
+            execution_handler: None,
         }
     }
 
@@ -302,7 +353,21 @@ impl EnsoOracle {
         self.verification_pipeline = pipeline;
     }
 
-    /// Process a single contract by ID: build attestation, sign, submit payment atomically.
+    /// Set a pluggable execution handler to produce real OCSF attestation events.
+    ///
+    /// When set, the oracle calls `handler.execute(contract_id, agent_id)`
+    /// instead of using [dummy_ocsf_event]. Use this to wire in:
+    ///
+    /// - **Trading agents**: execute strategy → trade log as OCSF
+    /// - **Code agents**: compile+test in sandbox → results as OCSF
+    /// - **ML agents**: train+evaluate → metrics as OCSF
+    ///
+    /// Pass `None` to revert to dummy events.
+    pub fn set_execution_handler(&mut self, handler: Option<Box<dyn ExecutionHandler>>) {
+        self.execution_handler = handler;
+    }
+
+    /// Process a single contract by ID: execute (via handler), build attestation, sign, submit.
     async fn process_contract_by_id(&mut self, contract_id: &str) -> Result<OracleResult, String> {
         // --- Shared Harness State (§4.3): load or create task state ---
         let mut task_state = self.task_states.remove(contract_id).unwrap_or_else(|| {
@@ -416,13 +481,40 @@ impl EnsoOracle {
         let builder =
             crate::attestation::AttestationBuilder::new(keypair.clone(), self.binary_hash.clone());
 
-        let ocsf_event = serde_json::json!({
-            "class_uid": 6007,
-            "activity_name": "Oracle Attestation",
-            "agent_id": self.agent_id,
-            "job_id": contract_id,
-            "sandbox": self.sandbox_config_hash,
-        });
+        // --- Execute contract via pluggable handler (or fall back to dummy) ---
+        let (ocsf_event, artifacts) = if let Some(ref handler) = self.execution_handler {
+            match handler.execute(contract_id, &self.agent_id) {
+                Ok(result) => {
+                    tracing::info!(
+                        "Oracle: handler executed {} — success={}, artifacts={}",
+                        contract_id,
+                        result.success,
+                        result.artifacts.len(),
+                    );
+                    for artifact in &result.artifacts {
+                        task_state.add_artifact(
+                            artifact,
+                            0, // size unknown without stat
+                            None,
+                        );
+                    }
+                    if !result.success {
+                        task_state.add_error("Handler reported execution failure");
+                    }
+                    (result.ocsf_event, result.artifacts)
+                }
+                Err(e) => {
+                    tracing::error!("Oracle: handler failed for {}: {}", contract_id, e);
+                    task_state.add_error(&format!("Handler error: {}", e));
+                    return Err(format!("Execution handler failed: {}", e));
+                }
+            }
+        } else {
+            (
+                dummy_ocsf_event(contract_id, &self.agent_id, &self.sandbox_config_hash),
+                Vec::new(),
+            )
+        };
 
         let ocsf_json = serde_json::to_string(&ocsf_event)
             .map_err(|e| format!("serialize OCSF event: {}", e))?;

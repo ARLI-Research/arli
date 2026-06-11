@@ -7,6 +7,7 @@
 pub mod agent;
 pub mod client;
 pub mod execution;
+pub mod handler;
 pub mod risk;
 pub mod skills;
 pub mod strategies;

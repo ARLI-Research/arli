@@ -3218,6 +3218,28 @@ agent_name = "{name}"
                 enso,
             );
 
+            // Wire in trading execution handler for job_type="trading" contracts.
+            // When the oracle discovers a trading contract, this handler:
+            //   1. Parses job_params (strategy, coins, capital)
+            //   2. Spawns a trading agent via AgentFactory
+            //   3. Runs the execution loop (paper mode by default)
+            //   4. Returns execution results as OCSF attestation event
+            {
+                use std::sync::Arc;
+                let agent_registry = Arc::new(arli_trading::agent::AgentRegistry::new());
+                let strategy_registry = {
+                    let mut reg = arli_trading::strategy::StrategyRegistry::new();
+                    arli_trading::strategies::register_builtin_strategies(&mut reg);
+                    Arc::new(reg)
+                };
+                let handler = arli_trading::handler::TradingHandler::new(
+                    agent_registry,
+                    strategy_registry,
+                    false, // mainnet
+                );
+                oracle.set_execution_handler(Some(Box::new(handler)));
+            }
+
             println!("ARLI ENSO Oracle starting...");
             println!(
                 "  Contracts: {:?}",

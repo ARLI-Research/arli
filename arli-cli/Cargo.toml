@@ -13,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 arli-core = { path = "../arli-core" }
 arli-gateway = { path = "../arli-gateway" }
+arli-trading = { path = "../arli-trading" }
 tokio.workspace = true
 clap.workspace = true
 anyhow.workspace = true

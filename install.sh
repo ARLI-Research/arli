@@ -9,7 +9,7 @@ RED="\033[0;31m"
 NC="\033[0m"
 
 REPO="ARLI-Research/arli"
-VERSION="${ARLI_VERSION:-v0.5.4}"
+VERSION="${ARLI_VERSION:-v0.6.0}"
 INSTALL_DIR="${ARLI_INSTALL_DIR:-$HOME/.local/bin}"
 
 echo -e "${BOLD}ARLI — Production-Grade AI Agent Harness${NC}"

@@ -74,7 +74,10 @@ impl TradingHandler {
         let strategy = params["strategy"]
             .as_str()
             .unwrap_or("passive")
-            .to_string();
+            .to_string()
+            // Normalize: underscore → hyphen, lowercase
+            .replace('_', "-")
+            .to_lowercase();
 
         let coins: Vec<String> = params["coins"]
             .as_array()

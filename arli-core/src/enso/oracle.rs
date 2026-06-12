@@ -358,10 +358,13 @@ impl EnsoOracle {
                 } // close if let
             } // close for contract_id
 
-            if self
-                .jobs
-                .iter()
-                .all(|j| j.attested || j.failures >= MAX_RETRIES)
+            // Only exit if we had at least one job and all are done.
+            // With zero jobs, keep polling — new contracts may appear.
+            if !self.jobs.is_empty()
+                && self
+                    .jobs
+                    .iter()
+                    .all(|j| j.attested || j.failures >= MAX_RETRIES)
             {
                 tracing::info!(
                     "Oracle: all {} contracts done ({} attested)",

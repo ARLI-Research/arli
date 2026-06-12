@@ -3238,6 +3238,12 @@ agent_name = "{name}"
                     None,  // HL key from env
                 );
                 oracle.set_execution_handler(Some(Box::new(handler)));
+
+                // Wire up Telegram alerts if configured
+                if let Some(telegram) = arli_core::enso::oracle::TelegramNotifier::from_env() {
+                    tracing::info!("Telegram alerts enabled");
+                    oracle.set_notification_sink(Some(Box::new(telegram)));
+                }
             }
 
             println!("ARLI ENSO Oracle starting...");

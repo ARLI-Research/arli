@@ -173,6 +173,9 @@ pub struct EnsoOracle {
     /// Pluggable execution handler — produces real OCSF events instead of dummy ones.
     /// When [None], the oracle uses [dummy_ocsf_event] for attestation.
     execution_handler: Option<Box<dyn ExecutionHandler>>,
+    /// Optional notification sink for external alerts (Telegram, webhook, etc.).
+    /// Fires on settled, disputed, SLA penalty events.
+    notification_sink: Option<Box<dyn NotificationSink>>,
 }
 
 #[cfg(feature = "enso")]
@@ -210,6 +213,7 @@ impl EnsoOracle {
             workspace_root: None,
             verification_pipeline: None,
             execution_handler: None,
+            notification_sink: None,
         }
     }
 
@@ -410,6 +414,15 @@ impl EnsoOracle {
     /// Pass `None` to revert to dummy events.
     pub fn set_execution_handler(&mut self, handler: Option<Box<dyn ExecutionHandler>>) {
         self.execution_handler = handler;
+    }
+
+    /// Set a notification sink for external alerts (Telegram, webhook, etc.).
+    ///
+    /// When set, the oracle calls `on_settled`, `on_disputed`, and
+    /// `on_sla_penalty` on the sink when those events occur.
+    /// Pass `None` to disable notifications.
+    pub fn set_notification_sink(&mut self, sink: Option<Box<dyn NotificationSink>>) {
+        self.notification_sink = sink;
     }
 
     /// Process a single contract by ID: execute (via handler), build attestation, sign, submit.
@@ -640,6 +653,21 @@ impl EnsoOracle {
                         tx_id,
                         result.amount_cents,
                     );
+                    // Fire notification
+                    if let Some(ref sink) = self.notification_sink {
+                        sink.on_settled(
+                            contract_id,
+                            &self.agent_id,
+                            Some(tx_id),
+                            result.amount_cents,
+                        )
+                        .await;
+                    }
+                } else {
+                    // Attested but not settled (no tx_id)
+                    if let Some(ref sink) = self.notification_sink {
+                        sink.on_settled(contract_id, &self.agent_id, None, 0).await;
+                    }
                 }
 
                 // Success — commit workspace snapshot
@@ -650,6 +678,12 @@ impl EnsoOracle {
                 Ok(OracleResult::Attested)
             }
             SettlementStatus::Disputed => {
+                // Fire notification
+                if let Some(ref sink) = self.notification_sink {
+                    sink.on_disputed(contract_id, &self.agent_id, &result.message)
+                        .await;
+                }
+
                 task_state.add_error(&result.message);
                 task_state.add_check("enso_settlement", false, None, Some(result.message.clone()));
 
@@ -704,6 +738,155 @@ impl EnsoOracle {
 #[derive(Debug, PartialEq)]
 enum OracleResult {
     Attested,
+}
+
+// ============================================================================
+// NOTIFICATION SINK — optional callback for external alerts (Telegram, etc.)
+// ============================================================================
+
+/// Sink for oracle notifications — fires on important events.
+///
+/// Implementations can send Telegram messages, POST webhooks,
+/// write to log files, etc.
+#[async_trait]
+pub trait NotificationSink: Send + Sync {
+    /// Called when a contract is successfully attested + settled.
+    async fn on_settled(
+        &self,
+        contract_id: &str,
+        agent_id: &str,
+        tx_id: Option<&str>,
+        amount_cents: u64,
+    );
+
+    /// Called when a contract is disputed (SLA fail, signature reject, etc.).
+    async fn on_disputed(&self, contract_id: &str, agent_id: &str, reason: &str);
+
+    /// Called on SLA enforcement action (penalty applied).
+    async fn on_sla_penalty(
+        &self,
+        contract_id: &str,
+        agent_id: &str,
+        amount_cents: u64,
+        reason: &str,
+    );
+}
+
+/// Telegram notifier — sends alerts to a Telegram chat via Bot API.
+///
+/// Requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ALERT_CHAT_ID` env vars.
+pub struct TelegramNotifier {
+    bot_token: String,
+    chat_id: String,
+    client: reqwest::Client,
+}
+
+impl TelegramNotifier {
+    /// Create from environment variables.
+    /// Returns None if token or chat_id are not set.
+    pub fn from_env() -> Option<Self> {
+        let bot_token = std::env::var("TELEGRAM_BOT_TOKEN").ok()?;
+        let chat_id = std::env::var("TELEGRAM_ALERT_CHAT_ID").ok()?;
+        Some(Self {
+            bot_token,
+            chat_id,
+            client: reqwest::Client::new(),
+        })
+    }
+
+    async fn send(&self, text: &str) {
+        let url = format!(
+            "https://api.telegram.org/bot{}/sendMessage",
+            self.bot_token
+        );
+        let result = self
+            .client
+            .post(&url)
+            .json(&serde_json::json!({
+                "chat_id": self.chat_id,
+                "text": text,
+                "parse_mode": "Markdown",
+            }))
+            .send()
+            .await;
+
+        match result {
+            Ok(r) if r.status().is_success() => {
+                tracing::debug!("Telegram alert sent: {}", text.chars().take(80).collect::<String>());
+            }
+            Ok(r) => {
+                tracing::warn!(
+                    "Telegram alert failed: HTTP {} — {}",
+                    r.status(),
+                    r.text().await.unwrap_or_default(),
+                );
+            }
+            Err(e) => {
+                tracing::warn!("Telegram alert send error: {e}");
+            }
+        }
+    }
+}
+
+#[async_trait]
+impl NotificationSink for TelegramNotifier {
+    async fn on_settled(
+        &self,
+        contract_id: &str,
+        agent_id: &str,
+        tx_id: Option<&str>,
+        amount_cents: u64,
+    ) {
+        let amount_usd = amount_cents as f64 / 100.0;
+        let msg = if let Some(tx) = tx_id {
+            format!(
+                "✅ *Contract Settled*\n\
+                 Contract: `{}`\n\
+                 Agent: `{}`\n\
+                 Amount: ${:.2}\n\
+                 TX: `{}`",
+                contract_id, agent_id, amount_usd, tx,
+            )
+        } else {
+            format!(
+                "✅ *Contract Attested*\n\
+                 Contract: `{}`\n\
+                 Agent: `{}`",
+                contract_id, agent_id,
+            )
+        };
+        self.send(&msg).await;
+    }
+
+    async fn on_disputed(&self, contract_id: &str, agent_id: &str, reason: &str) {
+        let msg = format!(
+            "❌ *Contract Disputed*\n\
+             Contract: `{}`\n\
+             Agent: `{}`\n\
+             Reason: {}",
+            contract_id, agent_id, reason,
+        );
+        self.send(&msg).await;
+    }
+
+    async fn on_sla_penalty(
+        &self,
+        contract_id: &str,
+        agent_id: &str,
+        amount_cents: u64,
+        reason: &str,
+    ) {
+        let amount_usd = amount_cents as f64 / 100.0;
+        let msg = format!(
+            "⚠️ *SLA Penalty Applied*\n\
+             Contract: `{}`\n\
+             Agent: `{}`\n\
+             Penalty: ${:.2}\n\
+             Reason: {}",
+            contract_id, agent_id, amount_usd, reason,
+        );
+        self.send(&msg).await;
+    }
 }
 
 /// Dry-run oracle stub when ENSO feature not compiled.

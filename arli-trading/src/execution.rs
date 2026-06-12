@@ -111,6 +111,15 @@ pub async fn run_loop(
     running: Arc<AtomicBool>,
 ) -> LoopState {
     let mut state = LoopState::default();
+
+    // Seed paper equity: in paper mode the wallet has no funds, but the
+    // agent is allocated virtual capital — use it as the initial equity so the
+    // circuit breaker doesn't trip on the first real tick.
+    state
+        .equity_history
+        .push((0, config.allocated_capital));
+    state.peak_equity = config.allocated_capital;
+
     let context: HashMap<String, String> = HashMap::new();
 
     // Use a boxed strategy so it can be passed into async closures
@@ -244,14 +253,24 @@ pub async fn run_loop(
 
         // ── Update performance ─────────────────────────────────────────
         state.tick_count += 1;
-        state.equity_history.push((state.tick_count, agent_state.equity));
 
-        if agent_state.equity > state.peak_equity {
-            state.peak_equity = agent_state.equity;
+        // In paper mode, track the allocated capital as equity (the wallet
+        // has no real funds). In live mode, use the actual exchange balance.
+        let tracked_equity = if config.live {
+            agent_state.equity
+        } else {
+            config.allocated_capital
+        };
+        state
+            .equity_history
+            .push((state.tick_count, tracked_equity));
+
+        if tracked_equity > state.peak_equity {
+            state.peak_equity = tracked_equity;
         }
         if state.peak_equity > Decimal::ZERO {
             state.current_drawdown =
-                (state.peak_equity - agent_state.equity) / state.peak_equity;
+                (state.peak_equity - tracked_equity) / state.peak_equity;
         }
 
         // ── Wait for next tick ─────────────────────────────────────────

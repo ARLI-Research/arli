@@ -3227,16 +3227,15 @@ agent_name = "{name}"
             //   4. Returns execution results as OCSF attestation event
             {
                 use std::sync::Arc;
-                let agent_registry = Arc::new(arli_trading::agent::AgentRegistry::new());
                 let strategy_registry = {
                     let mut reg = arli_trading::strategy::StrategyRegistry::new();
                     arli_trading::strategies::register_builtin_strategies(&mut reg);
                     Arc::new(reg)
                 };
                 let handler = arli_trading::handler::TradingHandler::new(
-                    agent_registry,
                     strategy_registry,
                     false, // mainnet
+                    None,  // HL key from env
                 );
                 oracle.set_execution_handler(Some(Box::new(handler)));
             }

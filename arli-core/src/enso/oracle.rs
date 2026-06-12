@@ -24,6 +24,8 @@
 
 use std::time::Duration;
 
+use async_trait::async_trait;
+
 /// Base poll interval in seconds.
 const POLL_INTERVAL_SECS: u64 = 30;
 
@@ -105,15 +107,21 @@ pub struct ExecutionResult {
 /// - **Code agent**: compiles/runs code in sandbox, returns test results.
 /// - **ML agent**: trains/evaluates a model, returns metrics.
 ///
+/// # Async
+///
+/// Handlers are async — trading agents need network I/O for market data
+/// and order execution. The oracle awaits each handler's completion.
+///
 /// # Thread safety
 ///
 /// Handlers must be `Send + Sync` — the oracle runs in an async context
 /// and may process multiple contracts concurrently.
+#[async_trait::async_trait]
 pub trait ExecutionHandler: Send + Sync {
     /// Execute the contract and return an OCSF attestation event.
     ///
     /// `job` contains the full job specification from ENSO (job_type, job_params, SLA, etc.).
-    fn execute(
+    async fn execute(
         &self,
         contract_id: &str,
         agent_id: &str,
@@ -528,7 +536,7 @@ impl EnsoOracle {
                 job.job_type,
                 job.job_params.len(),
             );
-            match handler.execute(contract_id, &self.agent_id, &job) {
+            match handler.execute(contract_id, &self.agent_id, &job).await {
                 Ok(result) => {
                     tracing::info!(
                         "Oracle: handler executed {} — success={}, artifacts={}",

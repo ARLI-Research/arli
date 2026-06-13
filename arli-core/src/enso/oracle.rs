@@ -32,6 +32,11 @@ const POLL_INTERVAL_SECS: u64 = 30;
 /// Maximum number of failed attestation attempts per contract.
 const MAX_RETRIES: u32 = 3;
 
+/// Safety margin before deadline: if the deadline is closer than this,
+/// the oracle skips execution to avoid racing the auto-refund.
+/// 5 minutes in nanoseconds.
+const DEADLINE_SAFETY_MARGIN_NS: u64 = 300_000_000_000;
+
 /// Calculate exponential backoff delay for retry N (0-indexed).
 /// Base: 30s, doubles each retry, capped at 5 minutes.
 pub fn backoff_delay(retry: u32) -> Duration {
@@ -546,6 +551,32 @@ impl EnsoOracle {
         let (ocsf_event, artifacts, handler_metrics) = if let Some(ref handler) = self.execution_handler {
             // Fetch job details from ENSO canister
             let job = self.enso.get_job_details(contract_id).await?;
+
+            // --- Deadline safety check: skip if too close to deadline ---
+            if job.deadline_ns > 0 {
+                let now_ns = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos() as u64;
+                let remaining_ns = job.deadline_ns.saturating_sub(now_ns);
+                if remaining_ns < DEADLINE_SAFETY_MARGIN_NS {
+                    let msg = format!(
+                        "Deadline too close for {}: {:.1}s remaining (margin: {:.1}s). Skipping to avoid auto-refund.",
+                        contract_id,
+                        remaining_ns as f64 / 1_000_000_000.0,
+                        DEADLINE_SAFETY_MARGIN_NS as f64 / 1_000_000_000.0,
+                    );
+                    tracing::warn!("{}", msg);
+                    task_state.add_error(&msg);
+                    return Err(msg);
+                }
+                tracing::debug!(
+                    "Oracle: {} deadline check OK — {:.1}s remaining",
+                    contract_id,
+                    remaining_ns as f64 / 1_000_000_000.0,
+                );
+            }
+
             tracing::info!(
                 "Oracle: executing {} — type={}, params_len={}",
                 contract_id,

@@ -341,7 +341,25 @@ impl EnsoClient {
                 tx_id: Some(payment_ok.tx_id),
                 amount_cents: 0,
             }),
-            Err(err_msg) => Err(err_msg),
+            Err(err_msg) => {
+                // Idempotency: escrow may already be settled or refunded.
+                // These are terminal states — treat as Ok with a note.
+                if err_msg.contains("already_settled") || err_msg.contains("Refunded") {
+                    tracing::info!(
+                        "submit_arli_payment for {}: escrow already terminal — {}",
+                        contract_id,
+                        err_msg
+                    );
+                    Ok(ArliPaymentResult {
+                        status: SettlementStatus::Settled,
+                        message: format!("Escrow already terminal: {}", err_msg),
+                        tx_id: None, // No new tx — already resolved
+                        amount_cents: 0,
+                    })
+                } else {
+                    Err(err_msg)
+                }
+            }
         }
     }
 
@@ -378,6 +396,32 @@ impl EnsoClient {
             content_hash: ENSO_SANDBOX_POLICY_V1_HASH.to_string(),
             policy_json: String::new(), // Embedded policy used instead
         })
+    }
+
+    /// List approved ARLI binary hashes for this agent.
+    ///
+    /// Calls `list_approved_binaries` on the ENSO contracts canister.
+    /// Returns the list of sha256 hex hashes that are approved for attestation.
+    pub async fn list_approved_binaries(&self, agent_id: &str) -> Result<Vec<String>, String> {
+        let canister_id =
+            ic_agent::export::Principal::from_text(&self.config.contracts_canister_id)
+                .map_err(|e| format!("parse canister id: {e}"))?;
+
+        let args = candid::encode_args((agent_id.to_string(),))
+            .map_err(|e| format!("encode args: {e}"))?;
+
+        let result = self
+            .agent
+            .query(&canister_id, "list_approved_binaries")
+            .with_arg(args)
+            .call()
+            .await
+            .map_err(|e| format!("call list_approved_binaries: {e}"))?;
+
+        let hashes: Vec<String> =
+            candid::decode_one(&result).map_err(|e| format!("decode: {e}"))?;
+
+        Ok(hashes)
     }
 
     /// List active contracts assigned to this agent.
@@ -455,6 +499,7 @@ impl EnsoClient {
                 sandbox_config_hash: j.sandbox_config_hash,
                 payment_amount: j.payment_amount,
                 payment_token: j.payment_token,
+                deadline_ns: j.deadline_ns,
             }),
             None => Err(format!("No job details for contract {contract_id}")),
         }
@@ -503,6 +548,9 @@ struct JobDetailCandid {
     sandbox_config_hash: String,
     payment_amount: u64,
     payment_token: String,
+    /// Deadline in nanoseconds since epoch. Oracle checks this before executing.
+    #[serde(default)]
+    deadline_ns: u64,
 }
 
 #[cfg(feature = "enso")]
@@ -540,6 +588,9 @@ pub struct JobDetail {
     pub payment_amount: u64,
     /// Payment token symbol
     pub payment_token: String,
+    /// Deadline in nanoseconds since epoch.
+    /// Oracle MUST complete execution before this timestamp.
+    pub deadline_ns: u64,
 }
 
 #[cfg(feature = "enso")]

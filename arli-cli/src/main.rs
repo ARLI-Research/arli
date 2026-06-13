@@ -430,11 +430,52 @@ enum EnsoCmd {
         contract_id: String,
     },
     /// Run the ENSO oracle for specific contracts: attest → submit → settle
-    #[command(alias = "oracle")]
     Run {
         /// Run once for a specific contract (no polling loop)
         #[arg(short, long)]
         contract: Option<String>,
+    },
+    /// Manage ENSO oracle daemon (background service)
+    #[command(subcommand)]
+    Oracle(OracleCmd),
+    /// Show revenue from completed contracts
+    Revenue {
+        /// Show last N settlements (default: 20)
+        #[arg(short, long, default_value = "20")]
+        recent: usize,
+    },
+    /// Admin operations: inspect contracts, escrows, state
+    #[command(subcommand)]
+    Admin(AdminCmd),
+}
+
+#[derive(Subcommand)]
+enum OracleCmd {
+    /// Start the oracle as a background daemon
+    Start,
+    /// Stop the running oracle daemon
+    Stop,
+    /// Show oracle daemon status (running/stopped)
+    Status,
+    /// Show recent oracle daemon logs
+    Log {
+        /// Number of tail lines (default: 50)
+        #[arg(short, long, default_value = "50")]
+        lines: usize,
+    },
+}
+
+#[derive(Subcommand)]
+enum AdminCmd {
+    /// Show detailed contract + escrow status
+    Status {
+        /// Contract ID (e.g. contract_1781269249389759433_1)
+        contract_id: String,
+    },
+    /// Show escrow details (amount funded, status, deadlines)
+    Escrow {
+        /// Escrow ID (e.g. escrow_1781269249389759433_1) or contract ID
+        id: String,
     },
 }
 
@@ -1992,6 +2033,11 @@ fn main() -> anyhow::Result<()> {
         return arli_gateway::run(true, "", "");
     }
 
+    // ── ENSO oracle daemon mode (spawned by 'arli enso oracle start') ──
+    if std::env::args().any(|a| a == "--__enso-oracle-daemon") {
+        return run_enso_oracle_daemon();
+    }
+
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
@@ -3210,6 +3256,46 @@ agent_name = "{name}"
             })
             .map_err(|e| anyhow::anyhow!("ENSO client init failed: {}", e))?;
 
+            // Check if this binary hash is approved on ENSO
+            {
+                let approved = tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current()
+                        .block_on(enso.list_approved_binaries(&agent_id))
+                });
+                match approved {
+                    Ok(hashes) if hashes.iter().any(|h| h == &binary_hash) => {
+                        // Binary is approved — proceed
+                    }
+                    Ok(hashes) => {
+                        println!();
+                        println!("╔══════════════════════════════════════════════════════╗");
+                        println!("║  BINARY HASH NOT APPROVED                            ║");
+                        println!("╠══════════════════════════════════════════════════════╣");
+                        println!("║                                                      ║");
+                        println!("║  Current:  {}  ║", binary_hash);
+                        println!("║                                                      ║");
+                        if hashes.is_empty() {
+                            println!("║  No approved hashes on ENSO.                          ║");
+                        } else {
+                            println!("║  Approved ({}):                                      ║", hashes.len());
+                            for h in &hashes {
+                                println!("║    {}  ║", h);
+                            }
+                        }
+                        println!("║                                                      ║");
+                        println!("║  ENSO operator must run:                              ║");
+                        println!("║    approve_arli_binary(\"{}\")  ║", binary_hash);
+                        println!("║                                                      ║");
+                        println!("╚══════════════════════════════════════════════════════╝");
+                        println!();
+                        anyhow::bail!("Binary hash not approved. Ask ENSO operator to approve.");
+                    }
+                    Err(e) => {
+                        tracing::warn!("Could not check binary approval: {e}. Proceeding anyway.");
+                    }
+                }
+            }
+
             let mut oracle = arli_core::enso::oracle::EnsoOracle::new(
                 contracts,
                 agent_id.clone(),
@@ -3258,6 +3344,445 @@ agent_name = "{name}"
             });
 
             println!("\nOracle finished. Attested: {} contracts.", attested);
+        }
+
+        EnsoCmd::Admin(cmd) => {
+            let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+            let arli_dir = std::path::PathBuf::from(&home).join(".arli");
+            let config_path = arli_dir.join("enso.toml");
+
+            let contracts_canister = if config_path.exists() {
+                let config_str = std::fs::read_to_string(&config_path)?;
+                let config: arli_core::enso::EnsoConfig = toml::from_str(&config_str)?;
+                config.contracts_canister_id
+            } else {
+                "5fp3e-cyaaa-aaaae-agtra-cai".to_string()
+            };
+
+            match cmd {
+                AdminCmd::Status { contract_id } => {
+                    println!("=== ENSO Contract Status ===\n");
+                    println!("Contract: {contract_id}\n");
+
+                    // Query contract
+                    let output = std::process::Command::new("dfx")
+                        .args([
+                            "canister", "--network", "ic", "call",
+                            &contracts_canister,
+                            "get_contract",
+                            &format!("(\"{contract_id}\")"),
+                            "--query",
+                        ])
+                        .env("DFX_WARNING", "-mainnet_plaintext_identity")
+                        .output()?;
+
+                    if output.status.success() {
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        println!("--- get_contract ---");
+                        // Parse known fields
+                        for line in stdout.lines() {
+                            let trimmed = line.trim();
+                            if trimmed == "opt record {" || trimmed == "}," || trimmed == ")" || trimmed == "(" {
+                                continue;
+                            }
+                            // Known field hashes -> names
+                            let display = match () {
+                                _ if trimmed.contains("1_605_487_144") => trimmed.replace("1_605_487_144", "contract_id").replace(" = \"", " = ").trim_end_matches(';').to_string(),
+                                _ if trimmed.contains("2_559_047_159") => trimmed.replace("2_559_047_159", "agent_id").replace(" = \"", " = ").trim_end_matches(';').to_string(),
+                                _ if trimmed.contains("100_394_802") => {
+                                    let status_str = if trimmed.contains("3_288_819_313") { "Funded" }
+                                        else if trimmed.contains("694_863_607") { "Active" }
+                                        else if trimmed.contains("disputed") { "Disputed" }
+                                        else { "?" };
+                                    format!("  status      = {status_str}")
+                                }
+                                _ if trimmed.contains("3_854_903_676") => trimmed.replace("3_854_903_676", "job_type").replace(" = \"", " = ").trim_end_matches(';').to_string(),
+                                _ if trimmed.contains("3_947_707_840") => trimmed.replace("3_947_707_840", "token").replace(" = \"", " = ").trim_end_matches(';').to_string(),
+                                _ if trimmed.contains("996_459_825") => trimmed.replace("996_459_825", "payment_amount").replace(" : nat64", "").trim_end_matches(';').to_string(),
+                                _ if trimmed.contains("1_595_738_364") => trimmed.replace("1_595_738_364", "description").replace(" = \"", " = ").trim_end_matches(';').to_string(),
+                                _ if trimmed.contains("2_568_379_596") => {
+                                    let rest = trimmed.split(" = ").nth(1).unwrap_or("?");
+                                    format!("  deadline_ns = {rest}")
+                                }
+                                _ if trimmed.contains("1_455_679_112") => {
+                                    let rest = trimmed.split('"').nth(1).unwrap_or("?");
+                                    format!("  job_params  = {rest}")
+                                }
+                                _ if trimmed.contains("268_342_446") => {
+                                    let rest = trimmed.split('"').nth(1).unwrap_or("none");
+                                    format!("  escrow_id   = {rest}")
+                                }
+                                _ if trimmed.contains("3_009_146_483") => trimmed.replace("3_009_146_483", "sandbox_hash").replace(" = \"", " = ").trim_end_matches(';').to_string(),
+                                _ if trimmed.contains("1_748_278_929") => trimmed.replace("1_748_278_929", "roles").replace(" = \"", " = ").trim_end_matches(';').to_string(),
+                                _ => String::new(),
+                            };
+                            if !display.is_empty() {
+                                println!("{display}");
+                            }
+                        }
+                    } else {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        println!("Error: {stderr}");
+                    }
+
+                    // Get escrow_id from contract and query escrow
+                    let escrow_id = format!("escrow_{}", &contract_id["contract_".len()..]);
+                    let output2 = std::process::Command::new("dfx")
+                        .args([
+                            "canister", "--network", "ic", "call",
+                            &contracts_canister,
+                            "get_escrow",
+                            &format!("(\"{escrow_id}\")"),
+                            "--query",
+                        ])
+                        .env("DFX_WARNING", "-mainnet_plaintext_identity")
+                        .output()?;
+
+                    if output2.status.success() {
+                        let stdout = String::from_utf8_lossy(&output2.stdout);
+                        println!("\n--- get_escrow ---");
+                        for line in stdout.lines() {
+                            let trimmed = line.trim();
+                            if trimmed == "opt record {" || trimmed == "}," || trimmed == ")" || trimmed == "(" {
+                                continue;
+                            }
+                            let display = match () {
+                                _ if trimmed.contains("45_571_341") => {
+                                    let amount = trimmed.split(" = ").nth(1).and_then(|s| s.split(' ').next()).unwrap_or("?");
+                                    format!("  amount_funded = {amount}  ⬅ ICP deposited")
+                                }
+                                _ if trimmed.contains("3_573_748_184") => trimmed.replace("3_573_748_184", "amount_required").replace(" : nat64", "").trim_end_matches(';').to_string(),
+                                _ if trimmed.contains("100_394_802") => {
+                                    let status_str = if trimmed.contains("694_863_607") { "Funded (awaiting execution)" }
+                                        else if trimmed.contains("3_288_819_313") { "Active" }
+                                        else if trimmed.contains("disputed") { "Disputed" }
+                                        else { "?" };
+                                    format!("  status       = {status_str}")
+                                }
+                                _ if trimmed.contains("338_395_897") => {
+                                    let rest = trimmed.split('"').nth(1).unwrap_or("?");
+                                    format!("  token        = {rest}")
+                                }
+                                _ if trimmed.contains("1_748_168_761") => trimmed.replace("1_748_168_761", "released").replace(" : nat64", "").trim_end_matches(';').to_string(),
+                                _ if trimmed.contains("1_782_082_687") => trimmed.replace("1_782_082_687", "agent_id").replace(" = \"", " = ").trim_end_matches(';').to_string(),
+                                _ if trimmed.contains("1_678_739_608") => trimmed.replace("1_678_739_608", "deadline_ns").replace(" : nat64", "").trim_end_matches(';').to_string(),
+                                _ if trimmed.contains("1_779_848_746") => trimmed.replace("1_779_848_746", "created_at").replace(" : nat64", "").trim_end_matches(';').to_string(),
+                                _ if trimmed.contains("3_410_694_759") => {
+                                    let rest = trimmed.split(" = ").nth(1).unwrap_or("?");
+                                    format!("  auto_release = {rest}")
+                                }
+                                _ if trimmed.contains("1_946_251_950") => {
+                                    let rest = trimmed.split(" = ").nth(1).unwrap_or("none");
+                                    format!("  funded_at    = {rest}")
+                                }
+                                _ => String::new(),
+                            };
+                            if !display.is_empty() {
+                                println!("{display}");
+                            }
+                        }
+                    } else {
+                        let stderr = String::from_utf8_lossy(&output2.stderr);
+                        println!("\nEscrow: query failed — {stderr}");
+                    }
+
+                    // Also try get_job_details (already implemented in EnsoClient)
+                    if config_path.exists() {
+                        let config_str = std::fs::read_to_string(&config_path)?;
+                        let config: arli_core::enso::EnsoConfig = toml::from_str(&config_str)?;
+                        use arli_core::enso::EnsoClient;
+                        let enso = tokio::task::block_in_place(|| {
+                            tokio::runtime::Handle::current().block_on(EnsoClient::new(config))
+                        });
+                        match enso {
+                            Ok(enso) => {
+                                match tokio::task::block_in_place(|| {
+                                    tokio::runtime::Handle::current()
+                                        .block_on(enso.get_job_details(&contract_id))
+                                }) {
+                                    Ok(job) => {
+                                        println!("\n--- get_job_details ---");
+                                        println!("  Job type:      {}", job.job_type);
+                                        println!("  Payment:       {} {}", job.payment_amount, job.payment_token);
+                                        println!("  Sandbox hash:  {}", job.sandbox_config_hash);
+                                        if job.deadline_ns > 0 {
+                                            let deadline_secs = job.deadline_ns / 1_000_000_000;
+                                            println!("  Deadline:      {}s ({} from epoch)", deadline_secs, job.deadline_ns);
+                                        }
+                                        if let Some(ref sla) = job.sla {
+                                            println!("  SLA target:    {}", sla.target);
+                                            println!("  SLA landlock:  {}", sla.require_landlock);
+                                            println!("  SLA seccomp:   {}", sla.require_seccomp);
+                                        }
+                                        println!("  Job params:    {}", job.job_params);
+                                    }
+                                    Err(e) => println!("\nJob details: {e}"),
+                                }
+                            }
+                            Err(e) => println!("\nENSO client: {e}"),
+                        }
+                    }
+                }
+
+                AdminCmd::Escrow { id } => {
+                    // If id looks like a contract_id (starts with "contract_"), derive escrow_id
+                    let escrow_id = if id.starts_with("contract_") {
+                        format!("escrow_{}", &id["contract_".len()..])
+                    } else {
+                        id.clone()
+                    };
+
+                    println!("=== ENSO Escrow ===\n");
+                    println!("Escrow: {escrow_id}\n");
+
+                    let output = std::process::Command::new("dfx")
+                        .args([
+                            "canister", "--network", "ic", "call",
+                            &contracts_canister,
+                            "get_escrow",
+                            &format!("(\"{escrow_id}\")"),
+                            "--query",
+                        ])
+                        .env("DFX_WARNING", "-mainnet_plaintext_identity")
+                        .output()?;
+
+                    if output.status.success() {
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        println!("{stdout}");
+                    } else {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        anyhow::bail!("Escrow query failed: {stderr}");
+                    }
+                }
+            }
+        }
+
+        EnsoCmd::Revenue { recent } => {
+            let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+            let arli_dir = std::path::PathBuf::from(&home).join(".arli");
+            let log_file = arli_dir.join("enso_oracle.log");
+
+            if !log_file.exists() {
+                println!("No oracle log found at {}", log_file.display());
+                println!("Revenue: 0 ICP (0 contracts)");
+                return Ok(());
+            }
+
+            let content = std::fs::read_to_string(&log_file)?;
+            let mut total_settled = 0u64;
+            let mut total_contracts = 0u64;
+
+            // Parse lines like:
+            // "Oracle: contract <id> settled, payment released. tx=<tx>, amount=<N>¢"
+            // "Oracle: contract <id> attested OK"
+            let mut settlements: Vec<(String, u64, String)> = Vec::new(); // (contract, amount_cents, tx)
+
+            for line in content.lines() {
+                if line.contains("settled, payment released") {
+                    total_contracts += 1;
+                    // Extract contract_id
+                    let contract = line
+                        .split("contract ")
+                        .nth(1)
+                        .and_then(|s| s.split(' ').next())
+                        .unwrap_or("?");
+                    // Extract amount
+                    let amount: u64 = line
+                        .split("amount=")
+                        .nth(1)
+                        .and_then(|s| s.split('¢').next())
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(0);
+                    // Extract tx
+                    let tx = line
+                        .split("tx=")
+                        .nth(1)
+                        .and_then(|s| s.split(',').next())
+                        .unwrap_or("?");
+                    total_settled += amount;
+                    settlements.push((contract.to_string(), amount, tx.to_string()));
+                } else if line.contains("attested OK") {
+                    // Attested but not settled (already_settled, 0 amount)
+                    let contract = line
+                        .split("contract ")
+                        .nth(1)
+                        .and_then(|s| s.split(' ').next())
+                        .unwrap_or("?");
+                    // Check if already counted
+                    if !settlements.iter().any(|(c, _, _)| c == contract) {
+                        total_contracts += 1;
+                        settlements.push((contract.to_string(), 0, "attested".to_string()));
+                    }
+                }
+            }
+
+            let icp_total = total_settled as f64 / 100.0;
+
+            println!("=== ENSO Oracle Revenue ===\n");
+            println!("Total contracts: {}", total_contracts);
+            println!("Total revenue:   {}¢ = {:.2} ICP\n", total_settled, icp_total);
+
+            if settlements.is_empty() {
+                println!("No settlements yet. Revenue will appear here after contracts complete.");
+            } else {
+                println!("Recent settlements (last {}):\n", recent.min(settlements.len()));
+                let start = if settlements.len() > recent {
+                    settlements.len() - recent
+                } else {
+                    0
+                };
+                for (contract, amount, tx) in &settlements[start..] {
+                    if *amount > 0 {
+                        println!(
+                            "  {}  +{}¢ ({:.4} ICP)  tx: {}",
+                            contract,
+                            amount,
+                            *amount as f64 / 100_000_000.0,
+                            tx
+                        );
+                    } else {
+                        println!("  {}  attested (no payment)  tx: {}", contract, tx);
+                    }
+                }
+            }
+
+            println!("\nLog file: {}", log_file.display());
+            println!("Full log: arli enso oracle log");
+        }
+
+        EnsoCmd::Oracle(cmd) => {
+            let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+            let arli_dir = std::path::PathBuf::from(&home).join(".arli");
+            std::fs::create_dir_all(&arli_dir)?;
+            let pid_file = arli_dir.join("enso_oracle.pid");
+            let log_file = arli_dir.join("enso_oracle.log");
+
+            match cmd {
+                OracleCmd::Start => {
+                    if pid_file.exists() {
+                        let pid_str = std::fs::read_to_string(&pid_file)?;
+                        if let Ok(pid) = pid_str.trim().parse::<i32>() {
+                            unsafe {
+                                if libc::kill(pid, 0) == 0 {
+                                    println!("Oracle is already running (PID: {})", pid);
+                                    println!("Stop it first: arli enso oracle stop");
+                                    return Ok(());
+                                }
+                            }
+                        }
+                        std::fs::remove_file(&pid_file)?;
+                    }
+
+                    println!("Starting ENSO Oracle daemon...");
+
+                    let mut child = std::process::Command::new(
+                        std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("arli")),
+                    )
+                    .arg("--__enso-oracle-daemon")
+                    .env("ARLI_HOME", &arli_dir)
+                    .env("ENSO_CONTRACTS", std::env::var("ENSO_CONTRACTS").unwrap_or_default())
+                    .env("ENSO_AGENT_ID", std::env::var("ENSO_AGENT_ID").unwrap_or_default())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn()?;
+
+                    // Wait for PID file to appear (daemon writes it on startup)
+                    let pid = child.id();
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    if pid_file.exists() {
+                        let pid = std::fs::read_to_string(&pid_file)?.trim().to_string();
+                        println!("Oracle daemon started (PID: {})", pid);
+                        println!("Logs: {}", log_file.display());
+                        println!("Status: arli enso oracle status");
+                        println!("Stop:   arli enso oracle stop");
+                    } else {
+                        println!("Oracle daemon started.");
+                        println!("Logs: {}", log_file.display());
+                    }
+                }
+
+                OracleCmd::Stop => {
+                    if !pid_file.exists() {
+                        println!("Oracle daemon is not running (no PID file).");
+                        return Ok(());
+                    }
+
+                    let pid_str = std::fs::read_to_string(&pid_file)?;
+                    let pid: i32 = pid_str.trim().parse()?;
+
+                    unsafe {
+                        if libc::kill(pid, 0) != 0 {
+                            println!("Oracle daemon is not running (PID {} is dead).", pid);
+                            std::fs::remove_file(&pid_file)?;
+                            return Ok(());
+                        }
+                        libc::kill(pid, libc::SIGTERM);
+                    }
+
+                    // Wait for process to exit (up to 10 seconds)
+                    for _ in 0..100 {
+                        unsafe {
+                            if libc::kill(pid, 0) != 0 {
+                                break;
+                            }
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    }
+
+                    unsafe {
+                        if libc::kill(pid, 0) == 0 {
+                            libc::kill(pid, libc::SIGKILL);
+                            println!("Oracle daemon force-killed (PID: {})", pid);
+                        } else {
+                            println!("Oracle daemon stopped (PID: {})", pid);
+                        }
+                    }
+
+                    std::fs::remove_file(&pid_file).ok();
+                }
+
+                OracleCmd::Status => {
+                    if !pid_file.exists() {
+                        println!("Oracle daemon: stopped (no PID file)");
+                        return Ok(());
+                    }
+
+                    let pid_str = std::fs::read_to_string(&pid_file)?;
+                    let pid: i32 = pid_str.trim().parse()?;
+
+                    unsafe {
+                        if libc::kill(pid, 0) == 0 {
+                            println!("Oracle daemon: running (PID: {})", pid);
+                            if log_file.exists() {
+                                match std::fs::metadata(&log_file) {
+                                    Ok(m) => println!("Log: {} ({} bytes)", log_file.display(), m.len()),
+                                    Err(_) => println!("Log: {}", log_file.display()),
+                                }
+                            }
+                        } else {
+                            println!("Oracle daemon: stopped (PID {} is dead)", pid);
+                            std::fs::remove_file(&pid_file).ok();
+                        }
+                    }
+                }
+
+                OracleCmd::Log { lines } => {
+                    if !log_file.exists() {
+                        println!("No log file at {}", log_file.display());
+                        return Ok(());
+                    }
+                    let content = std::fs::read_to_string(&log_file)?;
+                    let all_lines: Vec<&str> = content.lines().collect();
+                    let start = if all_lines.len() > lines {
+                        all_lines.len() - lines
+                    } else {
+                        0
+                    };
+                    for line in &all_lines[start..] {
+                        println!("{}", line);
+                    }
+                }
+            }
         }
     }
     Ok(())
@@ -3439,5 +3964,228 @@ fn run_pair(args: PairArgs) -> anyhow::Result<()> {
             );
         }
     }
+    Ok(())
+}
+
+// ── ENSO Oracle Daemon (at bottom to avoid edition 2015 async-block parser breakage) ──
+
+fn run_enso_oracle_daemon() -> anyhow::Result<()> {
+    use sha2::Digest;
+
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    let arli_dir = std::path::PathBuf::from(&home).join(".arli");
+    std::fs::create_dir_all(&arli_dir)?;
+
+    let pid_file = arli_dir.join("enso_oracle.pid");
+    let log_file = arli_dir.join("enso_oracle.log");
+
+    let pid = std::process::id();
+    std::fs::write(&pid_file, pid.to_string())?;
+
+    let log = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_file)?;
+    use std::os::unix::io::AsRawFd;
+    unsafe {
+        libc::dup2(log.as_raw_fd(), libc::STDOUT_FILENO);
+        libc::dup2(log.as_raw_fd(), libc::STDERR_FILENO);
+    }
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+
+    rt.block_on(async {
+        tracing_subscriber::fmt()
+            .with_writer(std::io::stderr)
+            .with_env_filter(
+                std::env::var("ARLI_LOG")
+                    .unwrap_or_else(|_| "info,arli_core::enso=debug".to_string()),
+            )
+            .init();
+
+        tracing::info!("ENSO Oracle daemon starting (PID {})", pid);
+
+        let key_path = arli_dir.join("arli_key.pem");
+        let config_path = arli_dir.join("enso.toml");
+
+        if !key_path.exists() {
+            tracing::error!("No ARLI key found at {}", key_path.display());
+            let _ = std::fs::remove_file(&pid_file);
+            return Err(anyhow::anyhow!("No ARLI key — run 'arli enso onboard' first"));
+        }
+
+        let kp = match arli_core::attestation::ArliKeypair::load(&key_path) {
+            Ok(k) => k,
+            Err(e) => {
+                tracing::error!("Failed to load key: {e}");
+                let _ = std::fs::remove_file(&pid_file);
+                return Err(anyhow::anyhow!("Key load failed: {e}"));
+            }
+        };
+
+        let config: arli_core::enso::EnsoConfig = if config_path.exists() {
+            match std::fs::read_to_string(&config_path) {
+                Ok(s) => match toml::from_str(&s) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        tracing::error!("Config parse error: {e}");
+                        arli_core::enso::EnsoConfig::default()
+                    }
+                },
+                Err(_) => arli_core::enso::EnsoConfig::default(),
+            }
+        } else {
+            arli_core::enso::EnsoConfig::default()
+        };
+
+        let contracts = arli_core::enso::oracle::load_contracts_from_env();
+
+        let binary_hash = {
+            let exe = std::env::current_exe().unwrap_or_default();
+            if exe.exists() {
+                match std::fs::read(&exe) {
+                    Ok(bytes) => {
+                        let hash = sha2::Sha256::digest(&bytes);
+                        format!("{:x}", hash)
+                    }
+                    Err(_) => "unknown".into(),
+                }
+            } else {
+                "unknown".into()
+            }
+        };
+
+        let sandbox_config_hash = {
+            let policy_path = arli_dir.join("sandbox.yaml");
+            if policy_path.exists() {
+                match std::fs::read(&policy_path) {
+                    Ok(bytes) => {
+                        let hash = sha2::Sha256::digest(&bytes);
+                        format!("{:x}", hash)
+                    }
+                    Err(_) => "unknown".into(),
+                }
+            } else {
+                "unknown".into()
+            }
+        };
+
+        let agent_id = std::env::var("ENSO_AGENT_ID")
+            .unwrap_or_else(|_| "arli_cae6abd1c316f027".to_string());
+
+        use arli_core::enso::EnsoClient;
+        let enso = match EnsoClient::new(config).await {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::error!("ENSO client init failed: {e}");
+                let _ = std::fs::remove_file(&pid_file);
+                return Err(anyhow::anyhow!("ENSO client failed: {e}"));
+            }
+        };
+
+        // Check binary approval
+        match enso.list_approved_binaries(&agent_id).await {
+            Ok(hashes) if hashes.iter().any(|h| h == &binary_hash) => {
+                // Approved
+            }
+            Ok(hashes) => {
+                tracing::error!(
+                    "Binary hash NOT approved: {}. Approved: {:?}. ENSO operator: approve_arli_binary(\"{}\")",
+                    binary_hash, hashes, binary_hash
+                );
+                let _ = std::fs::remove_file(&pid_file);
+                return Err(anyhow::anyhow!(
+                    "Binary hash {} not approved. ENSO operator must run: approve_arli_binary(\"{}\")",
+                    binary_hash, binary_hash
+                ));
+            }
+            Err(e) => {
+                tracing::warn!("Could not check binary approval: {e}. Proceeding anyway.");
+            }
+        }
+
+        let mut oracle = arli_core::enso::oracle::EnsoOracle::new(
+            contracts.clone(),
+            agent_id.clone(),
+            binary_hash,
+            sandbox_config_hash,
+            Some(kp),
+            enso,
+        );
+
+        {
+            use std::sync::Arc;
+            let strategy_registry = {
+                let mut reg = arli_trading::strategy::StrategyRegistry::new();
+                arli_trading::strategies::register_builtin_strategies(&mut reg);
+                Arc::new(reg)
+            };
+            let handler = arli_trading::handler::TradingHandler::new(
+                strategy_registry,
+                false,
+                None,
+            );
+            oracle.set_execution_handler(Some(Box::new(handler)));
+
+            if let Some(telegram) = arli_core::enso::oracle::TelegramNotifier::from_env() {
+                oracle.set_notification_sink(Some(Box::new(telegram)));
+            }
+        }
+
+        tracing::info!(
+            "Oracle initialized: {} contracts, agent={agent_id}",
+            contracts.len()
+        );
+
+        let oracle_handle = tokio::spawn(async move {
+            let attested = oracle.run().await;
+            tracing::info!("Oracle loop exited. Attested: {attested} contracts.");
+            attested
+        });
+
+        let mut sigterm = tokio::signal::unix::signal(
+            tokio::signal::unix::SignalKind::terminate(),
+        )
+        .ok();
+        let mut sigint =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt()).ok();
+
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                tracing::info!("SIGINT received, shutting down...");
+            }
+            _ = async {
+                if let Some(ref mut s) = sigterm {
+                    s.recv().await;
+                } else {
+                    std::future::pending::<()>().await;
+                }
+            } => {
+                tracing::info!("SIGTERM received, shutting down...");
+            }
+            _ = async {
+                if let Some(ref mut s) = sigint {
+                    s.recv().await;
+                } else {
+                    std::future::pending::<()>().await;
+                }
+            } => {
+                tracing::info!("SIGINT received, shutting down...");
+            }
+            result = oracle_handle => {
+                match result {
+                    Ok(n) => tracing::info!("Oracle finished naturally: {n} attested"),
+                    Err(e) => tracing::error!("Oracle task panicked: {e}"),
+                }
+            }
+        }
+
+        let _ = std::fs::remove_file(&pid_file);
+        tracing::info!("Oracle daemon stopped.");
+        Ok::<_, anyhow::Error>(())
+    })?;
+
     Ok(())
 }

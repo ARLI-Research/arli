@@ -1065,7 +1065,7 @@ dependencies = [
 
 [[package]]
 name = "arli-cli"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "arli-core",
@@ -1099,7 +1099,7 @@ dependencies = [
 
 [[package]]
 name = "arli-core"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "ast-grep-core",
@@ -1154,7 +1154,7 @@ dependencies = [
 
 [[package]]
 name = "arli-gateway"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "arli-core",
@@ -1186,7 +1186,7 @@ dependencies = [
 
 [[package]]
 name = "arli-trading"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "arli-core",

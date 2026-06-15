@@ -680,7 +680,7 @@ fn run_setup_ii(name: &str, icp_gateway: &str) -> anyhow::Result<()> {
         &session_secret_hex,
         name,
         icp_gateway,
-        "bmo7h-iiaaa-aaaab-qhama-cai", // AgentProfile canister on ICP mainnet
+        "5fp3e-cyaaa-aaaae-agtra-cai", // ENSO backend canister on ICP mainnet
     ));
 
     match result {
@@ -2927,7 +2927,7 @@ fn run_enso(cmd: EnsoCmd) -> anyhow::Result<()> {
             let config_toml = format!(
                 r#"# ENSO configuration for ARLI
 icp_gateway = "https://icp0.io"
-registry_canister_id = "bmo7h-iiaaa-aaaab-qhama-cai"
+registry_canister_id = "5fp3e-cyaaa-aaaae-agtra-cai"
 contracts_canister_id = "{contracts_id}"
 arli_public_key = "{pubkey}"
 agent_name = "ARLI v0.5"

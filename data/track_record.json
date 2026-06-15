@@ -1,0 +1,97 @@
+[
+  {
+    "date": "2026-06-15",
+    "period": "30d",
+    "first_date": "2026-05-16",
+    "last_date": "2026-06-15",
+    "coin": "BTC",
+    "candles": 721,
+    "interval": "1h",
+    "btc_change_pct": -14.6,
+    "run": {
+      "total_return_pct": -0.47,
+      "final_equity": 1492.9,
+      "initial_capital": 1500.0,
+      "agents": [
+        {
+          "name": "rsi_30_70_long",
+          "return_pct": -1.39,
+          "pnl": -6.95,
+          "trades": 6
+        },
+        {
+          "name": "rsi_70_30_short",
+          "return_pct": -0.02,
+          "pnl": -0.14,
+          "trades": 18
+        },
+        {
+          "name": "bollinger_mean_rev",
+          "return_pct": 0.0,
+          "pnl": 0.0,
+          "trades": 0
+        }
+      ]
+    }
+  },
+  {
+    "date": "2026-06-15",
+    "period": "30d",
+    "coins": 7,
+    "interval": "1h",
+    "total_capital": 10500,
+    "total_equity": 10479.04,
+    "avg_return_pct": -0.19,
+    "per_coin": {
+      "BTC": {
+        "return": -0.41,
+        "equity": 1493.74,
+        "initial": 1500,
+        "best": "rsi_short",
+        "best_pct": -0.03
+      },
+      "ETH": {
+        "return": -0.3,
+        "equity": 1495.41,
+        "initial": 1500,
+        "best": "rsi_short",
+        "best_pct": -0.05
+      },
+      "SOL": {
+        "return": -0.08,
+        "equity": 1498.71,
+        "initial": 1500,
+        "best": "rsi_long",
+        "best_pct": 0.56
+      },
+      "AVAX": {
+        "return": -0.17,
+        "equity": 1497.34,
+        "initial": 1500,
+        "best": "rsi_long",
+        "best_pct": 0.24
+      },
+      "LINK": {
+        "return": -0.25,
+        "equity": 1496.18,
+        "initial": 1500,
+        "best": "rsi_long",
+        "best_pct": 0.29
+      },
+      "DOGE": {
+        "return": -0.09,
+        "equity": 1498.54,
+        "initial": 1500,
+        "best": "rsi_short",
+        "best_pct": -0.01
+      },
+      "XRP": {
+        "return": -0.05,
+        "equity": 1499.12,
+        "initial": 1500,
+        "best": "macd_trend",
+        "best_pct": 0.1
+      }
+    }
+  }
+]

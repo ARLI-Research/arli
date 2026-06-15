@@ -1,0 +1,66 @@
+{
+  "agents": [
+    {
+      "name": "rsi_long",
+      "capital": 500,
+      "config": {
+        "coins": ["BTC", "ETH", "SOL", "AVAX", "LINK", "ARB", "OP", "SUI", "DOGE", "XRP"],
+        "tick_interval_s": 3600,
+        "max_leverage": 3,
+        "position_size_pct": 0.1,
+        "stop_loss_pct": 0.05,
+        "take_profit_pct": 0.10,
+        "direction": "long",
+        "entry": {"type": "indicator", "indicator": "rsi", "params": {"period": "14"}, "op": "lt", "value": 30},
+        "exit": {"type": "indicator", "indicator": "rsi", "params": {"period": "14"}, "op": "gt", "value": 70}
+      }
+    },
+    {
+      "name": "rsi_short",
+      "capital": 500,
+      "config": {
+        "coins": ["BTC", "ETH", "SOL", "AVAX", "LINK", "ARB", "OP", "SUI", "DOGE", "XRP"],
+        "tick_interval_s": 3600,
+        "max_leverage": 3,
+        "position_size_pct": 0.1,
+        "stop_loss_pct": 0.05,
+        "take_profit_pct": 0.10,
+        "direction": "short",
+        "entry": {"type": "indicator", "indicator": "rsi", "params": {"period": "14"}, "op": "gt", "value": 70},
+        "exit": {"type": "indicator", "indicator": "rsi", "params": {"period": "14"}, "op": "lt", "value": 30}
+      }
+    },
+    {
+      "name": "macd_trend",
+      "capital": 500,
+      "config": {
+        "coins": ["BTC", "ETH", "SOL", "AVAX", "LINK", "ARB", "OP", "SUI", "DOGE", "XRP"],
+        "tick_interval_s": 3600,
+        "max_leverage": 3,
+        "position_size_pct": 0.1,
+        "stop_loss_pct": 0.05,
+        "take_profit_pct": 0.10,
+        "direction": "long",
+        "entry": {"type": "cross", "indicator_a": "macd", "params_a": {"fast": "12", "slow": "26", "signal": "9"}, "output_a": "macd_line", "indicator_b": "macd", "params_b": {"fast": "12", "slow": "26", "signal": "9"}, "output_b": "signal_line"},
+        "exit": {"type": "cross", "indicator_a": "macd", "params_a": {"fast": "12", "slow": "26", "signal": "9"}, "output_a": "signal_line", "indicator_b": "macd", "params_b": {"fast": "12", "slow": "26", "signal": "9"}, "output_b": "macd_line"}
+      }
+    },
+    {
+      "name": "bollinger_breakout",
+      "capital": 500,
+      "config": {
+        "coins": ["BTC", "ETH", "SOL", "AVAX", "LINK", "ARB", "OP", "SUI", "DOGE", "XRP"],
+        "tick_interval_s": 3600,
+        "max_leverage": 3,
+        "position_size_pct": 0.1,
+        "stop_loss_pct": 0.05,
+        "take_profit_pct": 0.10,
+        "direction": "long",
+        "entry": {"type": "indicator", "indicator": "bollinger_bands", "params": {"period": "20", "std_dev": "2.0"}, "output": "bb_upper", "op": "cross_above", "value": 0},
+        "exit": {"type": "indicator", "indicator": "sma", "params": {"period": "20"}, "output": "value", "op": "cross_below", "value": 0}
+      }
+    }
+  ],
+  "rebalance_ticks": 72,
+  "min_capital": 50
+}

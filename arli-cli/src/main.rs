@@ -158,6 +158,74 @@ enum Commands {
 
     /// Generate pairing code for Telegram gateway access
     Pair(PairArgs),
+
+    /// Run backtest on historical candle data
+    Backtest {
+        /// Strategy config file (JSON: IndicatorStrategyConfig)
+        #[arg(short, long, default_value = "strategy.json")]
+        config: String,
+        /// Candle data file (JSON array of HL candles)
+        #[arg(short, long, default_value = "candles.json")]
+        candles: String,
+    },
+
+    /// Fetch historical candles from Hyperliquid
+    FetchCandles {
+        /// Coin (e.g., BTC, ETH, SOL)
+        #[arg(short, long, default_value = "BTC")]
+        coin: String,
+        /// Candle interval: 1m, 3m, 5m, 15m, 30m, 1h, 4h, 1d
+        #[arg(short, long, default_value = "1h")]
+        interval: String,
+        /// Start time (unix ms, default: 7 days ago)
+        #[arg(long)]
+        start: Option<u64>,
+        /// End time (unix ms, default: now)
+        #[arg(long)]
+        end: Option<u64>,
+        /// Output file (default: candles.json)
+        #[arg(short, long, default_value = "candles.json")]
+        output: String,
+    },
+
+    /// Run strategy in dry-run mode with live market data
+    Run {
+        /// Strategy config file (JSON)
+        #[arg(short, long, default_value = "strategy.json")]
+        config: String,
+        /// Allocated capital in USD (default: 1000)
+        #[arg(long, default_value = "1000")]
+        capital: f64,
+        /// Tick interval in seconds (default: 60)
+        #[arg(long, default_value = "60")]
+        interval: u64,
+        /// Use testnet instead of mainnet
+        #[arg(long)]
+        testnet: bool,
+    },
+
+    /// Grid search optimization over strategy parameters
+    Optimize {
+        /// Optimization config file (JSON with template + grid)
+        #[arg(short, long, default_value = "optimize.json")]
+        config: String,
+        /// Candle data file (JSON array)
+        #[arg(short, long, default_value = "candles.json")]
+        candles: String,
+        /// Show top N results (default: 10)
+        #[arg(short, long, default_value = "10")]
+        top: usize,
+    },
+
+    /// Run multiple strategies with isolated capital
+    Multi {
+        /// Multi-agent config file (JSON)
+        #[arg(short, long, default_value = "multi.json")]
+        config: String,
+        /// Candle data file (JSON array)
+        #[arg(short, long, default_value = "candles.json")]
+        candles: String,
+    },
 }
 
 #[derive(Args)]
@@ -2409,6 +2477,26 @@ fn main() -> anyhow::Result<()> {
             run_pair(args)?;
         }
 
+        Commands::Backtest { config, candles } => {
+            run_backtest(&config, &candles)?;
+        }
+
+        Commands::FetchCandles { coin, interval, start, end, output } => {
+            run_fetch_candles(&coin, &interval, start, end, &output)?;
+        }
+
+        Commands::Run { config, capital, interval, testnet } => {
+            run_dry_run(&config, capital, interval, testnet)?;
+        }
+
+        Commands::Optimize { config, candles, top } => {
+            run_optimize_cli(&config, &candles, top)?;
+        }
+
+        Commands::Multi { config, candles } => {
+            run_multi(&config, &candles)?;
+        }
+
         Commands::Key(cmd) => {
             run_key(cmd)?;
         }
@@ -3964,6 +4052,387 @@ fn run_pair(args: PairArgs) -> anyhow::Result<()> {
             );
         }
     }
+    Ok(())
+}
+
+// ── Backtest ──
+
+fn run_backtest(config_path: &str, candles_path: &str) -> anyhow::Result<()> {
+    use arli_trading::backtest::{BacktestConfig, BacktestEngine};
+    use arli_trading::strategies::indicator_strategy::{IndicatorStrategy, IndicatorStrategyConfig};
+    use hypersdk::hypercore::types::Candle;
+
+    // Load strategy config
+    let config_json = std::fs::read_to_string(config_path)
+        .map_err(|e| anyhow::anyhow!("Failed to read config file '{}': {}", config_path, e))?;
+    let strategy_config: IndicatorStrategyConfig = serde_json::from_str(&config_json)
+        .map_err(|e| anyhow::anyhow!("Failed to parse strategy config: {}", e))?;
+
+    // Load candle data
+    let candles_json = std::fs::read_to_string(candles_path)
+        .map_err(|e| anyhow::anyhow!("Failed to read candles file '{}': {}", candles_path, e))?;
+    let candles: Vec<Candle> = serde_json::from_str(&candles_json)
+        .map_err(|e| anyhow::anyhow!("Failed to parse candles: {}", e))?;
+
+    if candles.is_empty() {
+        anyhow::bail!("No candles in data file");
+    }
+
+    let strategy = IndicatorStrategy::new(strategy_config);
+    let bt_config = BacktestConfig::default();
+    let mut engine = BacktestEngine::new(Box::new(strategy), bt_config);
+
+    let report = std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(engine.run(&candles));
+        drop(rt);
+        result
+    }).join().unwrap();
+
+    println!("═══ Backtest Report ═══");
+    println!("Ticks processed:    {}", report.total_ticks);
+    println!("Total trades:       {}", report.total_trades);
+    println!("Winning trades:     {}", report.winning_trades);
+    println!("Win rate:           {:.2}%", report.win_rate * rust_decimal::Decimal::from(100));
+    println!("Total PnL:          ${:.2}", report.total_pnl);
+    println!("Final equity:       ${:.2}", report.final_equity);
+    println!("Return on capital:  {:.2}%", report.return_on_capital * rust_decimal::Decimal::from(100));
+    println!("Max drawdown:       {:.2}%", report.max_drawdown * rust_decimal::Decimal::from(100));
+    println!("Sharpe ratio:       {:.2}", report.sharpe_ratio);
+
+    if !report.trades.is_empty() {
+        println!("\n─── Trade List ───");
+        for (i, t) in report.trades.iter().enumerate() {
+            println!(
+                "  {}. {} {} @ ${:.2} → ${:.2} | PnL: ${:.2} ({:.2}%)",
+                i + 1,
+                t.coin,
+                t.direction.to_uppercase(),
+                t.entry_price,
+                t.exit_price,
+                t.pnl,
+                t.pnl_pct * rust_decimal::Decimal::from(100),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+// ── Fetch Candles ──
+
+fn run_fetch_candles(coin: &str, interval: &str, start: Option<u64>, end: Option<u64>, output: &str) -> anyhow::Result<()> {
+    use hypersdk::hypercore::types::CandleInterval;
+
+    let interval: CandleInterval = interval.parse().map_err(|_| {
+        anyhow::anyhow!("Invalid interval '{}'. Use: 1m, 3m, 5m, 15m, 30m, 1h, 4h, 1d", interval)
+    })?;
+
+    let end_time = end.unwrap_or_else(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64
+    });
+    let start_time = start.unwrap_or(end_time - 7 * 24 * 3600 * 1000); // 7 days
+
+    println!("Fetching {} candles for {} ({} → {})...", interval, coin, start_time, end_time);
+
+    let coin_owned = coin.to_string();
+    let interval_owned = interval.clone();
+
+    let candles = std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let client = hypersdk::hypercore::mainnet();
+        let result = rt.block_on(async {
+            client.candle_snapshot(&coin_owned, interval_owned, start_time, end_time).await
+        });
+        drop(client); // drop reqwest client + its runtime inside the spawn thread
+        drop(rt);
+        result
+    }).join().unwrap()
+    .map_err(|e| anyhow::anyhow!("Failed to fetch candles: {}", e))?;
+
+    if candles.is_empty() {
+        anyhow::bail!("No candles returned. The time range may have no data.");
+    }
+
+    println!("Got {} candles. Saving to {}...", candles.len(), output);
+    let json = serde_json::to_string_pretty(&candles)?;
+    std::fs::write(output, json)?;
+    println!("Done. Run: arli backtest -d {} -c strategy.json", output);
+
+    Ok(())
+}
+
+// ── Dry Run ──
+
+fn run_dry_run(config_path: &str, capital: f64, tick_interval: u64, testnet: bool) -> anyhow::Result<()> {
+    use arli_trading::client::HyperliquidContext;
+    use arli_trading::execution::{run_loop, AgentConfig};
+    use arli_trading::strategies::indicator_strategy::{IndicatorStrategy, IndicatorStrategyConfig};
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
+
+    // Load strategy config
+    let config_json = std::fs::read_to_string(config_path)
+        .map_err(|e| anyhow::anyhow!("Failed to read config: {}", e))?;
+    let strategy_config: IndicatorStrategyConfig = serde_json::from_str(&config_json)
+        .map_err(|e| anyhow::anyhow!("Failed to parse config: {}", e))?;
+
+    // Set env for HyperliquidContext
+    if testnet {
+        std::env::set_var("HYPERLIQUID_TESTNET", "true");
+    }
+    // Use a zero key for API-only access (candle snapshots don't need auth)
+    std::env::set_var("HYPERLIQUID_PRIVATE_KEY",
+        "0x0000000000000000000000000000000000000000000000000000000000000001");
+
+    let ctx = HyperliquidContext::from_env()
+        .map_err(|e| anyhow::anyhow!("Failed to create HL context: {}", e))?;
+
+    let strategy = IndicatorStrategy::new(strategy_config.clone());
+    let watchlist = strategy_config.coins.clone();
+
+    let agent_config = AgentConfig {
+        agent_id: "dry-run".into(),
+        allocated_capital: rust_decimal::Decimal::from_f64_retain(capital).unwrap(),
+        min_equity: rust_decimal::Decimal::from_f64_retain(capital * 0.1).unwrap(),
+        max_daily_drawdown: rust_decimal::Decimal::from_f64_retain(0.2).unwrap(),
+        tick_interval_seconds: tick_interval,
+        max_positions: 3,
+        live: false,
+    };
+
+    println!("═══ ARLI Dry Run ═══");
+    println!("Strategy:    indicator");
+    println!("Coins:       {}", watchlist.join(", "));
+    println!("Capital:     ${}", capital);
+    println!("Interval:    {}s", tick_interval);
+    println!("Network:     {}", if testnet { "testnet" } else { "mainnet" });
+    println!("Mode:        PAPER (no real trades)");
+    println!("─── Running (Ctrl+C to stop) ───\n");
+
+    let running = Arc::new(AtomicBool::new(true));
+
+    let ctx = Arc::new(ctx);
+    let strategy: Box<dyn arli_trading::strategy::Strategy> = Box::new(strategy);
+
+    let state = std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(run_loop(ctx, strategy, agent_config, running));
+        drop(rt);
+        result
+    }).join().unwrap();
+
+    println!("\n─── Dry Run Finished ───");
+    println!("Ticks:       {}", state.tick_count);
+    println!("Trades:      {}", state.total_trades);
+    println!("Win rate:    {:.1}%", if state.total_trades > 0 {
+        (state.winning_trades as f64 / state.total_trades as f64) * 100.0
+    } else { 0.0 });
+    println!("Total PnL:   ${:.2}", state.total_pnl);
+    if let Some(ref err) = state.last_error {
+        println!("Last error:  {}", err);
+    }
+
+    Ok(())
+}
+
+// ── Optimize ──
+
+fn run_optimize_cli(config_path: &str, candles_path: &str, top: usize) -> anyhow::Result<()> {
+    use arli_trading::backtest::BacktestConfig;
+    use arli_trading::optimize::{run_optimize, OptimizeConfig, ParamGrid};
+    use arli_trading::strategies::indicator_strategy::IndicatorStrategyConfig;
+    use hypersdk::hypercore::types::Candle;
+    use std::collections::HashMap;
+
+    // Load optimization config
+    let config_json = std::fs::read_to_string(config_path)
+        .map_err(|e| anyhow::anyhow!("Failed to read config: {}", e))?;
+
+    #[derive(serde::Deserialize)]
+    struct OptConfigFile {
+        template: IndicatorStrategyConfig,
+        grid: HashMap<String, serde_json::Value>,
+    }
+
+    let file: OptConfigFile = serde_json::from_str(&config_json)
+        .map_err(|e| anyhow::anyhow!("Failed to parse optimize config: {}", e))?;
+
+    // Parse grid
+    let mut grid = HashMap::new();
+    for (key, val) in &file.grid {
+        if let Some(arr) = val.as_array() {
+            if arr.is_empty() {
+                continue;
+            }
+            // Detect type from first element
+            if arr[0].is_number() {
+                let vals: Vec<f64> = arr.iter()
+                    .filter_map(|v| v.as_f64())
+                    .collect();
+                grid.insert(key.clone(), ParamGrid::Float(vals));
+            } else if arr[0].is_string() {
+                let vals: Vec<String> = arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect();
+                grid.insert(key.clone(), ParamGrid::String(vals));
+            } else if arr[0].is_boolean() {
+                let vals: Vec<bool> = arr.iter()
+                    .filter_map(|v| v.as_bool())
+                    .collect();
+                grid.insert(key.clone(), ParamGrid::Bool(vals));
+            }
+        }
+    }
+
+    // Load candles
+    let candles_json = std::fs::read_to_string(candles_path)
+        .map_err(|e| anyhow::anyhow!("Failed to read candles: {}", e))?;
+    let candles: Vec<Candle> = serde_json::from_str(&candles_json)
+        .map_err(|e| anyhow::anyhow!("Failed to parse candles: {}", e))?;
+
+    if candles.is_empty() {
+        anyhow::bail!("No candles in data file");
+    }
+
+    let opt_config = OptimizeConfig {
+        template: file.template,
+        grid,
+    };
+
+    let total = opt_config.grid.values()
+        .map(|g| match g {
+            ParamGrid::Float(v) => v.len(),
+            ParamGrid::String(v) => v.len(),
+            ParamGrid::Bool(v) => v.len(),
+        })
+        .product::<usize>();
+
+    println!("═══ Optimization ═══");
+    println!("Combinations:  {}", total);
+    println!("Candles:       {} ticks", candles.len());
+    println!("─── Running... ───\n");
+
+    let bt_config = BacktestConfig::default();
+    let summary = std::thread::spawn(move || {
+        run_optimize(opt_config, &candles, bt_config, |done, total| {
+            if done % 10 == 0 || done == total {
+                println!("  [{}/{}] {:.0}%", done, total, (done as f64 / total as f64) * 100.0);
+            }
+        })
+    }).join().unwrap();
+
+    println!("\n═══ Results (top {} by Sharpe) ═══", top.min(summary.results.len()));
+    println!("Best Sharpe:  {:.4}", summary.best_sharpe);
+    println!("Best PnL:     ${:.2}", summary.best_pnl);
+
+    for (i, r) in summary.results.iter().take(top).enumerate() {
+        println!("\n── {}. Sharpe={:.4}  PnL=${:.2}  Trades={}  Win={:.0}% ──",
+            i + 1,
+            r.report.sharpe_ratio,
+            r.report.total_pnl,
+            r.report.total_trades,
+            r.report.win_rate * rust_decimal::Decimal::from(100),
+        );
+        let mut params: Vec<_> = r.params.iter().collect();
+        params.sort_by_key(|(k, _)| *k);
+        for (k, v) in params {
+            println!("  {} = {}", k, v);
+        }
+    }
+
+    Ok(())
+}
+
+// ── Multi-Agent ──
+
+fn run_multi(config_path: &str, candles_path: &str) -> anyhow::Result<()> {
+    use arli_trading::backtest::BacktestConfig;
+    use arli_trading::multi_agent::{MultiAgentConfig, MultiAgentEngine};
+    use hypersdk::hypercore::types::Candle;
+
+    let config_json = std::fs::read_to_string(config_path)
+        .map_err(|e| anyhow::anyhow!("Failed to read config: {}", e))?;
+    let config: MultiAgentConfig = serde_json::from_str(&config_json)
+        .map_err(|e| anyhow::anyhow!("Failed to parse multi config: {}", e))?;
+
+    let candles_json = std::fs::read_to_string(candles_path)
+        .map_err(|e| anyhow::anyhow!("Failed to read candles: {}", e))?;
+    let candles: Vec<Candle> = serde_json::from_str(&candles_json)
+        .map_err(|e| anyhow::anyhow!("Failed to parse candles: {}", e))?;
+
+    if config.agents.is_empty() {
+        anyhow::bail!("No agents in config");
+    }
+
+    println!("═══ Multi-Agent Backtest ═══");
+    println!("Agents:        {}", config.agents.len());
+    println!("Candles:       {} ticks", candles.len());
+    println!("Total capital: ${:.0}", config.agents.iter().map(|a| a.capital).sum::<f64>());
+    println!("─── Running... ───\n");
+
+    let rebalance_ticks = config.rebalance_ticks;
+    let engine = MultiAgentEngine::new(config, BacktestConfig::default());
+
+    let use_rotation = rebalance_ticks > 0;
+    let report = std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = if use_rotation {
+            engine.run_with_rotation(&candles)
+        } else {
+            engine.run(&candles)
+        };
+        drop(rt);
+        result
+    }).join().unwrap();
+
+    println!("═══ Results (ranked by return) ═══");
+    println!(
+        "Total return: {:.2}%  |  Final equity: ${:.2}  |  Initial: ${:.2}",
+        report.total_return_pct * rust_decimal::Decimal::from(100),
+        report.final_total_equity,
+        report.total_capital,
+    );
+
+    for (i, agent) in report.agents.iter().enumerate() {
+        let medal = match i {
+            0 => "1st",
+            1 => "2nd",
+            2 => "3rd",
+            _ => "   ",
+        };
+        let win_rate = if agent.trade_count > 0 {
+            agent.last_report.as_ref().map(|r| r.win_rate).unwrap_or_default()
+        } else {
+            rust_decimal::Decimal::ZERO
+        };
+        println!(
+            "  {} {}: {:+.2}% | PnL=${:.2} | Trades={} | Win={:.0}% | Capital ${:.0}→${:.0}",
+            medal,
+            agent.name,
+            agent.return_pct * rust_decimal::Decimal::from(100),
+            agent.total_pnl,
+            agent.trade_count,
+            win_rate * rust_decimal::Decimal::from(100),
+            agent.initial_capital,
+            agent.capital,
+        );
+    }
+
+    // Print rotation events
+    if !report.rotations.is_empty() {
+        println!("\n─── Rotation Events ───");
+        for r in &report.rotations {
+            println!(
+                "  tick {}: {} → {}  ${:.2}  ({})",
+                r.tick, r.from_agent, r.to_agent, r.amount, r.reason,
+            );
+        }
+    }
+
     Ok(())
 }
 

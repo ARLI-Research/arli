@@ -211,14 +211,14 @@ impl RiskManager {
         current_price: Decimal,
     ) -> Option<SignalAction> {
         // Stop-loss
-        if let Some(sl) = position.liquidation_price {
-            let is_long = position.size > Decimal::ZERO;
-            let hit = if is_long {
-                current_price <= sl
-            } else {
-                current_price >= sl
-            };
-            if hit {
+        if let Some(sl) = position.stop_loss {
+            if sl > Decimal::ZERO && current_price <= sl {
+                return Some(SignalAction::Exit);
+            }
+        }
+        // Take-profit
+        if let Some(tp) = position.take_profit {
+            if tp > Decimal::ZERO && current_price >= tp {
                 return Some(SignalAction::Exit);
             }
         }

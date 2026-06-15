@@ -282,6 +282,21 @@ impl EnsoOracle {
         }
     }
 
+    /// Check if a contract was already attested (prevents re-executing completed escrows).
+    fn is_contract_attested(&self, contract_id: &str) -> bool {
+        if let Some(ref db) = self.db {
+            db.query_row(
+                "SELECT COUNT(*) FROM attestations WHERE contract_id = ?1",
+                rusqlite::params![contract_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|count| count > 0)
+            .unwrap_or(false)
+        } else {
+            false
+        }
+    }
+
     /// Run the oracle loop — auto-discovers contracts from ENSO, executes, attests.
     ///
     /// On each poll cycle, calls `list_active_contracts_for_agent` on the ENSO canister
@@ -308,6 +323,12 @@ impl EnsoOracle {
                 Ok(active_ids) => {
                     for cid in &active_ids {
                         if !self.jobs.iter().any(|j| &j.contract_id == cid) {
+                            // Skip contracts already attested in a previous run
+                            // (escrow completed → canister may still list them as active)
+                            if self.is_contract_attested(cid) {
+                                tracing::info!("Oracle: skipping already-attested contract {}", cid);
+                                continue;
+                            }
                             tracing::info!("Oracle: discovered new contract {}", cid);
                             self.jobs.push(OracleJob::new(cid.clone()));
                         }

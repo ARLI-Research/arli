@@ -48,6 +48,16 @@ pub struct TradingHandler {
     hl_private_key: Option<String>,
 }
 
+/// Parse a JSON numeric field tolerantly: tries u64 first, then f64.
+///
+/// Candid `Nat` values may serialize as floats (e.g., `10.0`) in JSON,
+/// so we can't rely on `as_u64()` alone.
+fn parse_json_u64(params: &serde_json::Value, key: &str) -> Option<u64> {
+    params[key]
+        .as_u64()
+        .or_else(|| params[key].as_f64().map(|f| f as u64))
+}
+
 impl TradingHandler {
     /// Create a new TradingHandler.
     ///
@@ -95,7 +105,19 @@ impl TradingHandler {
             .unwrap_or(dec!(1000));
 
         let max_positions = params["max_positions"].as_u64().unwrap_or(3) as usize;
-        let ticks = params["ticks"].as_u64().unwrap_or(5) as u64;
+        let ticks = parse_json_u64(&params, "ticks")
+            .or_else(|| parse_json_u64(&params, "num_ticks"))
+            .unwrap_or(5);
+        if ticks == 5
+            && params["ticks"].as_u64().is_none()
+            && params["ticks"].as_f64().is_none()
+            && params["num_ticks"].as_u64().is_none()
+            && params["num_ticks"].as_f64().is_none()
+        {
+            tracing::warn!(
+                "TradingHandler: no 'ticks' or 'num_ticks' in job_params, defaulting to 5"
+            );
+        }
 
         // Whether to execute real trades (default: paper/dry-run)
         let live = params["live"].as_bool().unwrap_or(false);
@@ -125,9 +147,7 @@ impl TradingHandler {
             }
         } else {
             // Paper trading — use testnet with a dummy key
-            // Generate a throwaway key for data-only access (no funds needed)
             std::env::set_var("HYPERLIQUID_TESTNET", "true");
-            // Use a known testnet key that can read market data without trading
             if std::env::var("HYPERLIQUID_PRIVATE_KEY").is_err() {
                 std::env::set_var(
                     "HYPERLIQUID_PRIVATE_KEY",
@@ -171,10 +191,17 @@ impl ExecutionHandler for TradingHandler {
         );
 
         // Build the strategy
-        let strategy = self
-            .strategy_registry
-            .build(&params.strategy)
-            .ok_or_else(|| format!("Unknown strategy: {}", params.strategy))?;
+        let strategy: Box<dyn crate::strategy::Strategy> = if params.strategy == "indicator" {
+            // Declarative indicator-based strategy — parse full config from job_params
+            let cfg: crate::strategies::IndicatorStrategyConfig =
+                serde_json::from_str(&job.job_params)
+                    .map_err(|e| format!("parse indicator strategy config: {e}"))?;
+            Box::new(crate::strategies::IndicatorStrategy::new(cfg))
+        } else {
+            self.strategy_registry
+                .build(&params.strategy)
+                .ok_or_else(|| format!("Unknown strategy: {}", params.strategy))?
+        };
 
         // Initialize Hyperliquid context
         let ctx = self.create_hl_context(&params)?;
@@ -287,6 +314,7 @@ impl ExecutionHandler for TradingHandler {
 }
 
 /// Parsed trading parameters from ENSO job_params.
+#[derive(Debug, PartialEq)]
 struct TradingParams {
     strategy: String,
     coins: Vec<String>,
@@ -295,4 +323,81 @@ struct TradingParams {
     max_positions: usize,
     ticks: u64,
     live: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_json_u64_tolerant() {
+        // Integer
+        let p = serde_json::json!({"ticks": 10});
+        assert_eq!(parse_json_u64(&p, "ticks"), Some(10));
+
+        // Float (Candid Nat serialization)
+        let p = serde_json::json!({"ticks": 10.0});
+        assert_eq!(parse_json_u64(&p, "ticks"), Some(10));
+
+        // Float with fraction
+        let p = serde_json::json!({"num_ticks": 7.5});
+        assert_eq!(parse_json_u64(&p, "num_ticks"), Some(7));
+
+        // Missing key
+        let p = serde_json::json!({"strategy": "rsi"});
+        assert_eq!(parse_json_u64(&p, "ticks"), None);
+
+        // String (not supported)
+        let p = serde_json::json!({"ticks": "10"});
+        assert_eq!(parse_json_u64(&p, "ticks"), None);
+    }
+
+    #[test]
+    fn test_parse_params_ticks_from_float() {
+        let job = JobDetail {
+            contract_id: "test-1".into(),
+            job_type: "trading".into(),
+            job_params: r#"{"strategy":"rsi","ticks":10.0,"allocated_capital_usd":1000}"#.into(),
+            sla: None,
+            sandbox_config_hash: "abc".into(),
+            payment_amount: 100,
+            payment_token: "ICP".into(),
+            deadline_ns: 0,
+        };
+        let params = TradingHandler::parse_params(&job).unwrap();
+        assert_eq!(params.ticks, 10, "Float ticks=10.0 should parse to 10, not default 5");
+        assert_eq!(params.capital, dec!(1000));
+    }
+
+    #[test]
+    fn test_parse_params_num_ticks_from_float() {
+        let job = JobDetail {
+            contract_id: "test-2".into(),
+            job_type: "trading".into(),
+            job_params: r#"{"strategy":"bb","num_ticks":20.0,"allocated_capital_usd":500}"#.into(),
+            sla: None,
+            sandbox_config_hash: "abc".into(),
+            payment_amount: 100,
+            payment_token: "ICP".into(),
+            deadline_ns: 0,
+        };
+        let params = TradingHandler::parse_params(&job).unwrap();
+        assert_eq!(params.ticks, 20, "Float num_ticks=20.0 should parse to 20");
+    }
+
+    #[test]
+    fn test_parse_params_ticks_default() {
+        let job = JobDetail {
+            contract_id: "test-3".into(),
+            job_type: "trading".into(),
+            job_params: r#"{"strategy":"macd","allocated_capital_usd":2000}"#.into(),
+            sla: None,
+            sandbox_config_hash: "abc".into(),
+            payment_amount: 100,
+            payment_token: "ICP".into(),
+            deadline_ns: 0,
+        };
+        let params = TradingHandler::parse_params(&job).unwrap();
+        assert_eq!(params.ticks, 5, "Missing ticks should default to 5");
+    }
 }

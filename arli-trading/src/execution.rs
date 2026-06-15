@@ -23,9 +23,10 @@ use crate::strategy::{
     AgentState, Direction, MarketSnapshot, OrderView, PositionSize, PositionView, Signal,
     SignalAction, Strategy,
 };
-use chrono::Utc;
+use chrono::{Datelike, Utc};
 use hypersdk::hypercore::types::*;
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -80,6 +81,10 @@ pub struct LoopState {
     pub equity_history: Vec<(u64, Decimal)>, // (tick, equity)
     pub last_error: Option<String>,
     pub paused: bool,
+    /// Daily loss tracker — resets at UTC midnight.
+    pub daily_pnl: Decimal,
+    pub daily_trades: u64,
+    pub last_reset_day: Option<u32>,  // ordinal day
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -124,6 +129,10 @@ pub async fn run_loop(
 
     // Use a boxed strategy so it can be passed into async closures
     let strategy: Arc<dyn Strategy> = Arc::from(strategy);
+
+    // Track virtual positions for paper mode (coin → (entry_price, stop_loss, take_profit))
+    let mut paper_positions: HashMap<String, (Decimal, Option<Decimal>, Option<Decimal>)> =
+        HashMap::new();
 
     let tick_duration = Duration::from_secs(config.tick_interval_seconds);
     let watchlist = strategy.watchlist().to_vec();
@@ -208,10 +217,18 @@ pub async fn run_loop(
                 }
             }
 
-            // Size position
+            // Size position — use allocated capital as base for sizing.
+            // In dry-run mode, available_margin is $0 on testnet, so we
+            // always use allocated_capital. In live mode, the actual equity
+            // is used (capped at allocated_capital).
+            let sizing_capital = if config.live {
+                agent_state.equity.min(config.allocated_capital)
+            } else {
+                config.allocated_capital
+            };
             let size = strategy.size_position(
                 signal,
-                agent_state.available_margin,
+                sizing_capital,
                 50, // max leverage from Hyperliquid
             );
 
@@ -248,6 +265,62 @@ pub async fn run_loop(
                     "DRY RUN — would execute"
                 );
                 state.total_trades += 1;
+
+                // Track virtual position for stop-loss/take-profit checks
+                if signal.action == SignalAction::Enter {
+                    paper_positions.insert(
+                        signal.coin.clone(),
+                        (
+                            signal.trigger_price.unwrap_or(Decimal::ZERO),
+                            size.stop_loss,
+                            size.take_profit,
+                        ),
+                    );
+                } else if signal.action == SignalAction::Exit {
+                    paper_positions.remove(&signal.coin);
+                }
+            }
+        }
+
+        // ── Check stop-loss / take-profit on paper positions ───────────────
+        if !config.live {
+            let to_exit: Vec<String> = paper_positions
+                .iter()
+                .filter_map(|(coin, (entry, sl, tp))| {
+                    if let Some(mid) = snapshot.mids.get(coin.as_str()) {
+                        if let Some(stop) = sl {
+                            if *stop > Decimal::ZERO && *mid <= *stop {
+                                return Some(coin.clone());
+                            }
+                        }
+                        if let Some(target) = tp {
+                            if *target > Decimal::ZERO && *mid >= *target {
+                                return Some(coin.clone());
+                            }
+                        }
+                    }
+                    None
+                })
+                .collect();
+
+            for coin in to_exit {
+                if let Some((entry, _, _)) = paper_positions.remove(&coin) {
+                    let mid = snapshot.mids.get(&coin).copied().unwrap_or(entry);
+                    let pnl_pct = if entry > Decimal::ZERO {
+                        (mid - entry) / entry
+                    } else {
+                        Decimal::ZERO
+                    };
+                    tracing::info!(
+                        agent_id = %config.agent_id,
+                        coin = %coin,
+                        entry = %entry,
+                        mid = %mid,
+                        pnl_pct = %(pnl_pct * dec!(100)),
+                        "STOP/TP triggered — closing virtual position"
+                    );
+                    state.total_trades += 1;
+                }
             }
         }
 
@@ -349,6 +422,8 @@ async fn fetch_agent_state(ctx: &HyperliquidContext) -> anyhow::Result<AgentStat
             unrealized_pnl: p.position.unrealized_pnl,
             leverage: p.position.leverage.value as u32,
             liquidation_price: p.position.liquidation_px,
+            stop_loss: None,
+            take_profit: None,
         })
         .collect();
 
@@ -379,6 +454,7 @@ async fn fetch_agent_state(ctx: &HyperliquidContext) -> anyhow::Result<AgentStat
 }
 
 fn check_circuit_breaker(state: &LoopState, config: &AgentConfig) -> RiskDecision {
+    // Max drawdown from peak
     if state.current_drawdown > config.max_daily_drawdown {
         return RiskDecision::Halt(format!(
             "Max drawdown exceeded: {:.2}% > {:.2}%",
@@ -387,7 +463,16 @@ fn check_circuit_breaker(state: &LoopState, config: &AgentConfig) -> RiskDecisio
         ));
     }
 
-    // Check equity from history
+    // Daily loss limit: -20% of allocated capital
+    let daily_loss_limit = config.allocated_capital * Decimal::new(-2, 1); // -20%
+    if state.daily_pnl < daily_loss_limit {
+        return RiskDecision::Halt(format!(
+            "Daily loss limit: ${:.2} lost today (limit ${:.2})",
+            state.daily_pnl, daily_loss_limit,
+        ));
+    }
+
+    // Equity below minimum
     if let Some((_, last_equity)) = state.equity_history.last() {
         if *last_equity < config.min_equity {
             return RiskDecision::Halt(format!(
@@ -398,6 +483,16 @@ fn check_circuit_breaker(state: &LoopState, config: &AgentConfig) -> RiskDecisio
     }
 
     RiskDecision::Approved
+}
+
+/// Reset daily counters if UTC day changed.
+fn maybe_reset_daily(state: &mut LoopState) {
+    let today = chrono::Utc::now().ordinal();
+    if state.last_reset_day != Some(today) {
+        state.daily_pnl = Decimal::ZERO;
+        state.daily_trades = 0;
+        state.last_reset_day = Some(today);
+    }
 }
 
 fn check_risk(

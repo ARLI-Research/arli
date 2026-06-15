@@ -5,9 +5,13 @@
 //! optimized for algorithmic trading.
 
 pub mod agent;
+pub mod backtest;
 pub mod client;
 pub mod execution;
 pub mod handler;
+pub mod indicators;
+pub mod multi_agent;
+pub mod optimize;
 pub mod risk;
 pub mod skills;
 pub mod strategies;

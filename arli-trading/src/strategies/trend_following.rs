@@ -10,6 +10,7 @@ use crate::strategy::{
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 pub struct TrendFollowingStrategy {
     pub fast_period: usize,
@@ -18,7 +19,8 @@ pub struct TrendFollowingStrategy {
     pub max_leverage: u32,
     pub watchlist: Vec<String>,
     pub tick_interval_s: u64,
-    price_history_len: usize,
+    /// Internal state: coin → (fast_ema, slow_ema, prices)
+    state: Mutex<HashMap<String, (Decimal, Decimal, Vec<Decimal>)>>,
 }
 
 impl Default for TrendFollowingStrategy {
@@ -30,32 +32,12 @@ impl Default for TrendFollowingStrategy {
             max_leverage: 5,
             watchlist: vec!["BTC".into(), "ETH".into()],
             tick_interval_s: 120,
-            price_history_len: 30,
+            state: Mutex::new(HashMap::new()),
         }
     }
 }
 
 impl TrendFollowingStrategy {
-    fn parse_history(context: &HashMap<String, String>, coin: &str) -> Vec<Decimal> {
-        context
-            .get(&format!("tf:{}:prices", coin))
-            .map(|s| s.split(',').filter_map(|v| v.parse::<Decimal>().ok()).collect())
-            .unwrap_or_default()
-    }
-
-    fn store_history(context: &mut HashMap<String, String>, coin: &str, prices: &[Decimal]) {
-        let s: String = prices.iter().map(|d| d.to_string()).collect::<Vec<_>>().join(",");
-        context.insert(format!("tf:{}:prices", coin), s);
-    }
-
-    fn parse_ema(context: &HashMap<String, String>, coin: &str, period: usize) -> Option<Decimal> {
-        context.get(&format!("tf:{}:ema{}", coin, period)).and_then(|s| s.parse::<Decimal>().ok())
-    }
-
-    fn store_ema(context: &mut HashMap<String, String>, coin: &str, period: usize, ema: Decimal) {
-        context.insert(format!("tf:{}:ema{}", coin, period), ema.to_string());
-    }
-
     fn compute_ema(price: Decimal, prev_ema: Option<Decimal>, period: usize) -> Decimal {
         let k = Decimal::from(2) / Decimal::from(period + 1);
         match prev_ema {
@@ -100,10 +82,10 @@ impl Strategy for TrendFollowingStrategy {
         &self,
         snapshot: &MarketSnapshot,
         state: &AgentState,
-        context: &HashMap<String, String>,
+        _context: &HashMap<String, String>,
     ) -> Vec<Signal> {
         let mut signals = Vec::new();
-        let mut new_ctx = context.clone();
+        let mut state_map = self.state.lock().unwrap();
 
         for coin in &self.watchlist {
             let price = match snapshot.mids.get(coin.as_str()) {
@@ -111,19 +93,15 @@ impl Strategy for TrendFollowingStrategy {
                 None => continue,
             };
 
-            let mut history = Self::parse_history(&new_ctx, coin);
-            history.push(price);
-            if history.len() > self.price_history_len {
-                history.remove(0);
-            }
-            Self::store_history(&mut new_ctx, coin, &history);
+            let entry = state_map.entry(coin.clone()).or_insert((Decimal::ZERO, Decimal::ZERO, Vec::new()));
+            let (prev_fast, prev_slow, ref mut prices) = &mut *entry;
+            prices.push(price);
+            if prices.len() > 50 { prices.remove(0); }
 
-            let prev_fast = Self::parse_ema(&new_ctx, coin, self.fast_period);
-            let prev_slow = Self::parse_ema(&new_ctx, coin, self.slow_period);
-            let fast = Self::compute_ema(price, prev_fast, self.fast_period);
-            let slow = Self::compute_ema(price, prev_slow, self.slow_period);
-            Self::store_ema(&mut new_ctx, coin, self.fast_period, fast);
-            Self::store_ema(&mut new_ctx, coin, self.slow_period, slow);
+            let fast = Self::compute_ema(price, if *prev_fast == Decimal::ZERO { None } else { Some(*prev_fast) }, self.fast_period);
+            let slow = Self::compute_ema(price, if *prev_slow == Decimal::ZERO { None } else { Some(*prev_slow) }, self.slow_period);
+            *prev_fast = fast;
+            *prev_slow = slow;
 
             if slow == Decimal::ZERO {
                 continue;

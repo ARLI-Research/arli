@@ -344,7 +344,10 @@ impl EnsoClient {
             Err(err_msg) => {
                 // Idempotency: escrow may already be settled or refunded.
                 // These are terminal states — treat as Ok with a note.
-                if err_msg.contains("already_settled") || err_msg.contains("Refunded") {
+                if err_msg.contains("already_settled")
+                    || err_msg.contains("Refunded")
+                    || err_msg.contains("Completed")
+                {
                     tracing::info!(
                         "submit_arli_payment for {}: escrow already terminal — {}",
                         contract_id,

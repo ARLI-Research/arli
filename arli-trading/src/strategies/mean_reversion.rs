@@ -13,6 +13,7 @@ use crate::strategy::{
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 /// Mean-reversion strategy with configurable lookback and thresholds.
 pub struct MeanReversionStrategy {
@@ -29,8 +30,7 @@ pub struct MeanReversionStrategy {
     /// Tick interval in seconds.
     pub tick_interval_s: u64,
     /// Internal price history: coin → Vec<price>
-    /// Stored as Decimal strings in context to be stateless.
-    price_history_len: usize,
+    history: Mutex<HashMap<String, Vec<Decimal>>>,
 }
 
 impl Default for MeanReversionStrategy {
@@ -42,28 +42,12 @@ impl Default for MeanReversionStrategy {
             max_leverage: 10,
             watchlist: vec!["BTC".into(), "ETH".into(), "SOL".into()],
             tick_interval_s: 60,
-            price_history_len: 20,
+            history: Mutex::new(HashMap::new()),
         }
     }
 }
 
 impl MeanReversionStrategy {
-    fn parse_history(context: &HashMap<String, String>, coin: &str) -> Vec<Decimal> {
-        context
-            .get(&format!("mr:{coin}:prices"))
-            .map(|s| s.split(',').filter_map(|v| v.parse::<Decimal>().ok()).collect())
-            .unwrap_or_default()
-    }
-
-    fn store_history(context: &mut HashMap<String, String>, coin: &str, prices: &[Decimal]) {
-        let s: String = prices
-            .iter()
-            .map(|d| d.to_string())
-            .collect::<Vec<_>>()
-            .join(",");
-        context.insert(format!("mr:{coin}:prices"), s);
-    }
-
     fn compute_sma_and_std(prices: &[Decimal], period: usize) -> (Decimal, Decimal) {
         if prices.len() < period || period == 0 {
             return (Decimal::ZERO, Decimal::ZERO);
@@ -113,10 +97,11 @@ impl Strategy for MeanReversionStrategy {
         &self,
         snapshot: &MarketSnapshot,
         state: &AgentState,
-        context: &HashMap<String, String>,
+        _context: &HashMap<String, String>,
     ) -> Vec<Signal> {
         let mut signals = Vec::new();
-        let mut new_context = context.clone();
+        let mut hist_map = self.history.lock().unwrap();
+        let max_history = 50; // keep up to 50 ticks of history
 
         for coin in &self.watchlist {
             let price = match snapshot.mids.get(coin.as_str()) {
@@ -125,15 +110,14 @@ impl Strategy for MeanReversionStrategy {
             };
 
             // Update price history
-            let mut history = Self::parse_history(&new_context, coin);
+            let history = hist_map.entry(coin.clone()).or_default();
             history.push(price);
-            if history.len() > self.price_history_len {
+            if history.len() > max_history {
                 history.remove(0);
             }
-            Self::store_history(&mut new_context, coin, &history);
 
             let (sma, std_dev) =
-                Self::compute_sma_and_std(&history, self.sma_period);
+                Self::compute_sma_and_std(history, self.sma_period);
 
             if sma == Decimal::ZERO || std_dev == Decimal::ZERO {
                 continue; // not enough data
@@ -151,7 +135,7 @@ impl Strategy for MeanReversionStrategy {
                 if deviation.abs() <= self.exit_threshold {
                     signals.push(Signal {
                         coin: coin.clone(),
-                        direction: Direction::Long, // direction flipped for exit
+                        direction: Direction::Long,
                         action: SignalAction::Exit,
                         confidence: dec!(0.9),
                         trigger_price: None,
@@ -202,8 +186,6 @@ impl Strategy for MeanReversionStrategy {
             }
         }
 
-        // Note: context mutation happens through the shared context map
-        // in the execution loop. For now we return signals.
         signals
     }
 

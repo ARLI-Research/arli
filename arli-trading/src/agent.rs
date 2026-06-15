@@ -12,7 +12,7 @@
 
 use crate::client::HyperliquidContext;
 use crate::execution::{run_loop, AgentConfig};
-use crate::strategy::{Strategy, StrategyRegistry};
+use crate::strategy::StrategyRegistry;
 use chrono::Utc;
 use hypersdk::hypercore::PrivateKeySigner;
 use rust_decimal::Decimal;

@@ -56,11 +56,15 @@ pub struct AgentState {
 #[derive(Debug, Clone)]
 pub struct PositionView {
     pub coin: String,
-    pub size: Decimal,      // signed: positive = long, negative = short
+    pub size: Decimal,
     pub entry_price: Decimal,
     pub unrealized_pnl: Decimal,
     pub leverage: u32,
     pub liquidation_price: Option<Decimal>,
+    /// Stop-loss price (set from strategy config).
+    pub stop_loss: Option<Decimal>,
+    /// Take-profit price (set from strategy config).
+    pub take_profit: Option<Decimal>,
 }
 
 /// Simplified view of an open order.

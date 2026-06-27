@@ -9,6 +9,7 @@ pub mod backtest;
 pub mod client;
 pub mod confidence_ledger;
 pub mod execution;
+pub mod fair_value;
 pub mod handler;
 pub mod indicators;
 pub mod multi_agent;

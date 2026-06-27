@@ -5,6 +5,7 @@ members = [
     "arli-cli",
     "arli-trading",
     "arli-gateway",
+    "arli-server",
 ]
 
 [workspace.package]

@@ -7,6 +7,7 @@
 pub mod agent;
 pub mod backtest;
 pub mod client;
+pub mod confidence_ledger;
 pub mod execution;
 pub mod handler;
 pub mod indicators;

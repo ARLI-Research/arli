@@ -69,6 +69,169 @@ impl Default for AgentConfig {
     }
 }
 
+/// A single confidence calibration record — claimed confidence vs actual outcome.
+///
+/// Used to build the confidence calibration report that proves the agent
+/// is honest about its signal quality to investors and ENSO SLA monitors.
+#[derive(Debug, Clone)]
+pub struct ConfidenceRecord {
+    pub coin: String,
+    /// Strategy name that generated the signal.
+    pub strategy: String,
+    /// Claimed confidence at entry (0.0–1.0).
+    pub claimed_confidence: Decimal,
+    /// Direction of the trade.
+    pub direction: String,
+    /// Outcome: true = profitable, false = losing.
+    pub was_winner: bool,
+    /// Realized PnL as percentage (e.g., 0.023 = +2.3%).
+    pub realized_pnl_pct: Decimal,
+    /// Entry price (if known).
+    pub entry_price: Option<Decimal>,
+    /// Exit price (if known).
+    pub exit_price: Option<Decimal>,
+}
+
+/// Calibration buckets — groups confidence claims into 5 equal-width bins.
+#[derive(Debug, Clone, Default)]
+pub struct ConfidenceBuckets {
+    /// 0.0–0.2
+    pub bucket_0_20: BucketStats,
+    /// 0.2–0.4
+    pub bucket_20_40: BucketStats,
+    /// 0.4–0.6
+    pub bucket_40_60: BucketStats,
+    /// 0.6–0.8
+    pub bucket_60_80: BucketStats,
+    /// 0.8–1.0
+    pub bucket_80_100: BucketStats,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct BucketStats {
+    pub total: u64,
+    pub wins: u64,
+    pub total_pnl_pct: Decimal,
+}
+
+impl BucketStats {
+    pub fn accuracy(&self) -> Option<Decimal> {
+        if self.total == 0 {
+            None
+        } else {
+            Some(Decimal::from(self.wins) / Decimal::from(self.total))
+        }
+    }
+
+    pub fn avg_pnl_pct(&self) -> Option<Decimal> {
+        if self.total == 0 {
+            None
+        } else {
+            Some(self.total_pnl_pct / Decimal::from(self.total))
+        }
+    }
+}
+
+impl ConfidenceBuckets {
+    /// Classify a confidence value into the right bucket and add a record.
+    fn record(&mut self, confidence: Decimal, was_winner: bool, pnl_pct: Decimal) {
+        let bucket = if confidence < dec!(0.2) {
+            &mut self.bucket_0_20
+        } else if confidence < dec!(0.4) {
+            &mut self.bucket_20_40
+        } else if confidence < dec!(0.6) {
+            &mut self.bucket_40_60
+        } else if confidence < dec!(0.8) {
+            &mut self.bucket_60_80
+        } else {
+            &mut self.bucket_80_100
+        };
+
+        bucket.total += 1;
+        if was_winner {
+            bucket.wins += 1;
+        }
+        bucket.total_pnl_pct += pnl_pct;
+    }
+
+    /// Brier score — mean squared error between claimed confidence and binary outcome.
+    /// Lower is better. Perfect calibration = 0.
+    pub fn brier_score(records: &[ConfidenceRecord]) -> Option<Decimal> {
+        if records.is_empty() {
+            return None;
+        }
+        let n = Decimal::from(records.len() as u64);
+        let sum_sq_err: Decimal = records
+            .iter()
+            .map(|r| {
+                let outcome = if r.was_winner { dec!(1) } else { dec!(0) };
+                (r.claimed_confidence - outcome)
+                    * (r.claimed_confidence - outcome)
+            })
+            .sum();
+        Some(sum_sq_err / n)
+    }
+
+    /// Build buckets from a slice of ConfidenceRecords.
+    pub fn from_records(records: &[ConfidenceRecord]) -> Self {
+        let mut buckets = Self::default();
+        for r in records {
+            buckets.record(r.claimed_confidence, r.was_winner, r.realized_pnl_pct);
+        }
+        buckets
+    }
+
+    /// Build a JSON summary suitable for OCSF attestation events.
+    pub fn to_json(&self, records: &[ConfidenceRecord]) -> serde_json::Value {
+        serde_json::json!({
+            "total_records": records.len(),
+            "overall_accuracy": if records.is_empty() { serde_json::Value::Null }
+                else {
+                    let wins = records.iter().filter(|r| r.was_winner).count();
+                    serde_json::json!(wins as f64 / records.len() as f64)
+                },
+            "mean_confidence": if records.is_empty() { serde_json::Value::Null }
+                else {
+                    let total: Decimal = records.iter().map(|r| r.claimed_confidence).sum();
+                    serde_json::json!(total / Decimal::from(records.len() as u64))
+                },
+            "brier_score": Self::brier_score(records),
+            "buckets": {
+                "0.0-0.2": {
+                    "total": self.bucket_0_20.total,
+                    "wins": self.bucket_0_20.wins,
+                    "accuracy": self.bucket_0_20.accuracy(),
+                    "avg_pnl_pct": self.bucket_0_20.avg_pnl_pct(),
+                },
+                "0.2-0.4": {
+                    "total": self.bucket_20_40.total,
+                    "wins": self.bucket_20_40.wins,
+                    "accuracy": self.bucket_20_40.accuracy(),
+                    "avg_pnl_pct": self.bucket_20_40.avg_pnl_pct(),
+                },
+                "0.4-0.6": {
+                    "total": self.bucket_40_60.total,
+                    "wins": self.bucket_40_60.wins,
+                    "accuracy": self.bucket_40_60.accuracy(),
+                    "avg_pnl_pct": self.bucket_40_60.avg_pnl_pct(),
+                },
+                "0.6-0.8": {
+                    "total": self.bucket_60_80.total,
+                    "wins": self.bucket_60_80.wins,
+                    "accuracy": self.bucket_60_80.accuracy(),
+                    "avg_pnl_pct": self.bucket_60_80.avg_pnl_pct(),
+                },
+                "0.8-1.0": {
+                    "total": self.bucket_80_100.total,
+                    "wins": self.bucket_80_100.wins,
+                    "accuracy": self.bucket_80_100.accuracy(),
+                    "avg_pnl_pct": self.bucket_80_100.avg_pnl_pct(),
+                },
+            },
+        })
+    }
+}
+
 /// Runtime state of the execution loop, updated each tick.
 #[derive(Debug, Clone, Default)]
 pub struct LoopState {
@@ -85,6 +248,8 @@ pub struct LoopState {
     pub daily_pnl: Decimal,
     pub daily_trades: u64,
     pub last_reset_day: Option<u32>,  // ordinal day
+    /// Confidence calibration — records for this run.
+    pub confidence_records: Vec<ConfidenceRecord>,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -130,9 +295,17 @@ pub async fn run_loop(
     // Use a boxed strategy so it can be passed into async closures
     let strategy: Arc<dyn Strategy> = Arc::from(strategy);
 
-    // Track virtual positions for paper mode (coin → (entry_price, stop_loss, take_profit))
-    let mut paper_positions: HashMap<String, (Decimal, Option<Decimal>, Option<Decimal>)> =
-        HashMap::new();
+    // Track virtual positions for paper mode (coin → (entry_price, stop_loss, take_profit, confidence, strategy_name))
+    let mut paper_positions: HashMap<
+        String,
+        (
+            Decimal,
+            Option<Decimal>,
+            Option<Decimal>,
+            Decimal,
+            String,
+        ),
+    > = HashMap::new();
 
     let tick_duration = Duration::from_secs(config.tick_interval_seconds);
     let watchlist = strategy.watchlist().to_vec();
@@ -274,10 +447,36 @@ pub async fn run_loop(
                             signal.trigger_price.unwrap_or(Decimal::ZERO),
                             size.stop_loss,
                             size.take_profit,
+                            signal.confidence,
+                            strategy.name().to_string(),
                         ),
                     );
                 } else if signal.action == SignalAction::Exit {
-                    paper_positions.remove(&signal.coin);
+                    // Record confidence outcome for exiting positions
+                    if let Some((entry, _sl, _tp, conf, strat_name)) =
+                        paper_positions.remove(&signal.coin)
+                    {
+                        let mid = snapshot
+                            .mids
+                            .get(&signal.coin)
+                            .copied()
+                            .unwrap_or(entry);
+                        let pnl_pct = if entry > Decimal::ZERO {
+                            (mid - entry) / entry
+                        } else {
+                            Decimal::ZERO
+                        };
+                        state.confidence_records.push(ConfidenceRecord {
+                            coin: signal.coin.clone(),
+                            strategy: strat_name,
+                            claimed_confidence: conf,
+                            direction: signal.direction.as_str().to_string(),
+                            was_winner: pnl_pct > Decimal::ZERO,
+                            realized_pnl_pct: pnl_pct,
+                            entry_price: Some(entry),
+                            exit_price: Some(mid),
+                        });
+                    }
                 }
             }
         }
@@ -286,7 +485,7 @@ pub async fn run_loop(
         if !config.live {
             let to_exit: Vec<String> = paper_positions
                 .iter()
-                .filter_map(|(coin, (entry, sl, tp))| {
+                .filter_map(|(coin, (_entry, sl, tp, _conf, _strat))| {
                     if let Some(mid) = snapshot.mids.get(coin.as_str()) {
                         if let Some(stop) = sl {
                             if *stop > Decimal::ZERO && *mid <= *stop {
@@ -304,7 +503,7 @@ pub async fn run_loop(
                 .collect();
 
             for coin in to_exit {
-                if let Some((entry, _, _)) = paper_positions.remove(&coin) {
+                if let Some((entry, _, _, conf, strat_name)) = paper_positions.remove(&coin) {
                     let mid = snapshot.mids.get(&coin).copied().unwrap_or(entry);
                     let pnl_pct = if entry > Decimal::ZERO {
                         (mid - entry) / entry
@@ -317,9 +516,20 @@ pub async fn run_loop(
                         entry = %entry,
                         mid = %mid,
                         pnl_pct = %(pnl_pct * dec!(100)),
+                        confidence = %conf,
                         "STOP/TP triggered — closing virtual position"
                     );
                     state.total_trades += 1;
+                    state.confidence_records.push(ConfidenceRecord {
+                        coin: coin.clone(),
+                        strategy: strat_name,
+                        claimed_confidence: conf,
+                        direction: "long".to_string(), // paper SL/TP positions assumed long
+                        was_winner: pnl_pct > Decimal::ZERO,
+                        realized_pnl_pct: pnl_pct,
+                        entry_price: Some(entry),
+                        exit_price: Some(mid),
+                    });
                 }
             }
         }

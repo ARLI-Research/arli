@@ -23,7 +23,7 @@ use rust_decimal_macros::dec;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use crate::execution::{self, AgentConfig};
+use crate::execution::{self, AgentConfig, ConfidenceBuckets};
 use crate::strategy::StrategyRegistry;
 
 /// Trading-specific execution handler for ENSO contracts.
@@ -190,8 +190,14 @@ impl ExecutionHandler for TradingHandler {
             "TradingHandler: executing ENSO contract"
         );
 
+        // Resolve strategy name — support aliases for ENSO contract compatibility
+        let strategy_name = match params.strategy.as_str() {
+            "bollinger-bands" => "mean-reversion",
+            other => other,
+        };
+
         // Build the strategy
-        let strategy: Box<dyn crate::strategy::Strategy> = if params.strategy == "indicator" {
+        let strategy: Box<dyn crate::strategy::Strategy> = if strategy_name == "indicator" {
             // Declarative indicator-based strategy — parse full config from job_params
             let cfg: crate::strategies::IndicatorStrategyConfig =
                 serde_json::from_str(&job.job_params)
@@ -199,8 +205,8 @@ impl ExecutionHandler for TradingHandler {
             Box::new(crate::strategies::IndicatorStrategy::new(cfg))
         } else {
             self.strategy_registry
-                .build(&params.strategy)
-                .ok_or_else(|| format!("Unknown strategy: {}", params.strategy))?
+                .build(strategy_name)
+                .ok_or_else(|| format!("Unknown strategy: {}", strategy_name))?
         };
 
         // Initialize Hyperliquid context
@@ -259,7 +265,10 @@ impl ExecutionHandler for TradingHandler {
         let success = loop_state.last_error.is_none();
         let error_msg = loop_state.last_error.clone().unwrap_or_default();
 
-        // Build OCSF event with execution results
+        // Build OCSF event with execution results and confidence calibration
+        let calibration = ConfidenceBuckets::from_records(&loop_state.confidence_records);
+        let calibration_json = calibration.to_json(&loop_state.confidence_records);
+
         let ocsf_event = serde_json::json!({
             "class_uid": 6007,
             "activity_name": "Trading Agent Execution",
@@ -281,6 +290,7 @@ impl ExecutionHandler for TradingHandler {
             "mode": if params.live { "live" } else { "paper" },
             "result": if success { "completed" } else { "error" },
             "error": error_msg,
+            "confidence_calibration": calibration_json,
             "notes": format!(
                 "Trading agent executed {} strategy on {:?} with {}x leverage, ${} capital ({} mode). \
                  {} ticks, {} trades, PnL: ${}.",
@@ -290,7 +300,17 @@ impl ExecutionHandler for TradingHandler {
             ),
         });
 
-        // Build execution metrics for ENSO SLA enforcement
+        // Build execution metrics for ENSO SLA enforcement, including calibration
+        let calibration_summary = serde_json::json!({
+            "total_records": loop_state.confidence_records.len(),
+            "overall_accuracy": if loop_state.confidence_records.is_empty() { serde_json::Value::Null }
+                else {
+                    let wins = loop_state.confidence_records.iter().filter(|r| r.was_winner).count();
+                    serde_json::json!(wins as f64 / loop_state.confidence_records.len() as f64)
+                },
+            "brier_score": ConfidenceBuckets::brier_score(&loop_state.confidence_records),
+        });
+
         let metrics = serde_json::json!({
             "execution_latency_ms": elapsed_ms,
             "strategy": strategy_name,
@@ -302,6 +322,7 @@ impl ExecutionHandler for TradingHandler {
             "total_pnl": loop_state.total_pnl.to_string(),
             "max_drawdown_pct": (loop_state.current_drawdown * dec!(100)).to_string(),
             "mode": if params.live { "live" } else { "paper" },
+            "confidence_calibration": calibration_summary,
         });
 
         Ok(ExecutionResult {

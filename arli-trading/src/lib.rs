@@ -8,6 +8,7 @@ pub mod agent;
 pub mod backtest;
 pub mod bias_model;
 pub mod client;
+pub mod confidence;
 pub mod confidence_ledger;
 pub mod execution;
 pub mod fair_value;
